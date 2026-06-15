@@ -2,107 +2,939 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Séries Curtas Express</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white; 
-      padding: 20px;
-      min-height: 100vh;
+    :root {
+      --primary: #E50914;
+      --primary-dark: #B20710;
+      --dark: #141414;
+      --darker: #0F0F0F;
+      --gray: #808080;
+      --light: #FFFFFF;
+      --card-bg: #181818;
+      --hover: #2F2F2F;
     }
-    .container { max-width: 600px; margin: 0 auto; }
-    h1 { text-align: center; margin-bottom: 20px; font-size: 24px; }
-    .card {
-      background: rgba(0,0,0,0.3);
-      padding: 20px;
-      margin: 15px 0;
-      border-radius: 12px;
+    
+    * { 
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    
+    body {
+      background: var(--darker);
+      color: var(--light);
+      overflow-x: hidden;
+    }
+    
+    /* Header fixo */
+    .header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      padding: 15px 4%;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.9) 10%, transparent);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.3s;
+    }
+    
+    .header.scrolled {
+      background: var(--darker);
+      box-shadow: 0 2px 20px rgba(0,0,0,0.5);
+    }
+    
+    .logo {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--primary);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .nav-links {
+      display: flex;
+      gap: 20px;
+      list-style: none;
+    }
+    
+    .nav-links a {
+      color: var(--light);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0.8;
+      transition: opacity 0.3s;
+    }
+    
+    .nav-links a:hover, .nav-links a.active {
+      opacity: 1;
+      font-weight: 600;
+    }
+    
+    /* Hero Banner */
+    .hero {
+      position: relative;
+      height: 70vh;
+      min-height: 500px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.3), var(--darker));
+      display: flex;
+      align-items: flex-end;
+      padding: 0 4% 60px;
+      margin-bottom: 20px;
+    }
+    
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      max-width: 600px;
+    }
+    
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(229, 9, 20, 0.2);
+      color: var(--primary);
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 15px;
+      border: 1px solid rgba(229, 9, 20, 0.3);
+    }
+    
+    .hero h1 {
+      font-size: 48px;
+      font-weight: 800;
+      margin-bottom: 15px;
+      line-height: 1.1;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    }
+    
+    .hero-meta {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #aaa;
+    }
+    
+    .hero-meta span {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    
+    .hero-desc {
+      font-size: 16px;
+      line-height: 1.5;
+      margin-bottom: 25px;
+      color: #ddd;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    
+    .hero-buttons {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    
+    .btn {
+      padding: 12px 24px;
+      border-radius: 4px;
+      border: none;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    
+    .btn-primary {
+      background: var(--light);
+      color: var(--dark);
+    }
+    
+    .btn-primary:hover {
+      background: rgba(255,255,255,0.8);
+    }
+    
+    .btn-secondary {
+      background: rgba(255,255,255,0.2);
+      color: var(--light);
       backdrop-filter: blur(10px);
     }
-    .preco { font-size: 20px; font-weight: bold; color: #FFD700; margin: 10px 0; }
-    .gratis { color: #4CAF50; }
-    button {
-      background: #4CAF50;
-      color: white;
-      border: none;
-      padding: 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 16px;
-      width: 100%;
-      font-weight: bold;
+    
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.3);
     }
-    .loading { text-align: center; padding: 40px; font-size: 18px; }
+    
+    /* Carrossel de categorias */
+    .section {
+      padding: 20px 4%;
+      margin-bottom: 30px;
+    }
+    
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    
+    .section-title {
+      font-size: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .see-all {
+      color: var(--gray);
+      font-size: 14px;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: color 0.3s;
+    }
+    
+    .see-all:hover {
+      color: var(--light);
+    }
+    
+    /* Grid de cards */
+    .movies-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 15px;
+    }
+    
+    .movie-card {
+      position: relative;
+      background: var(--card-bg);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: all 0.3s;
+      cursor: pointer;
+      aspect-ratio: 2/3;
+    }
+    
+    .movie-card:hover {
+      transform: scale(1.05);
+      z-index: 10;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    
+    .movie-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: opacity 0.3s;
+    }
+    
+    .movie-card:hover img {
+      opacity: 0.7;
+    }
+    
+    .movie-info {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 60px 12px 12px;
+      background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .movie-card:hover .movie-info {
+      opacity: 1;
+    }
+    
+    .movie-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 5px;
+      line-height: 1.2;
+    }
+    
+    .movie-price {
+      font-size: 13px;
+      color: #4CAF50;
+      font-weight: 700;
+    }
+    
+    .movie-price.free {
+      color: #FFD700;
+    }
+    
+    .movie-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    
+    .btn-small {
+      flex: 1;
+      padding: 8px;
+      font-size: 12px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    
+    .btn-play {
+      background: var(--light);
+      color: var(--dark);
+    }
+    
+    .btn-gift {
+      background: rgba(255,255,255,0.2);
+      color: var(--light);
+    }
+    
+    /* Badge de preço no card */
+    .price-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.8);
+      color: #4CAF50;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      backdrop-filter: blur(10px);
+    }
+    
+    .price-badge.free {
+      color: #FFD700;
+      background: rgba(229, 9, 20, 0.9);
+    }
+    
+    /* Categorias em scroll horizontal */
+    .categories-scroll {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding: 10px 0;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    
+    .categories-scroll::-webkit-scrollbar {
+      display: none;
+    }
+    
+    .category-chip {
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 20px;
+      color: var(--light);
+      font-size: 14px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.3s;
+    }
+    
+    .category-chip:hover, .category-chip.active {
+      background: var(--light);
+      color: var(--dark);
+      font-weight: 600;
+    }
+    
+    /* Loading skeleton */
+    .skeleton {
+      background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
+      background-size: 200% 100%;
+      animation: loading 1.5s infinite;
+      border-radius: 8px;
+    }
+    
+    @keyframes loading {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    
+    /* Bottom nav mobile */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(15, 15, 15, 0.95);
+      backdrop-filter: blur(20px);
+      border-top: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      justify-content: space-around;
+      padding: 12px 0;
+      z-index: 1000;
+      display: none;
+    }
+    
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--gray);
+      text-decoration: none;
+      font-size: 11px;
+      transition: color 0.3s;
+    }
+    
+    .nav-item i {
+      font-size: 20px;
+    }
+    
+    .nav-item.active, .nav-item:hover {
+      color: var(--light);
+    }
+    
+    /* Responsivo */
+    @media (max-width: 768px) {
+      .hero h1 {
+        font-size: 32px;
+      }
+      
+      .movies-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 10px;
+      }
+      
+      .nav-links {
+        display: none;
+      }
+      
+      .bottom-nav {
+        display: flex;
+      }
+      
+      .section {
+        padding-bottom: 80px;
+      }
+    }
+    
+    /* Modal de detalhes */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.9);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .modal-overlay.active {
+      display: flex;
+    }
+    
+    .modal-content {
+      background: var(--card-bg);
+      border-radius: 12px;
+      max-width: 500px;
+      width: 100%;
+      overflow: hidden;
+      animation: slideUp 0.3s;
+    }
+    
+    @keyframes slideUp {
+      from {
+        transform: translateY(50px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+    
+    .modal-header {
+      position: relative;
+      height: 250px;
+    }
+    
+    .modal-header img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    .modal-close {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      background: rgba(0,0,0,0.5);
+      color: var(--light);
+      border: none;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    
+    .modal-body {
+      padding: 20px;
+    }
+    
+    .modal-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    
+    .modal-meta {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 15px;
+      font-size: 14px;
+      color: var(--gray);
+    }
+    
+    .modal-desc {
+      color: #ccc;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .modal-actions .btn {
+      flex: 1;
+      justify-content: center;
+    }
+    
+    /* Search bar */
+    .search-container {
+      padding: 0 4%;
+      margin-bottom: 20px;
+    }
+    
+    .search-box {
+      position: relative;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    
+    .search-box input {
+      width: 100%;
+      padding: 15px 20px 15px 45px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      color: var(--light);
+      font-size: 16px;
+      outline: none;
+      transition: all 0.3s;
+    }
+    
+    .search-box input:focus {
+      background: rgba(255,255,255,0.15);
+      border-color: rgba(255,255,255,0.4);
+    }
+    
+    .search-box i {
+      position: absolute;
+      left: 15px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--gray);
+    }
+    
+    .search-box input::placeholder {
+      color: var(--gray);
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>🎬 Séries Curtas</h1>
-    <div id="lista" class="loading">Carregando...</div>
+  <!-- Header -->
+  <header class="header" id="header">
+    <a href="#" class="logo">
+      <i class="fas fa-play-circle"></i>
+      SÉRIES CURTAS
+    </a>
+    <nav>
+      <ul class="nav-links">
+        <li><a href="#" class="active" onclick="filterSeries('all')">Início</a></li>
+        <li><a href="#" onclick="filterSeries('romance')">Romance</a></li>
+        <li><a href="#" onclick="filterSeries('drama')">Drama</a></li>
+        <li><a href="#" onclick="filterSeries('suspense')">Suspense</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- Hero Banner -->
+  <section class="hero" id="hero" style="background-image: url('https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1920'); background-size: cover; background-position: center;">
+    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.3), var(--darker));"></div>
+    <div class="hero-content">
+      <span class="hero-badge">
+        <i class="fas fa-fire"></i>
+        Destaque da Semana
+      </span>
+      <h1 id="hero-title">Um Negócio com Meu Doador Bilionário</h1>
+      <div class="hero-meta">
+        <span><i class="fas fa-star"></i> 4.8</span>
+        <span>2024</span>
+        <span>Romance</span>
+      </div>
+      <p class="hero-desc" id="hero-desc">
+        Desesperada por um bebê, Claire faz um "contrato de esperma" com o bilionário Ethan. Mas quando ele se torna seu chefe, a paixão acaba com o acordo deles.
+      </p>
+      <div class="hero-buttons">
+        <button class="btn btn-primary" onclick="buyFeatured()">
+          <i class="fas fa-play"></i>
+          Comprar Agora
+        </button>
+        <button class="btn btn-secondary" onclick="showDetails()">
+          <i class="fas fa-info-circle"></i>
+          Mais Informações
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Search -->
+  <div class="search-container">
+    <div class="search-box">
+      <i class="fas fa-search"></i>
+      <input type="text" id="searchInput" placeholder="Buscar séries..." onkeyup="searchSeries(this.value)">
+    </div>
   </div>
+
+  <!-- Categories -->
+  <div class="section">
+    <div class="categories-scroll">
+      <div class="category-chip active" onclick="filterCategory('all')">Todas</div>
+      <div class="category-chip" onclick="filterCategory('romance')">❤️ Romance</div>
+      <div class="category-chip" onclick="filterCategory('drama')">🎭 Drama</div>
+      <div class="category-chip" onclick="filterCategory('suspense')">🔪 Suspense</div>
+      <div class="category-chip" onclick="filterCategory('comedia')">😂 Comédia</div>
+    </div>
+  </div>
+
+  <!-- Grátis Section -->
+  <section class="section" id="free-section" style="display: none;">
+    <div class="section-header">
+      <h2 class="section-title">
+        <i class="fas fa-gift" style="color: #FFD700;"></i>
+        Séries Gratuitas
+      </h2>
+    </div>
+    <div class="movies-grid" id="free-grid"></div>
+  </section>
+
+  <!-- Destaques Section -->
+  <section class="section">
+    <div class="section-header">
+      <h2 class="section-title">
+        <i class="fas fa-fire" style="color: var(--primary);"></i>
+        Destaques
+      </h2>
+      <a href="#" class="see-all">Ver tudo <i class="fas fa-chevron-right"></i></a>
+    </div>
+    <div class="movies-grid" id="movies-grid">
+      <!-- Skeleton loading -->
+      <div class="movie-card skeleton"></div>
+      <div class="movie-card skeleton"></div>
+      <div class="movie-card skeleton"></div>
+      <div class="movie-card skeleton"></div>
+      <div class="movie-card skeleton"></div>
+      <div class="movie-card skeleton"></div>
+    </div>
+  </section>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal" onclick="closeModal(event)">
+    <div class="modal-content">
+      <div class="modal-header">
+        <img src="" alt="Cover" id="modal-img">
+        <button class="modal-close" onclick="closeModal()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <h3 class="modal-title" id="modal-title">Título</h3>
+        <div class="modal-meta">
+          <span id="modal-price">R$ 5.90</span>
+          <span id="modal-category">Romance</span>
+        </div>
+        <p class="modal-desc" id="modal-desc">Descrição</p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="modal-buy">
+            <i class="fas fa-shopping-cart"></i>
+            Comprar
+          </button>
+          <button class="btn btn-secondary" onclick="giftCurrent()">
+            <i class="fas fa-gift"></i>
+            Presentear
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Nav Mobile -->
+  <nav class="bottom-nav">
+    <a href="#" class="nav-item active" onclick="showSection('home')">
+      <i class="fas fa-home"></i>
+      Início
+    </a>
+    <a href="#" class="nav-item" onclick="showSection('favorites')">
+      <i class="fas fa-heart"></i>
+      Favoritos
+    </a>
+    <a href="#" class="nav-item" onclick="showSection('purchases')">
+      <i class="fas fa-shopping-bag"></i>
+      Compras
+    </a>
+  </nav>
 
   <script>
     const tg = window.Telegram.WebApp;
     tg.expand();
     tg.ready();
-
-    // URL DA API - CONFIRME SE ESTÁ CORRETO
+    
+    // CONFIGURAÇÃO - API do Supabase
     const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api/series';
-
-    async function carregarSeries() {
+    
+    let allSeries = [];
+    let currentModal = null;
+    let featuredSeries = null;
+    
+    // Header scroll effect
+    window.addEventListener('scroll', () => {
+      const header = document.getElementById('header');
+      if (window.scrollY > 50) {
+        header.classList.add('scrolled');
+      } else {
+        header.classList.remove('scrolled');
+      }
+    });
+    
+    async function loadSeries() {
       try {
-        const response = await fetch(API_URL);
-        if (!response.ok) throw new Error('Erro na API: ' + response.status);
+        const res = await fetch(API_URL);
+        if (!res.ok) throw new Error('Erro na API');
         
-        const series = await response.json();
-        const div = document.getElementById('lista');
+        allSeries = await res.json();
         
-        if (!series || series.length === 0) {
-          div.innerHTML = '<div class="card"><p>Nenhuma série disponível.</p></div>';
-          return;
+        // Separar gratuitas
+        const freeSeries = allSeries.filter(s => s.price == 0);
+        const paidSeries = allSeries.filter(s => s.price > 0);
+        
+        // Definir destaque (primeira série paga ou a primeira geral)
+        featuredSeries = paidSeries[0] || allSeries[0];
+        updateHero(featuredSeries);
+        
+        // Renderizar grids
+        if (freeSeries.length > 0) {
+          document.getElementById('free-section').style.display = 'block';
+          renderGrid(freeSeries, 'free-grid', true);
         }
-
-        let html = '<p style="text-align: center; margin-bottom: 20px;">' + series.length + ' séries</p>';
         
-        series.forEach(function(s) {
-          const isGratis = s.price == 0;
-          const precoTexto = isGratis ? 'GRÁTIS' : 'R$ ' + s.price;
-          const classePreco = isGratis ? 'preco gratis' : 'preco';
-          const botaoTexto = isGratis ? 'ASSISTIR' : 'COMPRAR';
-          
-          html += '<div class="card">' +
-            '<h3>' + s.title + '</h3>' +
-            '<div class="' + classePreco + '">' + precoTexto + '</div>' +
-            '<button onclick="comprar(\'' + s.id + '\', \'' + s.title.replace(/'/g, "\\'") + '\', ' + s.price + ')">' + 
-              botaoTexto + 
-            '</button>' +
+        renderGrid(paidSeries.slice(0, 12), 'movies-grid', false);
+        
+      } catch (e) {
+        console.error('Erro:', e);
+        document.getElementById('movies-grid').innerHTML = 
+          '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--gray);">' +
+          '<i class="fas fa-exclamation-circle" style="font-size: 48px; margin-bottom: 15px;"></i>' +
+          '<p>Erro ao carregar séries</p>' +
           '</div>';
-        });
-        
-        div.innerHTML = html;
-        
-      } catch (erro) {
-        console.error('Erro:', erro);
-        document.getElementById('lista').innerHTML = 
-          '<div class="card"><p>Erro ao carregar séries.</p><p style="font-size: 12px;">' + erro.message + '</p></div>';
       }
     }
-
-    function comprar(id, titulo, preco) {
+    
+    function updateHero(series) {
+      if (!series) return;
+      
+      document.getElementById('hero-title').textContent = series.title;
+      document.getElementById('hero-desc').textContent = series.description || 'Uma história emocionante que vai prender você do início ao fim.';
+      
+      // Atualizar background se tiver imagem
+      if (series.cover_url) {
+        document.querySelector('.hero').style.backgroundImage = `url(${series.cover_url})`;
+      }
+    }
+    
+    function renderGrid(series, elementId, isFree) {
+      const grid = document.getElementById(elementId);
+      if (!grid) return;
+      
+      if (series.length === 0) {
+        grid.innerHTML = '<p style="color: var(--gray);">Nenhuma série encontrada</p>';
+        return;
+      }
+      
+      grid.innerHTML = series.map(s => `
+        <div class="movie-card" onclick="openModal('${s.id}')">
+          <img src="${s.cover_url || 'https://via.placeholder.com/300x450/1a1a1a/666?text=Sem+Capa'}" 
+               alt="${s.title}" 
+               loading="lazy">
+          <span class="price-badge ${s.price == 0 ? 'free' : ''}">
+            ${s.price == 0 ? 'GRÁTIS' : 'R$ ' + s.price}
+          </span>
+          <div class="movie-info">
+            <h3 class="movie-title">${s.title}</h3>
+            <div class="movie-price ${s.price == 0 ? 'free' : ''}">
+              ${s.price == 0 ? 'GRÁTIS' : 'R$ ' + s.price}
+            </div>
+            <div class="movie-actions">
+              <button class="btn-small btn-play" onclick="event.stopPropagation(); buy('${s.id}', '${s.title.replace(/'/g, "\\'")}', ${s.price})">
+                <i class="fas fa-play"></i>
+              </button>
+              <button class="btn-small btn-gift" onclick="event.stopPropagation(); gift('${s.id}', '${s.title.replace(/'/g, "\\'")}')">
+                <i class="fas fa-gift"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function filterCategory(cat) {
+      // Atualizar chips visuais
+      document.querySelectorAll('.category-chip').forEach(chip => {
+        chip.classList.remove('active');
+      });
+      event.target.classList.add('active');
+      
+      // Filtrar séries
+      if (cat === 'all') {
+        const paid = allSeries.filter(s => s.price > 0).slice(0, 12);
+        renderGrid(paid, 'movies-grid', false);
+      } else {
+        const filtered = allSeries.filter(s => 
+          s.category === cat || s.title.toLowerCase().includes(cat)
+        ).slice(0, 12);
+        renderGrid(filtered, 'movies-grid', false);
+      }
+    }
+    
+    function searchSeries(term) {
+      if (!term) {
+        const paid = allSeries.filter(s => s.price > 0).slice(0, 12);
+        renderGrid(paid, 'movies-grid', false);
+        return;
+      }
+      
+      const filtered = allSeries.filter(s => 
+        s.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .includes(term.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+      );
+      renderGrid(filtered, 'movies-grid', false);
+    }
+    
+    function openModal(id) {
+      const series = allSeries.find(s => s.id === id);
+      if (!series) return;
+      
+      currentModal = series;
+      
+      document.getElementById('modal-img').src = series.cover_url || 'https://via.placeholder.com/500x300/1a1a1a/666?text=Sem+Capa';
+      document.getElementById('modal-title').textContent = series.title;
+      document.getElementById('modal-price').textContent = series.price == 0 ? 'GRÁTIS' : 'R$ ' + series.price;
+      document.getElementById('modal-price').style.color = series.price == 0 ? '#FFD700' : '#4CAF50';
+      document.getElementById('modal-category').textContent = series.category || 'Romance';
+      document.getElementById('modal-desc').textContent = series.description || 'Uma história envolvente que vai te prender do início ao fim.';
+      
+      const buyBtn = document.getElementById('modal-buy');
+      buyBtn.onclick = () => buy(series.id, series.title, series.price);
+      
+      document.getElementById('modal').classList.add('active');
+    }
+    
+    function closeModal(event) {
+      if (!event || event.target === document.getElementById('modal')) {
+        document.getElementById('modal').classList.remove('active');
+      }
+    }
+    
+    function buy(id, title, price) {
       tg.sendData(JSON.stringify({
-        acao: 'comprar',
-        serie_id: id,
-        titulo: titulo,
-        preco: preco
+        action: 'buy',
+        series_id: id,
+        title: title,
+        price: price
       }));
       tg.close();
     }
-
-    carregarSeries();
+    
+    function buyFeatured() {
+      if (featuredSeries) {
+        buy(featuredSeries.id, featuredSeries.title, featuredSeries.price);
+      }
+    }
+    
+    function gift(id, title) {
+      const username = prompt('Para quem é o presente? @username:');
+      if (username) {
+        tg.sendData(JSON.stringify({
+          action: 'gift',
+          series_id: id,
+          title: title,
+          to: username
+        }));
+        tg.close();
+      }
+    }
+    
+    function giftCurrent() {
+      if (currentModal) {
+        gift(currentModal.id, currentModal.title);
+      }
+    }
+    
+    function showDetails() {
+      if (featuredSeries) {
+        openModal(featuredSeries.id);
+      }
+    }
+    
+    function showSection(section) {
+      // Implementar navegação entre seções
+      console.log('Section:', section);
+    }
+    
+    // Iniciar
+    loadSeries();
   </script>
 </body>
 </html>
