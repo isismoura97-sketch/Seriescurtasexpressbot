@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Séries Curtas Express</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white; 
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .container { max-width: 600px; margin: 0 auto; }
+    h1 { text-align: center; margin-bottom: 20px; font-size: 24px; }
+    .card {
+      background: rgba(0,0,0,0.3);
+      padding: 20px;
+      margin: 15px 0;
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+    }
+    .preco { font-size: 20px; font-weight: bold; color: #FFD700; margin: 10px 0; }
+    .gratis { color: #4CAF50; }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      width: 100%;
+      font-weight: bold;
+    }
+    .loading { text-align: center; padding: 40px; font-size: 18px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 Séries Curtas</h1>
+    <div id="lista" class="loading">Carregando...</div>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    tg.ready();
+
+    // URL DA API - CONFIRME SE ESTÁ CORRETO
+    const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api/series';
+
+    async function carregarSeries() {
+      try {
+        const response = await fetch(API_URL);
+        if (!response.ok) throw new Error('Erro na API: ' + response.status);
+        
+        const series = await response.json();
+        const div = document.getElementById('lista');
+        
+        if (!series || series.length === 0) {
+          div.innerHTML = '<div class="card"><p>Nenhuma série disponível.</p></div>';
+          return;
+        }
+
+        let html = '<p style="text-align: center; margin-bottom: 20px;">' + series.length + ' séries</p>';
+        
+        series.forEach(function(s) {
+          const isGratis = s.price == 0;
+          const precoTexto = isGratis ? 'GRÁTIS' : 'R$ ' + s.price;
+          const classePreco = isGratis ? 'preco gratis' : 'preco';
+          const botaoTexto = isGratis ? 'ASSISTIR' : 'COMPRAR';
+          
+          html += '<div class="card">' +
+            '<h3>' + s.title + '</h3>' +
+            '<div class="' + classePreco + '">' + precoTexto + '</div>' +
+            '<button onclick="comprar(\'' + s.id + '\', \'' + s.title.replace(/'/g, "\\'") + '\', ' + s.price + ')">' + 
+              botaoTexto + 
+            '</button>' +
+          '</div>';
+        });
+        
+        div.innerHTML = html;
+        
+      } catch (erro) {
+        console.error('Erro:', erro);
+        document.getElementById('lista').innerHTML = 
+          '<div class="card"><p>Erro ao carregar séries.</p><p style="font-size: 12px;">' + erro.message + '</p></div>';
+      }
+    }
+
+    function comprar(id, titulo, preco) {
+      tg.sendData(JSON.stringify({
+        acao: 'comprar',
+        serie_id: id,
+        titulo: titulo,
+        preco: preco
+      }));
+      tg.close();
+    }
+
+    carregarSeries();
+  </script>
+</body>
+</html>
