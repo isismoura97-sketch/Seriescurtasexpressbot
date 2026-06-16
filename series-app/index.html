@@ -2,8 +2,8 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Séries Curtas Express - HD</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Séries Curtas Express</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -15,274 +15,259 @@
       --card-bg: #181818;
       --text-main: #FFFFFF;
       --text-dim: #E5E5E5;
-      --bg-body: #0F0F0F;
     }
-
+    
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-    body { background: var(--bg-body); color: var(--text-main); overflow-x: hidden; }
-
-    /* OTIMIZAÇÕES DE IMAGEM - ANTI PIXELAÇÃO */
-    img {
-      /* Força renderização nítida */
-      image-rendering: -webkit-optimize-contrast;
-      image-rendering: crisp-edges;
-      /* Evita que o navegador interpole pixels */
-      -webkit-transform: translateZ(0);
-      transform: translateZ(0);
-      /* Suavização */
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
+    body { background: var(--darker); color: var(--text-main); overflow-x: hidden; }
+    
+    /* PLAYER EM TELA CHEIA - PROTEGIDO */
+    .video-player-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.95);
+      z-index: 10000;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
     }
-
+    
+    .video-player-overlay.active { display: flex; }
+    
+    .player-container {
+      width: 100%;
+      max-width: 1000px;
+      position: relative;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    }
+    
+    video {
+      width: 100%;
+      height: auto;
+      max-height: 80vh;
+      display: block;
+      /* Impede download em alguns navegadores */
+      controlsList: nodownload;
+    }
+    
+    /* Remove botão de download e picture-in-picture */
+    video::-webkit-media-controls-enclosure {
+      overflow: hidden;
+    }
+    video::-webkit-media-controls-panel {
+      width: calc(100% + 30px);
+    }
+    
+    .player-header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      padding: 20px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+    
+    .player-title { font-size: 18px; font-weight: 600; }
+    .player-close {
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: white;
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 20px;
+      backdrop-filter: blur(10px);
+    }
+    
+    .player-watermark {
+      position: absolute;
+      bottom: 60px;
+      right: 20px;
+      background: rgba(0,0,0,0.6);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.7);
+      pointer-events: none;
+      user-select: none;
+    }
+    
+    .loading-player {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+    
+    .spinner {
+      width: 50px; height: 50px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+    
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    /* RESTO DO CSS (mantenha o anterior) */
     .header {
       position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
       padding: 15px 4%;
       display: flex; justify-content: space-between; align-items: center;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, transparent 100%);
+      background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
     }
-
+    
     .logo { font-size: 22px; font-weight: 800; color: var(--primary); text-decoration: none; display: flex; align-items: center; gap: 8px; }
     
-    .header-actions { display: flex; gap: 12px; }
-    
-    .icon-btn {
-      background: rgba(128,128,128,0.2); border: none; color: var(--text-main);
-      width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      transition: all 0.3s; backdrop-filter: blur(10px);
-    }
-    .icon-btn:hover { background: var(--primary); }
-
-    /* HERO COM IMAGEM EM ALTA QUALIDADE */
     .hero {
-      position: relative; min-height: 85vh; display: flex; align-items: center;
-      padding: 100px 4% 60px; background: var(--darker);
+      position: relative; height: 85vh; min-height: 600px;
+      display: flex; align-items: center;
+      padding: 80px 4% 60px; background: var(--darker);
     }
     
-    .hero-content { width: 40%; max-width: 600px; z-index: 10; position: relative; }
-    
-    /* Container da imagem com tamanho máximo definido para não esticar */
+    .hero-content { width: 45%; max-width: 600px; z-index: 10; position: relative; }
     .hero-image-container {
       position: absolute; right: 5%; top: 50%; transform: translateY(-50%);
-      width: 50%; max-width: 600px; height: 70vh;
+      width: 50%; max-width: 600px; height: 80vh;
       display: flex; align-items: center; justify-content: center;
-      z-index: 1;
     }
-    
-    /* Imagem com tamanho natural preservado */
     .hero-poster {
-      max-width: 100%; max-height: 100%;
-      width: auto; height: auto;
-      object-fit: contain; /* Mantém proporção sem cortar */
-      border-radius: 12px;
-      box-shadow: 0 25px 50px rgba(0,0,0,0.8);
-      opacity: 0; transition: opacity 0.5s;
-      /* CRUCIAL: evita pixelização em upscaling */
-      image-rendering: -webkit-optimize-contrast;
-      image-rendering: crisp-edges;
+      max-width: 100%; max-height: 100%; border-radius: 12px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+      opacity: 0; transition: opacity 0.8s;
     }
-    
     .hero-poster.active { opacity: 1; }
-    .hero-poster.loaded { opacity: 1; }
-    
     .hero-gradient {
       position: absolute; left: 0; top: 0; bottom: 0; width: 60%; z-index: 5;
-      background: linear-gradient(to right, var(--darker) 20%, transparent 100%);
-      pointer-events: none;
+      background: linear-gradient(to right, var(--darker) 30%, transparent 100%);
     }
-
-    .hero h1 { font-size: 48px; font-weight: 800; margin-bottom: 15px; line-height: 1.1; }
-    .hero-desc { font-size: 18px; color: var(--text-dim); margin-bottom: 25px; line-height: 1.5; }
-
-    /* GRID COM QUALIDADE OTIMIZADA */
+    
+    .hero h1 { font-size: 48px; font-weight: 800; margin-bottom: 15px; }
+    .hero-desc { font-size: 18px; color: var(--text-dim); margin-bottom: 25px; }
+    
+    .btn {
+      padding: 14px 28px; border-radius: 6px; border: none; font-weight: 700;
+      cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: 0.2s;
+    }
+    .btn-primary { background: white; color: var(--dark); }
+    .btn-play { background: var(--primary); color: white; margin-left: 10px; }
+    .btn-play:hover { background: #b20710; }
+    
     .section { padding: 20px 4%; }
-    
-    .grid { 
-      display: grid; 
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); 
-      gap: 20px; 
-    }
-    
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
     .card {
       background: var(--card-bg); border-radius: 8px; overflow: hidden;
-      cursor: pointer; transition: transform 0.3s; position: relative;
-      aspect-ratio: 2/3; /* Proporção de poster de filme */
-      /* Container não estica imagem */
-      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: 0.3s; position: relative; aspect-ratio: 2/3;
+    }
+    .card:hover { transform: scale(1.05); }
+    .card img { width: 100%; height: 100%; object-fit: cover; }
+    .card-info {
+      position: absolute; bottom: 0; width: 100%; padding: 15px;
+      background: linear-gradient(to top, black, transparent);
+    }
+    .price-tag {
+      position: absolute; top: 10px; right: 10px;
+      background: var(--primary); padding: 4px 10px; border-radius: 4px;
+      font-size: 12px; font-weight: 700;
     }
     
-    .card:hover { transform: scale(1.05); z-index: 10; }
-    
-    /* IMAGENS DO CATÁLOGO - QUALIDADE MÁXIMA */
-    .card img { 
-      width: 100%; height: 100%; 
-      object-fit: cover; /* Cobre o espaço mantendo proporção */
-      /* QUALIDADE: */
-      image-rendering: -webkit-optimize-contrast;
-      image-rendering: crisp-edges;
-      -webkit-transform: translateZ(0);
-      transform: translateZ(0);
-    }
-    
-    /* Previne que imagens pequenas fiquem esticadas */
-    .card img[src=""], .card img:not([src]) {
-      opacity: 0;
-    }
-
-    .price-tag { 
-      position: absolute; top: 10px; right: 10px; 
-      background: var(--primary); padding: 4px 10px; 
-      border-radius: 4px; font-size: 12px; font-weight: 700;
-      z-index: 2;
-    }
-
-    /* CARRINHO */
-    .cart-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1999; display: none; }
-    .cart-overlay.active { display: block; }
-    
-    .cart-drawer {
-      position: fixed; top: 0; right: -100%; width: 100%; max-width: 400px; height: 100%;
-      background: var(--card-bg); z-index: 2000; transition: 0.3s;
-      display: flex; flex-direction: column;
-    }
-    .cart-drawer.active { right: 0; }
-    
-    .cart-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; }
-    .cart-body { flex: 1; overflow-y: auto; padding: 20px; }
-    .cart-footer { padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
-    
-    .cart-item { display: flex; gap: 15px; margin-bottom: 15px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; }
-    .cart-item img { width: 60px; height: 90px; object-fit: cover; border-radius: 4px; }
-    .cart-total { display: flex; justify-content: space-between; font-size: 20px; font-weight: 700; margin-bottom: 15px; }
-
-    .btn {
-      padding: 12px 24px; border-radius: 6px; border: none; font-weight: 700;
-      cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
-    }
-    .btn-primary { background: var(--primary); color: white; width: 100%; justify-content: center; }
-    .btn-cart { background: #4CAF50; color: white; }
-
-    /* MODAL */
-    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 3000; display: none; align-items: center; justify-content: center; padding: 20px; }
-    .modal.active { display: flex; }
-    .modal-content { background: var(--card-bg); width: 100%; max-width: 500px; border-radius: 16px; overflow: hidden; }
-    .modal-img { width: 100%; height: 300px; object-fit: cover; }
-    .modal-body { padding: 25px; }
-
-    /* RESPONSIVO */
     @media (max-width: 968px) {
-      .hero { flex-direction: column; text-align: center; padding-top: 80px; }
+      .hero { flex-direction: column; height: auto; padding-top: 80px; text-align: center; }
       .hero-content { width: 100%; margin-bottom: 30px; }
-      .hero-image-container { position: relative; width: 80%; height: 400px; right: auto; transform: none; }
+      .hero-image-container { position: relative; width: 80%; height: 400px; transform: none; right: auto; }
       .hero-gradient { display: none; }
       .hero h1 { font-size: 32px; }
-      .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+      .player-container { border-radius: 0; }
     }
   </style>
 </head>
 <body>
 
+  <!-- HEADER -->
   <header class="header">
     <a href="#" class="logo"><i class="fas fa-play-circle"></i> SÉRIES HD</a>
-    <div class="header-actions">
-      <button class="icon-btn" onclick="toggleCart()">
-        <i class="fas fa-shopping-cart"></i>
-        <span id="cart-count" style="position: absolute; top: -5px; right: -5px; background: var(--primary); color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; display: flex; align-items: center; justify-content: center; display: none;">0</span>
-      </button>
-    </div>
   </header>
+
+  <!-- PLAYER PROTEGIDO (inicialmente oculto) -->
+  <div class="video-player-overlay" id="playerOverlay">
+    <div class="player-container">
+      <div class="player-header">
+        <div class="player-title" id="playerTitle">Carregando...</div>
+        <button class="player-close" onclick="closePlayer()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      
+      <div class="loading-player" id="playerLoading">
+        <div class="spinner"></div>
+        <div>Verificando acesso...</div>
+      </div>
+      
+      <video 
+        id="mainVideo" 
+        controls 
+        controlsList="nodownload" 
+        disablePictureInPicture
+        style="display: none;"
+      ></video>
+      
+      <div class="player-watermark" id="playerWatermark">
+        ID: <span id="watermarkId">---</span> | Conteúdo Protegido
+      </div>
+    </div>
+  </div>
 
   <!-- HERO -->
   <section class="hero">
     <div class="hero-gradient"></div>
     <div class="hero-content">
       <h1 id="hero-title">Carregando...</h1>
-      <p class="hero-desc" id="hero-desc">Aguarde enquanto preparamos o catálogo em alta definição.</p>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <button class="btn btn-primary" onclick="buyFeatured()">
-          <i class="fas fa-play"></i> COMPRAR AGORA
+      <p class="hero-desc" id="hero-desc">Aguarde...</p>
+      <div>
+        <button class="btn btn-primary" onclick="scrollToGrid()">
+          <i class="fas fa-list"></i> CATÁLOGO
         </button>
-        <button class="btn" style="background: rgba(255,255,255,0.2); color: white;" onclick="addToCartFeatured()">
-          <i class="fas fa-cart-plus"></i> ADICIONAR
+        <button class="btn btn-play" id="heroPlayBtn" onclick="playHero()" style="display: none;">
+          <i class="fas fa-play"></i> ASSISTIR
         </button>
       </div>
     </div>
     <div class="hero-image-container">
-      <!-- Imagem com data-src para lazy loading controlado -->
-      <img data-src="" id="hero-img" class="hero-poster" alt="Capa" loading="eager">
+      <img id="hero-img" class="hero-poster" alt="Poster">
     </div>
   </section>
 
   <!-- CATÁLOGO -->
-  <section class="section">
-    <h2 style="margin-bottom: 20px; font-size: 24px;">Catálogo em HD</h2>
-    <div class="grid" id="catalog-grid">
-      <!-- Grid preenchido via JS -->
-    </div>
+  <section class="section" id="grid-section">
+    <h2 style="margin-bottom: 20px;">Catálogo</h2>
+    <div class="grid" id="catalog-grid"></div>
   </section>
 
-  <!-- CARRINHO -->
-  <div class="cart-overlay" onclick="toggleCart()"></div>
-  <div class="cart-drawer" id="cart-drawer">
-    <div class="cart-header">
-      <h3>Seu Carrinho</h3>
-      <button class="icon-btn" onclick="toggleCart()"><i class="fas fa-times"></i></button>
-    </div>
-    <div class="cart-body" id="cart-items"></div>
-    <div class="cart-footer">
-      <div class="cart-total">
-        <span>Total:</span>
-        <span id="cart-total">R$ 0,00</span>
-      </div>
-      <button class="btn btn-primary" onclick="checkout()">
-        <i class="fas fa-check"></i> FINALIZAR COMPRA
-      </button>
-    </div>
-  </div>
-
-  <!-- MODAL -->
-  <div class="modal" id="modal" onclick="closeModal(event)">
-    <div class="modal-content" onclick="event.stopPropagation()">
-      <img id="modal-img" class="modal-img" src="" alt="">
-      <div class="modal-body">
-        <h2 id="modal-title" style="margin-bottom: 10px;"></h2>
-        <p id="modal-desc" style="color: var(--text-dim); margin-bottom: 20px;"></p>
-        <div style="display: flex; gap: 10px;">
-          <button class="btn btn-primary" onclick="buyModal()" style="flex: 1;">COMPRAR</button>
-          <button class="btn btn-cart" onclick="addModalToCart()" style="flex: 1;"><i class="fas fa-plus"></i> CARRINHO</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <script>
-    const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api/series';
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+    
+    const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
+    const userId = tg.initDataUnsafe?.user?.id || 'anonymous';
+    
     let allSeries = [];
-    let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
     let currentHero = 0;
-    let modalSeries = null;
+    let currentVideoUrl = null; // Para invalidar se necessário
 
-    // Carregar dados com tratamento de alta qualidade
+    // CARREGAR DADOS
     async function loadData() {
       try {
-        const res = await fetch(API_URL);
+        const res = await fetch(`${API_URL}/api/series`);
         allSeries = await res.json();
-        
-        // Renderiza grid
         renderGrid();
-        
-        // Inicia hero com a primeira série
-        if(allSeries.length > 0) {
-          updateHero(0);
-          // Troca automática a cada 8 segundos
-          setInterval(() => {
-            currentHero = (currentHero + 1) % allSeries.length;
-            updateHero(currentHero);
-          }, 8000);
-        }
-        
-        updateCartUI();
-      } catch(e) {
+        startHero();
+      } catch (e) {
         console.error('Erro:', e);
       }
     }
@@ -290,150 +275,132 @@
     function renderGrid() {
       const grid = document.getElementById('catalog-grid');
       grid.innerHTML = allSeries.map(s => `
-        <div class="card" onclick="openModal('${s.id}')">
-          <span class="price-tag">R$ ${s.price}</span>
-          <img 
-            src="${s.cover_url || 'https://via.placeholder.com/300x450/1a1a1a/666?text=Sem+Imagem'}" 
-            alt="${s.title}"
-            loading="lazy"
-            onerror="this.src='https://via.placeholder.com/300x450/1a1a1a/666?text=Erro'"
-          >
+        <div class="card" onclick="showDetails('${s.id}')">
+          <span class="price-tag">${s.price == 0 ? 'GRÁTIS' : 'R$ '+s.price}</span>
+          <img src="${s.cover_url}" alt="${s.title}" loading="lazy" onload="this.style.opacity=1" style="opacity:0; transition:0.3s;">
+          <div class="card-info">
+            <div style="font-weight: 700; font-size: 14px;">${s.title}</div>
+          </div>
         </div>
       `).join('');
     }
 
+    function startHero() {
+      if(!allSeries.length) return;
+      updateHero(0);
+      setInterval(() => {
+        currentHero = (currentHero + 1) % allSeries.length;
+        updateHero(currentHero);
+      }, 6000);
+    }
+
     function updateHero(index) {
       const s = allSeries[index];
-      document.getElementById('hero-title').textContent = s.title;
-      document.getElementById('hero-desc').textContent = s.description || 'Clique para adquirir esta série em alta definição.';
+      document.getElementById('hero-title').innerText = s.title;
+      document.getElementById('hero-desc').innerText = s.description || 'Clique para assistir';
+      document.getElementById('hero-img').src = s.cover_url;
+      document.getElementById('hero-img').classList.add('active');
       
-      const img = document.getElementById('hero-img');
-      img.classList.remove('active');
-      
-      // Pequeno delay para transição suave
-      setTimeout(() => {
-        img.src = s.cover_url;
-        img.onload = () => {
-          img.classList.add('active');
-        };
-      }, 200);
+      // Mostra botão de play se for gratuito ou se verificar compra (simplificado aqui)
+      document.getElementById('heroPlayBtn').style.display = 'inline-flex';
+      document.getElementById('heroPlayBtn').onclick = () => openPlayer(s.id, s.title);
     }
 
-    // Carrinho
-    function toggleCart() {
-      document.getElementById('cart-drawer').classList.toggle('active');
-      document.querySelector('.cart-overlay').classList.toggle('active');
-    }
-
-    function addToCart(id) {
-      const item = allSeries.find(s => s.id === id);
-      if(!cart.find(c => c.id === id)) {
-        cart.push(item);
-        localStorage.setItem('cart_series', JSON.stringify(cart));
-        updateCartUI();
-        alert('Adicionado ao carrinho!');
-      } else {
-        alert('Item já está no carrinho!');
+    // PLAYER PROTEGIDO
+    async function openPlayer(serieId, title) {
+      const overlay = document.getElementById('playerOverlay');
+      const loading = document.getElementById('playerLoading');
+      const video = document.getElementById('mainVideo');
+      const watermark = document.getElementById('watermarkId');
+      
+      overlay.classList.add('active');
+      loading.style.display = 'block';
+      video.style.display = 'none';
+      document.getElementById('playerTitle').innerText = title || 'Carregando...';
+      watermark.innerText = userId;
+      
+      try {
+        // Busca URL assinada do backend (válida por 30 min)
+        const res = await fetch(`${API_URL}/api/stream/${serieId}?user_id=${userId}`);
+        const data = await res.json();
+        
+        if (data.error) {
+          alert(data.error);
+          closePlayer();
+          return;
+        }
+        
+        if (data.type === 'telegram') {
+          // Fallback: se não tem no bucket, avisa para abrir no bot
+          alert('Este vídeo está disponível apenas no Telegram. Redirecionando...');
+          tg.sendData(JSON.stringify({ action: 'request_video', series_id: serieId }));
+          closePlayer();
+          return;
+        }
+        
+        // Configura o player
+        video.src = data.url;
+        video.load();
+        
+        loading.style.display = 'none';
+        video.style.display = 'block';
+        
+        // Tenta autoplay
+        video.play().catch(e => console.log('Autoplay bloqueado:', e));
+        
+        // Invalida URL após 30 min (recarrega a página se necessário)
+        setTimeout(() => {
+          if(overlay.classList.contains('active')) {
+            alert('Sessão expirada. Recarregue para continuar assistindo.');
+            closePlayer();
+          }
+        }, 1800000); // 30 min
+        
+      } catch (e) {
+        console.error('Erro ao carregar vídeo:', e);
+        alert('Erro ao carregar vídeo. Tente novamente.');
+        closePlayer();
       }
     }
 
-    function removeFromCart(id) {
-      cart = cart.filter(c => c.id !== id);
-      localStorage.setItem('cart_series', JSON.stringify(cart));
-      updateCartUI();
+    function playHero() {
+      const s = allSeries[currentHero];
+      openPlayer(s.id, s.title);
     }
 
-    function updateCartUI() {
-      const container = document.getElementById('cart-items');
-      const countBadge = document.getElementById('cart-count');
-      const totalEl = document.getElementById('cart-total');
+    function closePlayer() {
+      const overlay = document.getElementById('playerOverlay');
+      const video = document.getElementById('mainVideo');
       
-      countBadge.textContent = cart.length;
-      countBadge.style.display = cart.length > 0 ? 'flex' : 'none';
-      
-      let total = 0;
-      
-      if(cart.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:gray; padding:40px;">Carrinho vazio</p>';
-      } else {
-        container.innerHTML = cart.map(item => {
-          total += parseFloat(item.price);
-          return `
-            <div class="cart-item">
-              <img src="${item.cover_url}" alt="${item.title}">
-              <div style="flex:1">
-                <div style="font-weight:600; margin-bottom:5px;">${item.title}</div>
-                <div style="color: #4CAF50; font-weight:700;">R$ ${item.price}</div>
-              </div>
-              <button onclick="removeFromCart('${item.id}')" style="background:none; border:none; color:#ff4444; cursor:pointer;">
-                <i class="fas fa-trash"></i>
-              </button>
-            </div>
-          `;
-        }).join('');
-      }
-      
-      totalEl.textContent = `R$ ${total.toFixed(2)}`;
+      video.pause();
+      video.src = ''; // Limpa a URL assinada
+      overlay.classList.remove('active');
     }
 
-    function addToCartFeatured() {
-      if(allSeries[currentHero]) addToCart(allSeries[currentHero].id);
+    function scrollToGrid() {
+      document.getElementById('grid-section').scrollIntoView({ behavior: 'smooth' });
     }
 
-    // Modal
-    function openModal(id) {
-      modalSeries = allSeries.find(s => s.id === id);
-      document.getElementById('modal-img').src = modalSeries.cover_url;
-      document.getElementById('modal-title').textContent = modalSeries.title;
-      document.getElementById('modal-desc').textContent = modalSeries.description || 'Sem descrição disponível.';
-      document.getElementById('modal').classList.add('active');
-    }
-
-    function closeModal(e) {
-      if(e.target.id === 'modal') document.getElementById('modal').classList.remove('active');
-    }
-
-    function buyModal() {
-      if(modalSeries) {
-        window.Telegram.WebApp.sendData(JSON.stringify({
-          action: 'buy',
-          series_id: modalSeries.id,
-          title: modalSeries.title,
-          price: modalSeries.price
-        }));
+    function showDetails(id) {
+      // Abre modal ou redireciona para compra
+      const s = allSeries.find(x => x.id === id);
+      if(confirm(`${s.title}\n\n${s.description || 'Sem descrição'}\n\nPreço: R$ ${s.price}\n\nDeseja adquirir?`)) {
+        tg.sendData(JSON.stringify({ action: 'buy', series_id: id, title: s.title, price: s.price }));
+        tg.close();
       }
     }
 
-    function addModalToCart() {
-      if(modalSeries) {
-        addToCart(modalSeries.id);
-        document.getElementById('modal').classList.remove('active');
-      }
-    }
+    // Fecha player com ESC
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Escape') closePlayer();
+    });
 
-    function buyFeatured() {
-      if(allSeries[currentHero]) {
-        window.Telegram.WebApp.sendData(JSON.stringify({
-          action: 'buy',
-          series_id: allSeries[currentHero].id,
-          title: allSeries[currentHero].title,
-          price: allSeries[currentHero].price
-        }));
-      }
-    }
+    // Previne menu de contexto (clique direito) no vídeo
+    document.getElementById('mainVideo').addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      return false;
+    });
 
-    function checkout() {
-      if(cart.length === 0) return;
-      
-      window.Telegram.WebApp.sendData(JSON.stringify({
-        action: 'checkout_cart',
-        items: cart,
-        total: cart.reduce((sum, item) => sum + parseFloat(item.price), 0)
-      }));
-    }
-
-    // Inicializar
-    window.Telegram.WebApp.expand();
     loadData();
   </script>
 </body>
