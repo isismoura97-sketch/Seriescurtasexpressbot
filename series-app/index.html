@@ -446,7 +446,7 @@
         const priceClass = isFree ? 'free' : '';
         
         // Usar imagem placeholder baseada na categoria ou índice
-        const imgUrl = getPlaceholderImage(s.category) + '&random=' + index;
+        const imgUrl = s.cover_url || getPlaceholderImage(s.category) + '&random=' + index;
         
         return `
           <div class="movie-card" onclick="buy('${s.id}', '${s.title.replace(/'/g, "\\'")}', ${s.price})">
