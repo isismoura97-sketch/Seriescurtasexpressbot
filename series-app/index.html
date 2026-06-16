@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Séries Curtas Express</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -36,225 +36,779 @@
       --skeleton: #e0e0e0;
     }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-    body { background: var(----bg-body); color: var(----text-main); overflow-x: hidden; }
+    * { 
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box; 
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; 
+    }
+    
+    /* CORREÇÃO PRINCIPAL: Viewport Telegram */
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: var(--bg-body); 
+      color: var(--text-main); 
+      overflow-x: hidden; 
+      -webkit-tap-highlight-color: transparent;
+    }
 
     /* PLAYER PROTEGIDO */
     .video-player-overlay {
-      position: fixed; inset: 0; background: #000; z-index: 10000;
-      display: none; justify-content: center; align-items: center;
+      position: fixed; 
+      inset: 0; 
+      background: #000; 
+      z-index: 10000;
+      display: none; 
+      justify-content: center; 
+      align-items: center;
     }
     .video-player-overlay.active { display: flex; }
 
     .player-container {
-      width: 100%; height: 100%; max-width: 100%; max-height: 100%;
-      position: relative; background: #000; display: flex; flex-direction: column;
+      width: 100%; 
+      height: 100%; 
+      max-height: 100vh;
+      position: relative; 
+      background: #000; 
+      display: flex; 
+      flex-direction: column;
     }
 
     video {
-      width: 100%; flex: 1; background: #000;
+      width: 100%; 
+      height: auto; 
+      max-height: calc(100vh - 60px);
+      min-height: 200px;
+      background: #000;
+      object-fit: contain;
       controlsList: nodownload noremoteplayback;
     }
     
-    /* Fix crucial para Telegram/iOS */
-    video::-webkit-media-controls-enclosure { overflow: hidden; }
-    video::-webkit-media-controls-panel { width: calc(100% + 30px); }
+    video::-webkit-media-controls { opacity: 1 !important; }
+    video::-webkit-media-controls-enclosure { background-color: rgba(0,0,0,0.8) !important; }
 
     .player-header {
-      position: absolute; top: 0; left: 0; right: 0; z-index: 10;
-      padding: 20px; background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
-      display: flex; justify-content: space-between; align-items: center;
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      right: 0; 
+      z-index: 10;
+      padding: 16px 20px; 
+      background: linear-gradient(to bottom, rgba(0,0,0,0.95), transparent);
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center;
     }
-    .player-title { font-size: 16px; font-weight: 600; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .player-title { 
+      font-size: 15px; 
+      font-weight: 600; 
+      max-width: 75%; 
+      overflow: hidden; 
+      text-overflow: ellipsis; 
+      white-space: nowrap; 
+    }
     .player-close {
-      background: rgba(255,255,255,0.1); border: none; color: white;
-      width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
-      font-size: 20px; backdrop-filter: blur(10px); transition: 0.3s;
+      background: rgba(255,255,255,0.15); 
+      border: none; 
+      color: white;
+      width: 36px; 
+      height: 36px; 
+      border-radius: 50%; 
+      cursor: pointer;
+      font-size: 18px; 
+      backdrop-filter: blur(10px); 
+      transition: 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .player-close:hover { background: var(----primary); }
+    .player-close:hover, .player-close:active { background: var(--primary); }
 
     .player-watermark {
-      position: absolute; bottom: 80px; right: 20px; z-index: 5;
-      background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 4px;
-      font-size: 12px; color: rgba(255,255,255,0.7); pointer-events: none;
-      font-family: monospace; letter-spacing: 1px;
+      position: absolute; 
+      bottom: 70px; 
+      right: 12px; 
+      z-index: 5;
+      background: rgba(0,0,0,0.7); 
+      padding: 6px 10px; 
+      border-radius: 4px;
+      font-size: 11px; 
+      color: rgba(255,255,255,0.8); 
+      pointer-events: none;
+      font-family: monospace; 
+      letter-spacing: 0.5px;
     }
 
     .loading-player {
-      position: absolute; inset: 0; display: flex; flex-direction: column;
-      justify-content: center; align-items: center; background: #000; z-index: 20;
+      position: absolute; 
+      inset: 0; 
+      display: flex; 
+      flex-direction: column;
+      justify-content: center; 
+      align-items: center; 
+      background: #000; 
+      z-index: 20;
+      gap: 16px;
     }
     .spinner {
-      width: 50px; height: 50px; border: 3px solid rgba(255,255,255,0.1);
-      border-top-color: var(----primary); border-radius: 50%;
-      animation: spin 1s linear infinite; margin-bottom: 15px;
+      width: 40px; 
+      height: 40px; 
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: var(--primary); 
+      border-radius: 50%;
+      animation: spin 1s linear infinite; 
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* CARRINHO */
     .cart-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.8);
-      z-index: 9998; opacity: 0; visibility: hidden; transition: 0.3s;
+      position: fixed; 
+      inset: 0; 
+      background: rgba(0,0,0,0.85);
+      z-index: 9998; 
+      opacity: 0; 
+      visibility: hidden; 
+      transition: 0.3s;
+      backdrop-filter: blur(4px);
     }
     .cart-overlay.active { opacity: 1; visibility: visible; }
     
     .cart-drawer {
-      position: fixed; top: 0; right: -420px; width: 100%; max-width: 400px;
-      height: 100%; background: var(----card-bg); z-index: 9999; transition: 0.4s ease;
-      display: flex; flex-direction: column; box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+      position: fixed; 
+      top: 0; 
+      right: -100%; 
+      width: 90%; 
+      max-width: 380px;
+      height: 100%; 
+      background: var(--card-bg); 
+      z-index: 9999; 
+      transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex; 
+      flex-direction: column; 
+      box-shadow: -10px 0 40px rgba(0,0,0,0.6);
     }
     .cart-drawer.active { right: 0; }
 
-    .cart-header { padding: 25px; border-bottom: 1px solid rgba(128,128,128,0.2); display: flex; justify-content: space-between; align-items: center; }
-    .cart-header h3 { display: flex; align-items: center; gap: 10px; }
-    .cart-body { flex: 1; overflow-y: auto; padding: 20px; }
-    .cart-item { display: flex; gap: 15px; margin-bottom: 15px; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; position: relative; }
-    .cart-item img { width: 60px; height: 90px; object-fit: cover; border-radius: 6px; }
-    .cart-item-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
-    .cart-item-title { font-weight: 600; margin-bottom: 5px; font-size: 14px; }
-    .cart-item-price { color: var(----success); font-weight: 700; }
-    .cart-item-remove { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #ff4444; cursor: pointer; width: 30px; height: 30px; border-radius: 50%; transition: 0.3s; }
-    .cart-item-remove:hover { background: rgba(255,68,68,0.1); }
+    .cart-header { 
+      padding: 20px; 
+      border-bottom: 1px solid rgba(128,128,128,0.25); 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      background: var(--darker);
+    }
+    .cart-header h3 { display: flex; align-items: center; gap: 10px; font-size: 17px; }
+    .cart-body { flex: 1; overflow-y: auto; padding: 16px; -webkit-overflow-scrolling: touch; }
+    
+    .cart-item { 
+      display: flex; 
+      gap: 12px; 
+      margin-bottom: 12px; 
+      background: rgba(0,0,0,0.3); 
+      padding: 12px; 
+      border-radius: 10px; 
+      position: relative; 
+    }
+    .cart-item img { 
+      width: 50px; 
+      height: 75px; 
+      object-fit: cover; 
+      border-radius: 6px; 
+      background: var(--skeleton);
+    }
+    .cart-item-info { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+    .cart-item-title { font-weight: 600; font-size: 13px; line-height: 1.3; }
+    .cart-item-price { color: var(--success); font-weight: 700; font-size: 13px; }
+    .cart-item-remove { 
+      position: absolute; 
+      top: 8px; 
+      right: 8px; 
+      background: none; 
+      border: none; 
+      color: #ff4444; 
+      cursor: pointer; 
+      width: 28px; 
+      height: 28px; 
+      border-radius: 50%; 
+      transition: 0.2s; 
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cart-item-remove:hover, .cart-item-remove:active { background: rgba(255,68,68,0.15); }
 
-    .cart-footer { padding: 25px; border-top: 1px solid rgba(128,128,128,0.2); background: var(----darker); }
-    .cart-total { display: flex; justify-content: space-between; font-size: 18px; margin-bottom: 20px; font-weight: 700; }
-    .cart-total span:last-child { color: var(----success); font-size: 24px; }
+    .cart-footer { 
+      padding: 20px; 
+      border-top: 1px solid rgba(128,128,128,0.25); 
+      background: var(--darker); 
+    }
+    .cart-total { 
+      display: flex; 
+      justify-content: space-between; 
+      font-size: 18px; 
+      margin-bottom: 16px; 
+      font-weight: 800; 
+    }
+    .cart-total span:last-child { color: var(--success); font-size: 22px; }
 
     /* HEADER */
     .header {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-      padding: 15px 4%; display: flex; justify-content: space-between; align-items: center;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
-      transition: 0.3s;
+      position: fixed; 
+      top: 0; 
+      left: 0; 
+      right: 0; 
+      z-index: 1000;
+      padding: 12px 16px; 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.95), transparent);
+      transition: all 0.3s ease;
     }
-    .header.scrolled { background: var(----darker); box-shadow: 0 2px 20px rgba(0,0,0,0.5); }
-    .logo { font-size: 22px; font-weight: 800; color: var(----primary); text-decoration: none; display: flex; align-items: center; gap: 8px; }
-    .header-actions { display: flex; gap: 12px; }
+    .header.scrolled { 
+      background: var(--darker); 
+      box-shadow: 0 2px 20px rgba(0,0,0,0.8);
+      backdrop-filter: blur(10px);
+    }
+    .logo { 
+      font-size: 19px; 
+      font-weight: 800; 
+      color: var(--primary); 
+      text-decoration: none; 
+      display: flex; 
+      align-items: center; 
+      gap: 8px; 
+      letter-spacing: -0.5px;
+    }
+    .header-actions { display: flex; gap: 10px; }
 
     .icon-btn {
-      background: rgba(128,128,128,0.2); border: none; color: var(----text-main);
-      width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; position: relative;
-      transition: 0.3s; font-size: 18px;
+      background: rgba(255,255,255,0.1); 
+      border: none; 
+      color: var(--text-main);
+      width: 40px; 
+      height: 40px; 
+      border-radius: 50%; 
+      cursor: pointer;
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      position: relative;
+      transition: all 0.2s ease; 
+      font-size: 16px;
+      -webkit-tap-highlight-color: transparent;
     }
-    .icon-btn:hover { background: var(----primary); color: white; transform: scale(1.1); }
+    .icon-btn:hover { background: var(--primary); transform: scale(1.05); }
+    .icon-btn:active { transform: scale(0.95); }
     .badge {
-      position: absolute; top: -5px; right: -5px; background: var(----primary);
-      color: white; font-size: 11px; font-weight: 700; width: 22px; height: 22px;
-      border-radius: 50%; display: flex; align-items: center; justify-content: center;
-      border: 2px solid var(----darker); animation: bounce 0.3s;
+      position: absolute; 
+      top: -4px; 
+      right: -4px; 
+      background: var(--primary);
+      color: white; 
+      font-size: 10px; 
+      font-weight: 700; 
+      width: 20px; 
+      height: 20px;
+      border-radius: 50%; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center;
+      border: 2px solid var(--darker); 
+      font-family: 'Inter', sans-serif;
     }
-    @keyframes bounce { 50% { transform: scale(1.2); } }
 
-    /* HERO */
-    .hero { position: relative; min-height: 85vh; display: flex; align-items: center; padding: 100px 0 60px 4%; overflow: hidden; }
-    .hero-content { width: 45%; max-width: 600px; z-index: 10; position: relative; padding-right: 40px; }
-    .hero-image-container {
-      position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-      width: 55%; height: 80%; display: flex; align-items: center; justify-content: center;
-      padding: 20px;
+    /* HERO - CORREÇÃO DE LAYOUT */
+    .hero { 
+      position: relative; 
+      min-height: 85vh;
+      min-height: 85svh;
+      display: flex; 
+      align-items: center; 
+      padding: 90px 20px 40px; 
+      overflow: hidden;
+      gap: 30px;
     }
+    
+    .hero-content { 
+      width: 55%; 
+      max-width: 550px; 
+      z-index: 10; 
+      position: relative; 
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    
+    .hero-image-container {
+      position: absolute; 
+      right: -20px; 
+      top: 50%; 
+      transform: translateY(-50%);
+      width: 50%; 
+      max-width: 400px;
+      aspect-ratio: 2/3;
+      display: flex; 
+      align-items: center; 
+      justify-content: center;
+      pointer-events: none;
+    }
+    
     .hero-poster {
-      max-width: 100%; max-height: 100%; border-radius: 12px;
-      box-shadow: 0 25px 60px rgba(0,0,0,0.9); opacity: 0;
-      transition: opacity 0.8s ease; object-fit: contain;
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.05);
+      opacity: 0;
+      transition: opacity 0.8s ease; 
+      object-fit: cover;
     }
     .hero-poster.active { opacity: 1; }
+    
     .hero-gradient {
-      position: absolute; left: 0; top: 0; bottom: 0; width: 65%; z-index: 5;
-      background: linear-gradient(to right, var(----darker) 0%, rgba(15,15,15,0.95) 50%, transparent 100%);
+      position: absolute; 
+      left: 0; 
+      top: 0; 
+      bottom: 0; 
+      width: 70%; 
+      z-index: 5;
+      background: linear-gradient(to right, var(--darker) 0%, var(--darker) 40%, rgba(15,15,15,0.9) 70%, transparent 100%);
+      pointer-events: none;
     }
-    .hero-badge { display: inline-flex; align-items: center; gap: 6px; background: var(----primary); color: white; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 20px; }
-    .hero h1 { font-size: 48px; font-weight: 800; margin-bottom: 20px; line-height: 1.1; }
-    .hero-desc { font-size: 18px; color: var(----text-dim); margin-bottom: 30px; line-height: 1.6; }
+    
+    .hero-badge { 
+      display: inline-flex; 
+      align-items: center; 
+      gap: 6px; 
+      background: var(--primary); 
+      color: white; 
+      padding: 6px 12px; 
+      border-radius: 6px; 
+      font-size: 11px; 
+      font-weight: 700; 
+      text-transform: uppercase; 
+      letter-spacing: 0.5px;
+      width: fit-content;
+    }
+    
+    .hero h1 { 
+      font-size: clamp(28px, 5vw, 44px); 
+      font-weight: 900; 
+      line-height: 1.1; 
+      letter-spacing: -0.02em;
+      text-wrap: balance;
+    }
+    
+    .hero-desc { 
+      font-size: 15px; 
+      color: var(--text-dim); 
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
 
-    .btn { padding: 14px 28px; border-radius: 6px; border: none; font-size: 16px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; transition: all 0.3s; text-transform: uppercase; letter-spacing: 0.5px; }
-    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
-    .btn-primary { background: white; color: var(----dark); }
-    .btn-play { background: var(----primary); color: white; margin-left: 10px; }
-    .btn-free { background: var(----gold); color: #000; }
-    .btn-cart { background: var(----success); color: white; width: 100%; justify-content: center; }
-    .btn-outline { background: transparent; border: 2px solid var(----text-main); color: var(----text-main); }
+    .btn-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    .btn { 
+      padding: 14px 24px; 
+      border-radius: 8px; 
+      border: none; 
+      font-size: 14px; 
+      font-weight: 700; 
+      cursor: pointer; 
+      display: inline-flex; 
+      align-items: center; 
+      gap: 8px; 
+      transition: all 0.2s ease; 
+      text-transform: uppercase; 
+      letter-spacing: 0.5px;
+      -webkit-tap-highlight-color: transparent;
+      white-space: nowrap;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.4); }
+    .btn:active { transform: translateY(0); }
+    
+    .btn-primary { background: white; color: var(--dark); }
+    .btn-play { background: var(--primary); color: white; }
+    .btn-free { background: var(--gold); color: #000; }
+    .btn-cart { background: var(--success); color: white; width: 100%; justify-content: center; padding: 16px; font-size: 15px;}
+    .btn-outline { background: transparent; border: 2px solid rgba(255,255,255,0.3); color: var(--text-main); }
 
     /* MODAL */
     .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 9997;
-      display: none; justify-content: center; align-items: center; padding: 20px;
-      opacity: 0; transition: opacity 0.3s;
+      position: fixed; 
+      inset: 0; 
+      background: rgba(0,0,0,0.92); 
+      z-index: 9997;
+      display: none; 
+      justify-content: center; 
+      align-items: flex-end;
+      padding: 0;
+      opacity: 0; 
+      transition: opacity 0.3s;
     }
-    .modal-overlay.active { display: flex; opacity: 1; }
+    .modal-overlay.active { 
+      display: flex; 
+      opacity: 1; 
+      align-items: center;
+    }
+    
     .modal-content {
-      background: var(----card-bg); border-radius: 16px; max-width: 500px; width: 100%;
-      max-height: 90vh; overflow: hidden; position: relative; transform: scale(0.95);
-      transition: transform 0.3s; box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+      background: var(--card-bg); 
+      border-radius: 24px 24px 0 0;
+      max-width: 480px; 
+      width: 100%;
+      max-height: 90vh; 
+      overflow-y: auto;
+      position: relative; 
+      transform: translateY(30%);
+      transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+      box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
     }
-    .modal-overlay.active .modal-content { transform: scale(1); }
-    .modal-close { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.5); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; z-index: 10; transition: 0.3s; }
-    .modal-close:hover { background: var(----primary); }
-    .modal-hero { position: relative; height: 250px; overflow: hidden; }
-    .modal-hero img { width: 100%; height: 100%; object-fit: cover; }
-    .modal-body { padding: 30px; }
-    .modal-title { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
-    .modal-price { font-size: 24px; color: var(----success); font-weight: 700; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
-    .modal-price.free { color: var(----gold); }
-    .modal-desc { color: var(----text-dim); margin-bottom: 25px; line-height: 1.6; }
-    .modal-actions { display: flex; gap: 12px; flex-direction: column; }
-    .free-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,215,0,0.2); padding: 4px 12px; border-radius: 20px; font-size: 14px; }
-
-    /* TOAST */
-    .toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10001; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
-    .toast {
-      background: rgba(30,30,30,0.95); color: white; padding: 16px 24px;
-      border-radius: 12px; display: flex; align-items: center; gap: 12px; font-weight: 500;
-      transform: translateX(-50%) translateY(100%); opacity: 0; transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-      backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
-      min-width: 300px; pointer-events: all;
+    .modal-overlay.active .modal-content { transform: translateY(0); }
+    
+    @media (max-width: 600px) {
+      .modal-content { border-radius: 16px; margin: 16px; max-height: 85vh; }
     }
-    body.light-mode .toast { background: rgba(255,255,255,0.95); color: #141414; border: 1px solid rgba(0,0,0,0.1); }
-    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
-    .toast-icon { font-size: 20px; }
-    .toast-success .toast-icon { color: var(----success); }
-    .toast-error .toast-icon { color: #ff4444; }
+    
+    .modal-close { 
+      position: absolute; 
+      top: 12px; 
+      right: 12px; 
+      background: rgba(0,0,0,0.6); 
+      border: none; 
+      color: white; 
+      width: 36px; 
+      height: 36px; 
+      border-radius: 50%; 
+      cursor: pointer; 
+      font-size: 18px; 
+      z-index: 10; 
+      transition: 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-close:hover { background: var(--primary); }
+    
+    .modal-hero { 
+      position: relative; 
+      height: 220px; 
+      overflow: hidden;
+      background: var(--skeleton);
+    }
+    .modal-hero img { 
+      width: 100%; 
+      height: 100%; 
+      object-fit: cover; 
+    }
+    
+    .modal-body { 
+      padding: 24px; 
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    
+    .modal-title { 
+      font-size: 22px; 
+      font-weight: 800; 
+      line-height: 1.2;
+    }
+    
+    .modal-price { 
+      font-size: 22px; 
+      color: var(--success); 
+      font-weight: 800;
+      display: flex; 
+      align-items: center; 
+      gap: 10px; 
+    }
+    .modal-price.free { color: var(--gold); }
+    .free-badge { 
+      display: inline-flex; 
+      align-items: center; 
+      gap: 6px; 
+      background: rgba(255,215,0,0.15); 
+      padding: 6px 12px; 
+      border-radius: 20px; 
+      font-size: 13px; 
+      font-weight: 700;
+      color: var(--gold);
+    }
+    
+    .modal-desc { 
+      color: var(--text-dim); 
+      line-height: 1.6; 
+      font-size: 14px;
+    }
+    
+    .modal-actions { 
+      display: flex; 
+      gap: 12px; 
+      flex-direction: column;
+      margin-top: 8px;
+    }
 
-    /* CATÁLOGO */
-    .section { padding: 40px 4%; }
-    .search-box { position: relative; max-width: 600px; margin: 0 auto 30px; }
-    .search-box input { width: 100%; padding: 16px 24px 16px 50px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 12px; color: var(----text-main); font-size: 16px; outline: none; }
-    .search-box input:focus { border-color: var(----primary); }
-    .search-box i { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(----gray); }
+    /* CATÁLOGO - GRID CORRIGIDO */
+    .section { 
+      padding: 24px 16px 80px;
+      position: relative;
+    }
+    
+    .search-box { 
+      position: relative; 
+      margin-bottom: 20px; 
+    }
+    .search-box input { 
+      width: 100%; 
+      padding: 14px 20px 14px 46px; 
+      background: rgba(128,128,128,0.15); 
+      border: 1px solid rgba(128,128,128,0.2); 
+      border-radius: 12px; 
+      color: var(--text-main); 
+      font-size: 15px; 
+      outline: none;
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+    }
+    .search-box input:focus { 
+      border-color: var(--primary);
+      background: rgba(128,128,128,0.1);
+    }
+    .search-box i { 
+      position: absolute; 
+      left: 16px; 
+      top: 50%; 
+      transform: translateY(-50%); 
+      color: var(--gray);
+      font-size: 14px;
+    }
 
-    .categories { display: flex; gap: 12px; margin-bottom: 30px; flex-wrap: wrap; justify-content: center; }
-    .category-chip { padding: 10px 20px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 25px; color: var(----text-main); font-size: 14px; cursor: pointer; transition: 0.3s; }
-    .category-chip:hover, .category-chip.active { background: var(----primary); color: white; border-color: var(----primary); }
+    .categories { 
+      display: flex; 
+      gap: 8px; 
+      margin-bottom: 24px; 
+      overflow-x: auto;
+      padding-bottom: 8px;
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .categories::-webkit-scrollbar { display: none; }
+    
+    .category-chip { 
+      padding: 8px 16px; 
+      background: rgba(128,128,128,0.15); 
+      border: 1px solid rgba(128,128,128,0.2); 
+      border-radius: 20px; 
+      color: var(--text-main); 
+      font-size: 13px; 
+      font-weight: 600;
+      cursor: pointer; 
+      transition: all 0.2s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .category-chip:hover { background: rgba(128,128,128,0.25); }
+    .category-chip.active { 
+      background: var(--primary); 
+      color: white; 
+      border-color: var(--primary); 
+    }
 
-    .section-title { font-size: 24px; font-weight: 700; margin-bottom: 25px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
+    .section-title { 
+      font-size: 20px; 
+      font-weight: 800; 
+      margin-bottom: 20px;
+      color: var(--text-main);
+    }
+    
+    /* GRID RESPONSIVO QUE NÃO QUEBRA */
+    .grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); 
+      gap: 12px;
+    }
+
+    @media (min-width: 600px) {
+      .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+    }
 
     .card {
-      background: var(----card-bg); border-radius: 10px; overflow: hidden;
-      cursor: pointer; transition: all 0.3s; position: relative; aspect-ratio: 2/3;
+      background: var(--card-bg); 
+      border-radius: 12px; 
+      overflow: hidden;
+      cursor: pointer; 
+      transition: all 0.25s ease; 
+      position: relative; 
+      aspect-ratio: 2/3;
+      border: 1px solid rgba(255,255,255,0.03);
     }
-    .card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 15px 35px rgba(0,0,0,0.6); }
-    .card img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.3s; }
+    .card:hover { 
+      transform: translateY(-4px) scale(1.02); 
+      z-index: 10; 
+      box-shadow: 0 12px 30px rgba(0,0,0,0.6);
+      border-color: rgba(255,255,255,0.08);
+    }
+    .card:active { transform: scale(0.98); }
+    
+    .card img { 
+      width: 100%; 
+      height: 100%; 
+      object-fit: cover; 
+      opacity: 0; 
+      transition: opacity 0.4s ease;
+      background: var(--skeleton);
+    }
     .card img.loaded { opacity: 1; }
-    .card-info { position: absolute; bottom: 0; left: 0; right: 0; padding: 50px 15px 15px; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); opacity: 0; transition: opacity 0.3s; }
+    
+    .card-info { 
+      position: absolute; 
+      bottom: 0; 
+      left: 0; 
+      right: 0; 
+      padding: 45px 12px 10px; 
+      background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 60%, transparent 100%); 
+      opacity: 0; 
+      transition: opacity 0.3s; 
+    }
     .card:hover .card-info { opacity: 1; }
-    .card-title { font-size: 14px; font-weight: 600; color: white; }
-    .price-tag { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); color: var(----success); padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; z-index: 5; }
-    .price-tag.free { color: #000; background: var(----gold); }
+    .card-title { 
+      font-size: 12px; 
+      font-weight: 700; 
+      color: white;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    
+    .price-tag { 
+      position: absolute; 
+      top: 8px; 
+      right: 8px; 
+      background: rgba(0,0,0,0.85); 
+      color: var(--success); 
+      padding: 4px 8px; 
+      border-radius: 6px; 
+      font-size: 11px; 
+      font-weight: 800; 
+      z-index: 5;
+      backdrop-filter: blur(4px);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .price-tag.free { 
+      color: #000; 
+      background: var(--gold);
+    }
 
-    /* SKELETON */
-    .skeleton { background: linear-gradient(90deg, var(----skeleton) 25%, var(----hover) 50%, var(----skeleton) 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; }
-    @keyframes skeleton-loading { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+    /* SKELETON LOADING */
+    .skeleton { 
+      background: linear-gradient(110deg, var(--skeleton) 8%, var(--hover) 18%, var(--skeleton) 33%);
+      background-size: 200% 100%;
+      animation: skeleton-loading 1.5s infinite; 
+    }
+    @keyframes skeleton-loading { 
+      to { background-position: -200% 0; } 
+    }
 
-    @media (max-width: 968px) {
-      .hero { flex-direction: column; min-height: auto; padding: 100px 4% 40px; text-align: center; }
-      .hero-content { width: 100%; padding-right: 0; margin-bottom: 30px; }
-      .hero-image-container { position: relative; width: 100%; height: 400px; transform: none; }
+    /* TOAST */
+    .toast-container { 
+      position: fixed; 
+      bottom: 24px; 
+      left: 50%; 
+      transform: translateX(-50%); 
+      z-index: 10001; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 10px; 
+      pointer-events: none; 
+      width: calc(100% - 32px);
+      max-width: 340px;
+    }
+    .toast {
+      background: rgba(30,30,30,0.96); 
+      color: white; 
+      padding: 14px 20px;
+      border-radius: 12px; 
+      display: flex; 
+      align-items: center; 
+      gap: 10px; 
+      font-size: 14px;
+      font-weight: 600;
+      transform: translateX(-50%) translateY(20px); 
+      opacity: 0; 
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      backdrop-filter: blur(10px); 
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      width: 100%;
+    }
+    body.light-mode .toast { background: rgba(255,255,255,0.96); color: #141414; border-color: rgba(0,0,0,0.08); }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .toast-icon { font-size: 18px; width: 20px; text-align: center; }
+    .toast-success .toast-icon { color: var(--success); }
+    .toast-error .toast-icon { color: #ff4444; }
+
+    /* RESPONSIVO PARA TABLET/MOBILE */
+    @media (max-width: 768px) {
+      .hero {
+        flex-direction: column-reverse;
+        min-height: auto;
+        padding: 90px 16px 32px;
+        text-align: center;
+        gap: 24px;
+      }
+      
+      .hero-content { 
+        width: 100%; 
+        max-width: 100%;
+        order: 2;
+        align-items: center;
+      }
+      
+      .hero-image-container {
+        position: relative;
+        width: 65%;
+        max-width: 280px;
+        transform: none;
+        order: 1;
+      }
+      
       .hero-gradient { display: none; }
-      .hero h1 { font-size: 32px; }
-      .btn-play { margin-left: 0; margin-top: 10px; }
-      .cart-drawer { max-width: 100%; }
+      
+      .hero h1 { font-size: 26px; }
+      .hero-desc { font-size: 14px; -webkit-line-clamp: 2; }
+      
+      .btn-group { 
+        width: 100%; 
+        justify-content: center;
+      }
+      
+      .btn-play { margin-left: 0; width: 100%; justify-content: center; }
+      
+      .cart-drawer { width: 100%; max-width: 100%; }
+      
+      .header { padding: 10px 12px; }
+      .logo span { font-size: 16px; }
+      
+      .icon-btn { width: 38px; height: 38px; }
+    }
+
+    @media (max-width: 380px) {
+      .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+      .hero-image-container { width: 75%; }
     }
   </style>
 </head>
@@ -275,15 +829,13 @@
         <div>Gerando acesso seguro...</div>
       </div>
 
-      <!-- ALTERAÇÃO: Adicionado playsinline e atributos webkit para mobile -->
+      <!-- Correção: playsinline é crucial para iOS/Telegram -->
       <video 
         id="mainVideo"
         controls 
         controlsList="nodownload noremoteplayback"
         playsinline 
         webkit-playsinline="true"
-        x5-video-player-type="h5"
-        x5-video-player-fullscreen="true"
         preload="auto"
         style="display: none"
         disablePictureInPicture
@@ -291,7 +843,7 @@
       ></video>
 
       <div class="player-watermark" id="playerWatermark">
-        ID: <span id="watermarkId">---</span> | Acesso Vitalício
+        ID: <span id="watermarkId">---</span> | Vitalício
       </div>
     </div>
   </div>
@@ -300,8 +852,8 @@
   <div class="cart-overlay" id="cartOverlay" onclick="toggleCart()"></div>
   <div class="cart-drawer" id="cartDrawer">
     <div class="cart-header">
-      <h3><i class="fas fa-shopping-cart"></i> Seu Carrinho</h3>
-      <button class="icon-btn" onclick="toggleCart()" style="width: 36px; height: 36px;">
+      <h3><i class="fas fa-shopping-cart"></i> Carrinho</h3>
+      <button class="icon-btn" onclick="toggleCart()" style="width:34px;height:34px;">
         <i class="fas fa-times"></i>
       </button>
     </div>
@@ -324,17 +876,13 @@
         <i class="fas fa-times"></i>
       </button>
       <div class="modal-hero">
-        <img id="modalImg" src="" alt="">
+        <img id="modalImg" src="" alt="" onerror="this.style.display='none'">
       </div>
       <div class="modal-body">
         <h2 class="modal-title" id="modalTitle">Título</h2>
-        <div class="modal-price" id="modalPrice">
-          <span id="priceValue">R$ 0,00</span>
-        </div>
+        <div class="modal-price" id="modalPrice"><span id="priceValue">R$ 0,00</span></div>
         <p class="modal-desc" id="modalDesc">Descrição...</p>
-        <div class="modal-actions" id="modalActions">
-          <!-- Botões inseridos via JS -->
-        </div>
+        <div class="modal-actions" id="modalActions"></div>
       </div>
     </div>
   </div>
@@ -344,16 +892,17 @@
 
   <!-- HEADER -->
   <header class="header" id="header">
-    <a href="#" class="logo">
-      <i class="fas fa-play-circle"></i> SÉRIES EXPRESS
+    <a href="#" class="logo" onclick="return false;">
+      <i class="fas fa-play-circle"></i>
+      <span>SÉRIES EXPRESS</span>
     </a>
     <div class="header-actions">
-      <button class="icon-btn" onclick="toggleTheme()" title="Alternar tema">
+      <button class="icon-btn" onclick="toggleTheme()" title="Tema">
         <i class="fa-moon" id="themeIcon"></i>
       </button>
-      <button class="icon-btn" onclick="toggleCart()" title="Ver carrinho">
+      <button class="icon-btn" onclick="toggleCart()" title="Carrinho">
         <i class="fa-shopping-cart"></i>
-        <span class="badge" id="cartBadge" style="display: none;">0</span>
+        <span class="badge" id="cartBadge" style="display:none;">0</span>
       </button>
     </div>
   </header>
@@ -362,20 +911,20 @@
   <section class="hero">
     <div class="hero-gradient"></div>
     <div class="hero-content">
-      <span class="hero-badge"><i class="fa-fire"></i> Destaque da Semana</span>
+      <div class="hero-badge"><i class="fa-fire"></i> DESTAQUE DA SEMANA</div>
       <h1 id="heroTitle">Carregando...</h1>
       <p class="hero-desc" id="heroDesc">Preparando o catálogo...</p>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+      <div class="btn-group">
         <button class="btn btn-primary" onclick="scrollToCatalog()">
           <i class="fas fa-list"></i> Explorar
         </button>
-        <button class="btn btn-play" id="heroPlayBtn" onclick="playHero()" style="display: none;">
+        <button class="btn btn-play" id="heroPlayBtn" onclick="playHero()" style="display:none;">
           <i class="fas fa-play"></i> Assistir
         </button>
       </div>
     </div>
     <div class="hero-image-container">
-      <img id="heroImg" class="hero-poster" alt="Poster">
+      <img id="heroImg" class="hero-poster" alt="Poster" onerror="this.style.display='none'">
     </div>
   </section>
 
@@ -403,16 +952,18 @@
   </section>
 
   <script>
-    // CONFIGURAÇÃO
+    // CONFIGURAÇÃO TGRAM
     const tg = window.Telegram.WebApp;
     tg.expand();
+    tg.enableClosingConfirmation();
 
     const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
     const userId = tg.initDataUnsafe?.user?.id || 'anonymous';
 
     // ESTADO GLOBAL
     let allSeries = [];
-    let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
+    let cart = [];
+    try { cart = JSON.parse(localStorage.getItem('cart_series') || '[]'); } catch(e) { cart = []; }
     let currentHero = 0;
     let currentModalSeries = null;
     let heroInterval = null;
@@ -425,17 +976,15 @@
       
       window.addEventListener('scroll', () => {
         document.getElementById('header').classList.toggle('scrolled', window.scrollY > 50);
-      });
+      }, { passive: true });
 
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          closePlayer();
-          closeModal();
-        }
+        if (e.key === 'Escape') closePlayer();
+        if (e.key === 'Escape') closeModal();
       });
     }
 
-    // TEMA CLARO/ESCURO
+    // TEMA
     function applyTheme() {
       if (localStorage.getItem('theme_series') === 'light') {
         document.body.classList.add('light-mode');
@@ -450,203 +999,181 @@
       showToast(isLight ? 'Tema claro ativado' : 'Tema escuro ativado', 'success');
     }
 
-    // CARREGAR DADOS DA API
+    // CARREGAR DADOS
     async function loadSeries() {
       try {
         const res = await fetch(`${API_URL}/api/series`);
+        if (!res.ok) throw new Error('Erro HTTP');
         allSeries = await res.json();
+        
+        if (!Array.isArray(allSeries)) throw new Error('Dados inválidos');
+        
         renderGrid(allSeries);
         initHero();
       } catch (e) {
-        showToast('Erro ao carregar catálogo', 'error');
         console.error(e);
+        showToast('Erro ao carregar catálogo', 'error');
+        // Fallback mock para testes
+        allSeries = [
+          {id:1, title:'Série Teste 1', description:'Descrição teste', price:0, category:'romance', cover_url:'https://via.placeholder.com/300x450?text=Serie+1'},
+          {id:2, title:'Série Teste 2', description:'Descrição teste', price:5.9, category:'drama', cover_url:'https://via.placeholder.com/300x450?text=Serie+2'}
+        ];
+        renderGrid(allSeries);
+        initHero();
       }
     }
 
-    // HERO SLIDESHOW
+    // HERO
     function initHero() {
       if (!allSeries.length) return;
       updateHero(0);
-
       heroInterval = setInterval(() => {
         currentHero = (currentHero + 1) % allSeries.length;
         updateHero(currentHero);
-      }, 6000);
+      }, 5000);
     }
 
     function updateHero(index) {
       const serie = allSeries[index];
-      document.getElementById('heroTitle').textContent = serie.title;
+      if (!serie) return;
+
+      document.getElementById('heroTitle').textContent = serie.title || 'Sem título';
       document.getElementById('heroDesc').textContent = serie.description || 'Uma história emocionante...';
 
       const img = document.getElementById('heroImg');
       img.classList.remove('active');
+      img.onerror = function() { this.style.display = 'none'; };
+      
+      img.src = serie.cover_url || '';
+      
+      // Se src vazio, esconde
+      if (!serie.cover_url) img.style.display = 'none';
+      
       setTimeout(() => {
-        img.src = serie.cover_url;
-        img.onload = () => img.classList.add('active');
-      }, 200);
+        if(img.src && img.complete) img.classList.add('active');
+      }, 100);
 
       const playBtn = document.getElementById('heroPlayBtn');
       playBtn.style.display = 'inline-flex';
       playBtn.onclick = () => {
-        if (serie.price == 0) {
-          openPlayer(serie.id, serie.title);
-        } else {
-          openModal(serie);
-        }
+        if (parseFloat(serie.price) === 0) openPlayer(serie.id, serie.title);
+        else openModal(serie);
       };
     }
 
     function playHero() {
       const serie = allSeries[currentHero];
-      if (serie.price == 0) {
-        openPlayer(serie.id, serie.title);
-      } else {
-        openModal(serie);
-      }
+      if (!serie) return;
+      if (parseFloat(serie.price) === 0) openPlayer(serie.id, serie.title);
+      else openModal(serie);
     }
 
     // ============================================================
-    // PLAYER PROTEGIDO - CORREÇÃO PRINCIPAL AQUI
+    // PLAYER - CORREÇÃO COMPLETA
     // ============================================================
     async function openPlayer(serieId, title) {
       const overlay = document.getElementById('playerOverlay');
       const loading = document.getElementById('playerLoading');
       const video = document.getElementById('mainVideo');
 
-      // Reset visual
+      // Reset UI
       overlay.classList.add('active');
-      loading.style.display = 'flex';
       loading.innerHTML = '<div class="spinner"></div><div>Gerando acesso seguro...</div>';
+      loading.style.display = 'flex';
       video.style.display = 'none';
+      video.removeAttribute('src');
       document.getElementById('playerTitle').textContent = title || 'Carregando...';
-      document.getElementById('watermarkId').textContent = userId;
+      document.getElementById('watermarkId').textContent = String(userId).slice(0,8);
 
       try {
-        // CHAMA API PARA GERAR LINK TEMPORÁRIO
         const res = await fetch(`${API_URL}/api/stream/${serieId}?user_id=${userId}`);
         const data = await res.json();
 
-        if (data.error) {
-          showToast(data.error, 'error');
-          closePlayer();
-          return;
-        }
+        if (data.error) throw new Error(data.error);
 
-        // SE RETORNAR TIPO TELEGRAM (PARA APP NATIVO)
         if (data.type === 'telegram') {
-          showToast('Abrindo no Telegram...', 'info');
-          tg.sendData(JSON.stringify({ action: 'request_video', series_id: serieId }));
-          
-          setTimeout(() => {
-            closePlayer();
-            tg.close();
-          }, 1500);
+          showToast('Abrindo player...', 'info');
+          tg.sendData(JSON.stringify({ action: 'request_video', series_id: parseInt(serieId) }));
+          setTimeout(() => { closePlayer(); }, 1500);
           return;
         }
 
-        // CONFIGURA VIDEO
-        video.src = data.url;
-        video.load(); // Força reload
+        // Configura vídeo
+        video.muted = true;
+        video.src = data.url || data.video_url || '';
+        
+        const playPromise = new Promise((resolve, reject) => {
+          video.oncanplaythrough = () => resolve();
+          video.onerror = reject;
+          setTimeout(reject, 15000); // Timeout 15s
+        });
 
-        // Limpa handlers antigos
-        video.oncanplay = null;
-        video.onerror = null;
+        await playPromise;
 
-        // QUANDO VIDEO ESTIVER PRONTO
-        video.oncanplay = async () => {
-          try {
-            loading.style.display = 'none';
-            video.style.display = 'block';
-            
-            // ESTRATÉGIA DE AUTOPLAY PARA MOBILE
-            video.muted = true;
-            await video.play();
-            
-            // Tenta desmutar após começar (funciona se já interagiu antes)
-            setTimeout(() => {
-              video.muted = false;
-            }, 300);
+        loading.style.display = 'none';
+        video.style.display = 'block';
 
-          } catch (playError) {
-            console.warn('Autoplay bloqueado:', playError);
-            loading.style.display = 'none';
-            video.style.display = 'block';
+        // Tenta autoplay
+        try {
+          await video.play();
+          // Desmuta após começar
+          setTimeout(() => { if(video.duration > 0) video.muted = false; }, 300);
+        } catch(autoErr) {
+          console.warn('Autoplay bloqueado:', autoErr);
+          video.controls = true; // Mostra controles
             
-            // BOTÃO PLAY CENTRAL COMO FALLBACK
-            const playButton = document.createElement('div');
-            playButton.innerHTML = '<i class="fas fa-play" style="font-size: 40px;"></i>';
-            playButton.style.cssText = `
-              position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-              width: 80px; height: 80px; background: rgba(229,9,20,0.9);
-              border-radius: 50%; display: flex; align-items: center; justify-content: center;
-              cursor: pointer; color: white; z-index: 30; box-shadow: 0 0 20px rgba(0,0,0,0.5);
-            `;
-            
-            playButton.onclick = async () => {
-              try {
-                await video.play();
-                video.muted = false;
-                playButton.remove();
-              } catch(e) {
-                // Se mesmo assim falhar, toca mudo
-                video.muted = true;
-                await video.play();
-                playButton.remove();
-              }
-            };
-            
-            video.parentElement.appendChild(playButton);
-            showToast('Clique para reproduzir', 'info');
-          }
-        };
-
-        // ERRO NO VIDEO
-        video.onerror = () => {
-          loading.innerHTML = `
-            <div style="color:#ff4444;text-align:center;padding:20px;">
-              <i class="fas fa-exclamation-triangle" style="font-size:40px;margin-bottom:15px;display:block;"></i>
-              Erro ao carregar vídeo<br>
-              <small style="color:#888;margin-top:10px;display:block;">Verifique sua conexão</small>
-              <br><br>
-              <button onclick="openPlayer('${serieId}','${title}')" style="
-                padding:10px 20px;background:var(----primary);border:none;color:white;border-radius:5px;cursor:pointer;margin-top:10px;
-              ">Tentar Novamente</button>
-            </div>
+          // Botão central como fallback
+          const btn = document.createElement('div');
+          btn.innerHTML = '<i class="fas fa-play"></i>';
+          btn.cssText = `
+            position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+            width:70px;height:70px;background:rgba(229,9,20,0.92);
+            border-radius:50%;display:flex;align-items:center;justify-content:center;
+            cursor:pointer;color:white;z-index:30;font-size:28px;border:3px solid white;
+            animation:pulse 1.5s infinite;
+            box-shadow:0 4px 20px rgba(0,0,0,0.5);
           `;
-          showToast('Erro ao carregar vídeo', 'error');
-        };
+          
+          btn.onclick = async () => {
+            try {
+              await video.play();
+              video.muted = false;
+              btn.remove();
+            } catch(e) {
+              video.muted = true;
+              await video.play().catch(()=>{});
+              btn.remove();
+            }
+          };
+          
+          video.parentElement.appendChild(btn);
+        }
 
-        // TIMEOUT DE SEGURANÇA
-        setTimeout(() => {
-          if (overlay.classList.contains('active') && loading.style.display !== 'none') {
-            showToast('Demorando para carregar...', 'info');
-          }
-        }, 15000);
-
-      } catch (e) {
-        console.error('Erro:', e);
-        showToast('Erro de conexão', 'error');
-        closePlayer();
+      } catch(err) {
+        console.error('Player error:', err);
+        loading.innerHTML = `
+          <div style="color:#ff6666;text-align:center;padding:20px;">
+            <i class="fas fa-exclamation-triangle" style="font-size:36px;margin-bottom:10px;display:block;"></i>
+            <strong>Erro ao carregar</strong><br>
+            <small style="color:#aaa;">${err.message}</small>
+          </div>
+        `;
+        showToast('Erro ao carregar vídeo', 'error');
       }
     }
 
-    // FECHAR PLAYER (CORRIGIDA - LIMPA MEMÓRIA)
     function closePlayer() {
       const overlay = document.getElementById('playerOverlay');
       const video = document.getElementById('mainVideo');
       const loading = document.getElementById('playerLoading');
 
-      // Remove botão de play fallback se existir
-      const btnFallback = overlay.querySelector('[style*="position: absolute"]');
-      if (btnFallback) btnFallback.remove();
-
       if (video) {
         video.pause();
-        video.removeAttribute('src'); // Libera memória
-        video.load(); // Reseta estado
+        video.removeAttribute('src');
+        video.load();
         video.style.display = 'none';
-        video.muted = false;
+        video.oncanplaythrough = null;
+        video.onerror = null;
       }
 
       if (loading) {
@@ -654,30 +1181,40 @@
         loading.innerHTML = '<div class="spinner"></div><div>Gerando acesso seguro...</div>';
       }
 
-      if (overlay) {
-        overlay.classList.remove('active');
-      }
+      // Remove botão de play fallback se existir
+      const oldBtn = overlay.querySelector('[style*="position:absolute"]');
+      if(oldBtn) oldBtn.remove();
+
+      overlay.classList.remove('active');
     }
 
-    // PREVINE MENU DE CONTEXTO NO VIDEO (para não travar o app)
+    // Adiciona animação pulse dinamicamente
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = `
+      @keyframes pulse{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-50%,-50%) scale(1.1)}}
+    `;
+    document.head.appendChild(styleSheet);
+
+    // Previne menu contexto no vídeo
     document.addEventListener('DOMContentLoaded', () => {
-      document.getElementById('mainVideo')?.addEventListener('contextmenu', e => {
-        e.preventDefault();
-        return false;
-      });
+      const v = document.getElementById('mainVideo');
+      if(v) v.addEventListener('contextmenu', e=>e.preventDefault());
     });
 
-    // CARRINHO DE COMPRAS
+    // CARRINHO
     function toggleCart() {
-      document.getElementById('cartOverlay').classList.toggle('active');
-      document.getElementById('cartDrawer').classList.toggle('active');
-      document.body.style.overflow = document.getElementById('cartDrawer').classList.contains('active') ? 'hidden' : '';
+      const drawer = document.getElementById('cartDrawer');
+      const overlay = document.getElementById('cartOverlay');
+      const isActive = drawer.classList.contains('active');
+      
+      drawer.classList.toggle('active');
+      overlay.classList.toggle('active', !isActive);
+      document.body.style.overflow = !isActive ? 'hidden' : '';
     }
 
     function addToCart(serie) {
-      if (cart.find(item => item.id === serie.id)) {
-        showToast('Já está no carrinho!', 'error');
-        return;
+      if (cart.find(i => i.id === serie.id)) {
+        showToast('Já adicionado!', 'error'); return;
       }
       cart.push(serie);
       localStorage.setItem('cart_series', JSON.stringify(cart));
@@ -686,7 +1223,7 @@
     }
 
     function removeFromCart(id) {
-      cart = cart.filter(item => item.id !== id);
+      cart = cart.filter(i => i.id !== id);
       localStorage.setItem('cart_series', JSON.stringify(cart));
       updateCartUI();
     }
@@ -697,196 +1234,147 @@
       const totalEl = document.getElementById('cartTotal');
 
       badge.textContent = cart.length;
-      badge.style.display = cart.length > 0 ? 'flex' : 'none';
+      badge.style.display = cart.length ? 'flex' : 'none';
 
       let total = 0;
-
-      if (cart.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--gray);"><i class="fa-shopping-basket" style="font-size:48px;margin-bottom:15px;opacity:0.3;"></i><p>Seu carrinho está vazio</p></div>';
+      if (!cart.length) {
+        container.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--gray);">
+          <i class="fa-shopping-basket" style="font-size:48px;margin-bottom:12px;display:block;opacity:0.3;"></i>
+          <p>Carrinho vazio</p></div>`;
       } else {
         container.innerHTML = cart.map(item => {
-          total += parseFloat(item.price);
-          return `
-            <div class="cart-item">
-              <img src="${item.cover_url}" alt="${item.title}" onerror="this.src='https://via.placeholder.com/60x90'">
-              <div class="cart-item-info">
-                <div class="cart-item-title">${item.title}</div>
-                <div class="cart-item-price">${item.price == 0 ? 'GRÁTIS' : 'R$ ' + item.price}</div>
-              </div>
-              <button class="cart-item-remove" onclick="removeFromCart('${item.id}')">
-                <i class="fa-trash"></i>
-              </button>
+          total += parseFloat(item.price||0);
+          return `<div class="cart-item">
+            <img src="${item.cover_url}" alt="${item.title}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 50 75%22 fill=%22%23252525%22><rect width=%2250%22 height=%2275%22/></svg>'">
+            <div class="cart-item-info">
+              <div class="cart-item-title">${item.title}</div>
+              <div class="cart-item-price">${parseFloat(item.price)==0?'GRÁTIS':'R$ '+parseFloat(item.price).toFixed(2)}</div>
             </div>
-          `;
+            <button class="cart-item-remove" onclick="removeFromCart('${item.id}')"><i class="fa-trash" style="font-size:12px;"></i></button>
+          </div>`;
         }).join('');
       }
-
-      totalEl.textContent = total === 0 ? 'Grátis' : 'R$ ' + total.toFixed(2);
+      totalEl.textContent = total===0?'Grátis':'R$ '+total.toFixed(2);
     }
 
     function checkout() {
-      if (cart.length === 0) {
-        showToast('Carrinho vazio!', 'error');
-        return;
-      }
-
-      const total = cart.reduce((sum, item) => sum + parseFloat(item.price), 0);
-
-      tg.sendData(JSON.stringify({
-        action: 'checkout_cart',
-        items: cart,
-        total: total,
-        user_id: userId
-      }));
-
+      if(!cart.length){showToast('Carrinho vazio','error');return}
+      const total = cart.reduce((s,i)=>s+parseFloat(i.price||0),0);
+      tg.sendData(JSON.stringify({action:'checkout_cart',items:cart,total,user_id:userId}));
       showToast('Finalizando compra...', 'success');
-
-      setTimeout(() => {
-        cart = [];
-        localStorage.setItem('cart_series', JSON.stringify(cart));
-        updateCartUI();
-        
-        toggleCart();
-        tg.close();
-      }, 1000);
+      setTimeout(()=>{
+        cart=[];localStorage.setItem('cart_series','[]');
+        updateCartUI();toggleCart();tg.close();
+      },1000);
     }
 
-    // MODAL DE DETALHES
-    function openModal(serie) {
+    // MODAL
+    function openModal(serie){
       currentModalSeries = serie;
-      document.getElementById('modalImg').src = serie.cover_url;
-      document.getElementById('modalTitle').textContent = serie.title;
-      document.getElementById('modalDesc').textContent = serie.description || 'Sem descrição disponível.';
-
-      const priceEl = document.getElementById('modalPrice');
-      const priceValue = document.getElementById('priceValue');
-      const actionsDiv = document.getElementById('modalActions');
-
-      actionsDiv.innerHTML = '';
-
-      if (serie.price == 0) {
-        // SÉRIE GRÁTUITA - VAI DIRETO PRO PLAYER
-        priceEl.className = 'modal-price free';
-        priceValue.textContent = '';
-        priceEl.innerHTML = '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>';
-
-        const watchBtn = document.createElement('button');
-        watchBtn.className = 'btn btn-free';
-        watchBtn.style.width = '100%';
-        watchBtn.style.padding = '18px';
-        watchBtn.style.fontSize = '18px';
-        watchBtn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
-        watchBtn.onclick = () => {
-          closeModal();
-          openPlayer(serie.id, serie.title);
-        };
-        actionsDiv.appendChild(watchBtn);
-
-      } else {
-        // SÉRIE PAGA
-        priceEl.className = 'modal-price';
-        priceEl.innerHTML = `<span id="priceValue">R$ ${serie.price}</span>`;
+      const mImg = document.getElementById('modalImg');
+      mImg.src = serie.cover_url || '';
+      mImg.style.display = 'block';
+      mImg.onerror = ()=> mImg.style.display='none';
+      
+      document.getElementById('modalTitle').textContent = serie.title||'';
+      document.getElementById('modalDesc').textContent = serie.description||'Sem descrição.';
+      
+      const pEl=document.getElementById('modalPrice'), pvEl=document.getElementById('priceValue'), acts=document.getElementById('modalActions');
+      acts.innerHTML='';
+      const price = parseFloat(serie.price||0);
+      
+      if(price===0){
+        pEl.className='modal-price free';
+        pvEl.parentNode.innerHTML='<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>';
+        const b=document.createElement('button');
+        b.className='btn btn-free';b.style.width='100%';b.style.padding='16px';b.style.fontSize='16px';
+        b.innerHTML='<i class="fas fa-play"></i> ASSISTIR AGORA';
+        b.onclick=()=>{closeModal();openPlayer(serie.id,serie.title)};
+        acts.appendChild(b);
+      }else{
+        pEl.className='modal-price';
+        pvEl.textContent='R$ '+price.toFixed(2);
         
-        const cartBtn = document.createElement('button');
-        cartBtn.className = 'btn btn-cart';
-        cartBtn.style.flex = '1';
-        cartBtn.innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
-        cartBtn.onclick = () => {
-          addToCart(serie);
-          closeModal();
-        };
-        actionsDiv.appendChild(cartBtn);
-
-        const buyBtn = document.createElement('button');
-        buyBtn.className = 'btn btn-primary';
-        buyBtn.style.flex = '1';
-        buyBtn.innerHTML = '<i class="fas fa-shopping-bag"></i> Comprar Agora';
-        buyBtn.onclick = () => {
-          tg.sendData(JSON.stringify({
-            action: 'buy',
-            series_id: serie.id,
-            title: serie.title,
-            price: serie.price
-          }));
+        // Botão Add Cart
+        const cBtn=document.createElement('button');
+        cBtn.className='btn btn-outline';cBtn.style.flex='1';cBtn.style.borderColor='var(--primary)';
+        cBtn.innerHTML='<i class="fas fa-cart-plus"></i> Carrinho';
+        cBtn.onclick=()=>{addToCart(serie);closeModal()};
+        acts.appendChild(cBtn);
+        
+        // Botão Comprar Agora
+        const bBtn=document.createElement('button');
+        bBtn.className='btn btn-primary';bBtn.style.flex='1';
+        bBtn.innerHTML='<i class="fas fa-bolt"></i> Comprar';
+        bBtn.onclick=()=>{
+          tg.sendData(JSON.stringify({action:'buy',series_id:serie.id,title:serie.title,price}));
           tg.close();
-          
-          const row = document.createElement('div');
-          row.style.cssText = 'display:flex;gap:12px;margin-top:15px;';
-          row.append(cartBtn.cloneNode(true), buyBtn.cloneNode(true));
-          actionsDiv.append(row);
-          
-          document.getElementById('modalOverlay').classList.add('active');
-          document.body.style.overflow = 'hidden';
         };
-        actionsDiv.appendChild(buyBtn);
+        acts.appendChild(bBtn);
       }
-
+      
       document.getElementById('modalOverlay').classList.add('active');
-      document.body.style.overflow = 'hidden';
+      document.body.style.overflow='hidden';
     }
 
-    function closeModal(e) {
-      if (!e || e.target.id === 'modalOverlay' || e.target.closest('.modal-close')) {
+    function closeModal(e){
+      if(!e || e.target===document.getElementById('modalOverlay') || e.target.closest('.modal-close')){
         document.getElementById('modalOverlay').classList.remove('active');
-        document.body.style.overflow = '';
+        document.body.style.overflow='';
       }
     }
 
-    // GRID DO CATÁLOGO
-    function renderGrid(series) {
-      const grid = document.getElementById('catalogGrid');
-      grid.innerHTML = series.map(s => `
-        <div class="card" onclick="openModal(${JSON.stringify(s).replace(/"/g, '&quot;')})">
-          <span class="price-tag ${s.price == 0 ? 'free' : ''}">${s.price == 0 ? 'GRÁTIS' : 'R$ ' + s.price}</span>
-          <img src="${s.cover_url}" alt="${s.title}" loading="lazy" onload="this.classList.add('loaded')" onerror="this.style.opacity=1">
-          <div class="card-info">
-            <div class="card-item-title">${s.title}</div>
-          </div>
-        </div>
-      `).join('');
+    // GRID RENDER
+    function renderGrid(series){
+      const grid=document.getElementById('catalogGrid');
+      grid.innerHTML='';
+      series.forEach(s=>{
+        const card=document.createElement('div');
+        card.className='card';
+        card.onclick=()=>openModal(s);
+        
+        const price=parseFloat(s.price||0);
+        const priceTag=`<span class="price-tag ${price==0?'free':''}">${price==0?'GRÁTIS':'R$ '+price.toFixed(2)}</span>`;
+        
+        card.innerHTML=`
+          ${priceTag}
+          <img src="${s.cover_url||''}" alt="${s.title||''}" loading="lazy"
+               onload="this.classList.add('loaded')"
+               onerror="this.style.opacity=1;this.style.background='#252525'">
+          <div class="card-info"><div class="card-title">${s.title||'Sem título'}</div></div>
+        `;
+        grid.appendChild(card);
+      });
     }
 
-    function filterCategory(cat, el) {
-      document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
+    function filterCategory(cat,el){
+      document.querySelectorAll('.category-chip').forEach(c=>c.classList.remove('active'));
       el.classList.add('active');
-      renderGrid(cat === 'all' ? allSeries : allSeries.filter(s => s.category === cat));
+      renderGrid(cat==='all'?allSeries:allSeries.filter(s=>(s.category||'')===cat));
     }
 
-    function searchSeries(term) {
-      const filtered = term
-        ? allSeries.filter(s => s.title.toLowerCase().includes(term.toLowerCase()))
-        : allSeries;
-      renderGrid(filtered);
+    function searchSeries(term){
+      const q=(term||'').toLowerCase();
+      renderGrid(q?allSeries.filter(s=>(s.title||'').toLowerCase().includes(q)):allSeries);
     }
 
-    function scrollToCatalog() {
-      document.getElementById('catalogSection').scrollIntoView({ behavior: 'smooth' });
+    function scrollToCatalog(){
+      document.getElementById('catalogSection').scrollIntoView({behavior:'smooth'});
     }
 
-    // SISTEMA DE TOASTS
-    function showToast(message, type = 'info') {
-      const container = document.getElementById('toastContainer');
-      const toast = document.createElement('div');
-      toast.className = `toast toast-${type}`;
-      
-      const icons = { success: 'check-circle', error: 'exclamation-circle', info: 'info-circle' };
-      const colors = { success: '#4CAF50', error: '#ff4444', info: '#2196F3' };
-
-      toast.innerHTML = `
-        <i class="fas fa-${icons[type]} toast-icon" style="color:${colors[type]};"></i>
-        <span>${message}</span>
-      `;
-
-      container.appendChild(toast);
-      
-      setTimeout(() => toast.classList.add('show'), 10);
-      setTimeout(() => {
-        toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
+    // TOAST SYSTEM
+    function showToast(msg,type='info'){
+      const c=document.getElementById('toastContainer');
+      const t=document.createElement('div');
+      t.className='toast toast-'+type;
+      const icons={success:'check-circle',error:'exclamation-circle',info:'info-circle'};
+      t.innerHTML=`<i class="fas fa-${icons[type]}" toast-icon></i><span>${msg}</span>`;
+      c.appendChild(t);
+      requestAnimationFrame(()=>t.classList.add('show'));
+      setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},2800);
     }
 
-    // INICIAR APLICAÇÃO
+    // BOOT
     init();
   </script>
 </body>
