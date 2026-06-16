@@ -18,6 +18,7 @@
       --card-bg: #181818;
       --hover: #2F2F2F;
       --success: #4CAF50;
+      --gold: #FFD700;
       --text-main: #FFFFFF;
       --text-dim: #E5E5E5;
       --bg-body: #0F0F0F;
@@ -38,7 +39,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
     body { background: var(--bg-body); color: var(--text-main); overflow-x: hidden; }
 
-    /* PLAYER PROTEGIDO - TELA CHEIA */
+    /* PLAYER PROTEGIDO */
     .video-player-overlay {
       position: fixed; inset: 0; background: #000; z-index: 10000;
       display: none; justify-content: center; align-items: center;
@@ -52,10 +53,9 @@
     
     video {
       width: 100%; flex: 1; background: #000;
-      /* Remove controles de download */
       controlsList: nodownload noremoteplayback;
     }
-    /* Esconde botão de download em alguns navegadores */
+    
     video::-webkit-media-controls-enclosure { overflow: hidden; }
     video::-webkit-media-controls-panel { width: calc(100% + 30px); }
     
@@ -173,6 +173,7 @@
     .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
     .btn-primary { background: white; color: var(--dark); }
     .btn-play { background: var(--primary); color: white; margin-left: 10px; }
+    .btn-free { background: var(--gold); color: #000; }
     .btn-cart { background: var(--success); color: white; width: 100%; justify-content: center; }
     .btn-outline { background: transparent; border: 2px solid var(--text-main); color: var(--text-main); }
 
@@ -195,21 +196,22 @@
     .modal-hero img { width: 100%; height: 100%; object-fit: cover; }
     .modal-body { padding: 30px; }
     .modal-title { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
-    .modal-price { font-size: 24px; color: var(--success); font-weight: 700; margin-bottom: 15px; }
-    .modal-price.free { color: var(--primary); }
+    .modal-price { font-size: 24px; color: var(--success); font-weight: 700; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+    .modal-price.free { color: var(--gold); }
     .modal-desc { color: var(--text-dim); margin-bottom: 25px; line-height: 1.6; }
-    .modal-actions { display: flex; gap: 12px; }
+    .modal-actions { display: flex; gap: 12px; flex-direction: column; }
+    .free-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,215,0,0.2); padding: 4px 12px; border-radius: 20px; font-size: 14px; }
 
     /* TOAST */
     .toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10001; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
     .toast {
       background: rgba(30,30,30,0.95); color: white; padding: 16px 24px; border-radius: 12px;
       display: flex; align-items: center; gap: 12px; font-weight: 500;
-      transform: translateY(100px); opacity: 0; transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+      transform: translateX(-50%) translateY(100px); opacity: 0; transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
       backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); min-width: 300px; pointer-events: all;
     }
-    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
     body.light-mode .toast { background: rgba(255,255,255,0.95); color: #141414; border: 1px solid rgba(0,0,0,0.1); }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
     .toast-icon { font-size: 20px; }
     .toast-success .toast-icon { color: var(--success); }
     .toast-error .toast-icon { color: #ff4444; }
@@ -239,7 +241,7 @@
     .card:hover .card-info { opacity: 1; }
     .card-title { font-size: 14px; font-weight: 600; color: white; }
     .price-tag { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); color: var(--success); padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; z-index: 5; }
-    .price-tag.free { color: #FFD700; background: var(--primary); }
+    .price-tag.free { color: #000; background: var(--gold); }
 
     /* SKELETON */
     .skeleton { background: linear-gradient(90deg, var(--skeleton) 25%, var(--hover) 50%, var(--skeleton) 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; }
@@ -253,7 +255,6 @@
       .hero h1 { font-size: 32px; }
       .btn-play { margin-left: 0; margin-top: 10px; }
       .cart-drawer { max-width: 100%; }
-      .modal-actions { flex-direction: column; }
     }
   </style>
 </head>
@@ -271,7 +272,7 @@
       
       <div class="loading-player" id="playerLoading">
         <div class="spinner"></div>
-        <div>Verificando acesso...</div>
+        <div>Gerando acesso seguro...</div>
       </div>
       
       <video 
@@ -284,7 +285,7 @@
       ></video>
       
       <div class="player-watermark" id="playerWatermark">
-        ID: <span id="watermarkId">---</span> | Protegido
+        ID: <span id="watermarkId">---</span> | Acesso Vitalício
       </div>
     </div>
   </div>
@@ -298,12 +299,7 @@
         <i class="fas fa-times"></i>
       </button>
     </div>
-    <div class="cart-body" id="cartItems">
-      <div style="text-align: center; padding: 60px 20px; color: var(--gray);">
-        <i class="fas fa-shopping-basket" style="font-size: 48px; margin-bottom: 15px; opacity: 0.3;"></i>
-        <p>Carrinho vazio</p>
-      </div>
-    </div>
+    <div class="cart-body" id="cartItems"></div>
     <div class="cart-footer">
       <div class="cart-total">
         <span>Total:</span>
@@ -326,15 +322,12 @@
       </div>
       <div class="modal-body">
         <h2 class="modal-title" id="modalTitle">Título</h2>
-        <div class="modal-price" id="modalPrice">R$ 0,00</div>
+        <div class="modal-price" id="modalPrice">
+          <span id="priceValue">R$ 0,00</span>
+        </div>
         <p class="modal-desc" id="modalDesc">Descrição...</p>
-        <div class="modal-actions">
-          <button class="btn btn-play" onclick="addToCartFromModal()" style="flex: 1;">
-            <i class="fas fa-cart-plus"></i> Adicionar
-          </button>
-          <button class="btn btn-primary" onclick="buyFromModal()" style="flex: 1;">
-            <i class="fas fa-shopping-bag"></i> Comprar
-          </button>
+        <div class="modal-actions" id="modalActions">
+          <!-- Botões inseridos via JS -->
         </div>
       </div>
     </div>
@@ -398,7 +391,6 @@
 
     <h2 class="section-title">Catálogo Completo</h2>
     <div class="grid" id="catalogGrid">
-      <!-- Skeletons iniciais -->
       <div class="card skeleton"></div>
       <div class="card skeleton"></div>
       <div class="card skeleton"></div>
@@ -414,7 +406,7 @@
     const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
     const userId = tg.initDataUnsafe?.user?.id || 'anonymous';
     
-    // ESTADO
+    // ESTADO GLOBAL
     let allSeries = [];
     let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
     let currentHero = 0;
@@ -439,7 +431,7 @@
       });
     }
 
-    // TEMA
+    // TEMA CLARO/ESCURO
     function applyTheme() {
       if (localStorage.getItem('theme_series') === 'light') {
         document.body.classList.add('light-mode');
@@ -454,7 +446,7 @@
       showToast(isLight ? 'Tema claro ativado' : 'Tema escuro ativado', 'success');
     }
 
-    // CARREGAR DADOS
+    // CARREGAR DADOS DA API
     async function loadSeries() {
       try {
         const res = await fetch(`${API_URL}/api/series`);
@@ -492,28 +484,40 @@
       
       const playBtn = document.getElementById('heroPlayBtn');
       playBtn.style.display = 'inline-flex';
-      playBtn.onclick = () => openPlayer(serie.id, serie.title);
+      playBtn.onclick = () => {
+        if (serie.price == 0) {
+          // Se for gratuito, vai direto pro player
+          openPlayer(serie.id, serie.title);
+        } else {
+          // Se for pago, abre modal
+          openModal(serie);
+        }
+      };
     }
 
     function playHero() {
       const serie = allSeries[currentHero];
-      openPlayer(serie.id, serie.title);
+      if (serie.price == 0) {
+        openPlayer(serie.id, serie.title);
+      } else {
+        openModal(serie);
+      }
     }
 
-    // PLAYER PROTEGIDO
+    // PLAYER PROTEGIDO - ACESSO VITALÍCIO COM URL TEMPORÁRIA
     async function openPlayer(serieId, title) {
       const overlay = document.getElementById('playerOverlay');
       const loading = document.getElementById('playerLoading');
       const video = document.getElementById('mainVideo');
-      const watermarkId = document.getElementById('watermarkId');
       
       overlay.classList.add('active');
       loading.style.display = 'flex';
       video.style.display = 'none';
       document.getElementById('playerTitle').textContent = title || 'Carregando...';
-      watermarkId.textContent = userId;
+      document.getElementById('watermarkId').textContent = userId;
       
       try {
+        // CHAMA API - GERA URL TEMPORÁRIA NOVA (30 min) A CADA REQUISIÇÃO
         const res = await fetch(`${API_URL}/api/stream/${serieId}?user_id=${userId}`);
         const data = await res.json();
         
@@ -524,8 +528,7 @@
         }
         
         if (data.type === 'telegram') {
-          // Fallback: manda pro bot entregar via Telegram
-          showToast('Redirecionando para o Telegram...', 'info');
+          showToast('Abrindo no Telegram...', 'info');
           tg.sendData(JSON.stringify({ action: 'request_video', series_id: serieId }));
           setTimeout(() => {
             closePlayer();
@@ -534,7 +537,6 @@
           return;
         }
         
-        // Configura vídeo com URL assinada
         video.src = data.url;
         
         video.oncanplay = () => {
@@ -548,13 +550,11 @@
           closePlayer();
         };
         
-        // Expira em 30 min
         setTimeout(() => {
           if (overlay.classList.contains('active')) {
-            showToast('Sessão expirada. Recarregue.', 'error');
-            closePlayer();
+            showToast('Sessão expirando... Recarregue se necessário', 'info');
           }
-        }, 1800000);
+        }, 1740000);
         
       } catch (e) {
         console.error(e);
@@ -569,13 +569,13 @@
       const loading = document.getElementById('playerLoading');
       
       video.pause();
-      video.src = ''; // Limpa URL assinada
+      video.src = '';
       video.style.display = 'none';
       loading.style.display = 'none';
       overlay.classList.remove('active');
     }
 
-    // CARRINHO
+    // CARRINHO DE COMPRAS
     function toggleCart() {
       document.getElementById('cartOverlay').classList.toggle('active');
       document.getElementById('cartDrawer').classList.toggle('active');
@@ -638,13 +638,6 @@
       totalEl.textContent = total === 0 ? 'Grátis' : 'R$ ' + total.toFixed(2);
     }
 
-    function addToCartFromModal() {
-      if (currentModalSeries) {
-        addToCart(currentModalSeries);
-        closeModal();
-      }
-    }
-
     function checkout() {
       if (cart.length === 0) {
         showToast('Carrinho vazio!', 'error');
@@ -671,7 +664,7 @@
       }, 1000);
     }
 
-    // MODAL
+    // MODAL DE DETALHES - COM LÓGICA PARA GRATUITOS
     function openModal(serie) {
       currentModalSeries = serie;
       document.getElementById('modalImg').src = serie.cover_url;
@@ -679,12 +672,68 @@
       document.getElementById('modalDesc').textContent = serie.description || 'Sem descrição disponível.';
       
       const priceEl = document.getElementById('modalPrice');
+      const priceValue = document.getElementById('priceValue');
+      const actionsDiv = document.getElementById('modalActions');
+      
+      // LIMPA BOTÕES ANTERIORES
+      actionsDiv.innerHTML = '';
+      
       if (serie.price == 0) {
-        priceEl.textContent = 'GRÁTIS';
+        // SÉRIE GRATUITA - VAI DIRETO PRO PLAYER
         priceEl.className = 'modal-price free';
+        priceEl.innerHTML = `
+          <span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>
+        `;
+        
+        // Botão único e grande para assistir
+        const watchBtn = document.createElement('button');
+        watchBtn.className = 'btn btn-free';
+        watchBtn.style.width = '100%';
+        watchBtn.style.padding = '18px';
+        watchBtn.style.fontSize = '18px';
+        watchBtn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
+        watchBtn.onclick = () => {
+          closeModal();
+          openPlayer(serie.id, serie.title);
+        };
+        actionsDiv.appendChild(watchBtn);
+        
       } else {
-        priceEl.textContent = 'R$ ' + serie.price;
+        // SÉRIE PAGA - BOTÕES DE COMPRA
         priceEl.className = 'modal-price';
+        priceEl.innerHTML = `<span id="priceValue">R$ ${serie.price}</span>`;
+        
+        // Botão Adicionar ao Carrinho
+        const cartBtn = document.createElement('button');
+        cartBtn.className = 'btn btn-play';
+        cartBtn.style.flex = '1';
+        cartBtn.innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar';
+        cartBtn.onclick = () => {
+          addToCart(serie);
+          closeModal();
+        };
+        
+        // Botão Comprar Agora
+        const buyBtn = document.createElement('button');
+        buyBtn.className = 'btn btn-primary';
+        buyBtn.style.flex = '1';
+        buyBtn.innerHTML = '<i class="fas fa-shopping-bag"></i> Comprar';
+        buyBtn.onclick = () => {
+          tg.sendData(JSON.stringify({
+            action: 'buy',
+            series_id: serie.id,
+            title: serie.title,
+            price: serie.price
+          }));
+          tg.close();
+        };
+        
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.gap = '12px';
+        row.appendChild(cartBtn);
+        row.appendChild(buyBtn);
+        actionsDiv.appendChild(row);
       }
       
       document.getElementById('modalOverlay').classList.add('active');
@@ -698,19 +747,7 @@
       }
     }
 
-    function buyFromModal() {
-      if (currentModalSeries) {
-        tg.sendData(JSON.stringify({
-          action: 'buy',
-          series_id: currentModalSeries.id,
-          title: currentModalSeries.title,
-          price: currentModalSeries.price
-        }));
-        tg.close();
-      }
-    }
-
-    // CATÁLOGO
+    // GRID DO CATÁLOGO
     function renderGrid(series) {
       const grid = document.getElementById('catalogGrid');
       grid.innerHTML = series.map(s => `
@@ -743,7 +780,7 @@
       document.getElementById('catalogSection').scrollIntoView({ behavior: 'smooth' });
     }
 
-    // TOAST
+    // SISTEMA DE TOASTS
     function showToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
       const toast = document.createElement('div');
@@ -768,7 +805,7 @@
       return false;
     });
 
-    // Inicia
+    // INICIAR APLICAÇÃO
     init();
   </script>
 </body>
