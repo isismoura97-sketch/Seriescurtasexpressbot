@@ -1,812 +1,762 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Séries Curtas Express</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-    :root {
-      --primary: #E50914;
-      --primary-dark: #B20710;
-      --dark: #141414;
-      --darker: #0F0F0F;
-      --gray: #808080;
-      --light: #FFFFFF;
-      --card-bg: #181818;
-      --hover: #2F2F2F;
-      --success: #4CAF50;
-      --gold: #FFD700;
-      --text-main: #FFFFFF;
-      --text-dim: #E5E5E5;
-      --bg-body: #0F0F0F;
-      --skeleton: #252525;
-    }
-    
-    body.light-mode {
-      --dark: #f5f5f5;
-      --darker: #ffffff;
-      --card-bg: #f0f0f0;
-      --hover: #e0e0e0;
-      --text-main: #141414;
-      --text-dim: #333333;
-      --bg-body: #f5f5f5;
-      --skeleton: #e0e0e0;
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// ==========================================
+// CONFIGURAÇÃO
+// ==========================================
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+const SUPABASE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!
+const OWNER_ID = Deno.env.get('OWNER_ID')!
+const MP_TOKEN = Deno.env.get('MERCADO_PAGO_ACCESS_TOKEN')!
+const WEBHOOK_SECRET = Deno.env.get('WEBHOOK_SECRET')
+
+const MINI_APP_URL = 'https://seriescurtasexpressbot.vercel.app'
+const PACK_PRICE = 12.90
+const DEFAULT_PRICE = 5.90
+const PAGE_SIZE = 8
+const VIDEO_DELAY = 1500
+
+// ==========================================
+// HELPERS
+// ==========================================
+const btn = (text: string, data: string) => ({ text, callback_data: data })
+const urlBtn = (text: string, url: string) => ({ text, url })
+const webAppBtn = (text: string, url: string) => ({ text, web_app: { url } })
+const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+async function tgApi(method: string, payload: any): Promise<any> {
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    const data = await r.json()
+    if (!data.ok) console.error(`TG Error ${method}:`, data.description)
+    return data
+  } catch (e) {
+    console.error(`TG Exception ${method}:`, e)
+    return null
+  }
+}
+
+async function deleteMsg(chat: number, msgId: number) {
+  await tgApi('deleteMessage', { chat_id: chat, message_id: msgId })
+}
+
+async function sendTxt(chat: number, text: string) {
+  return tgApi('sendMessage', { chat_id: chat, text, parse_mode: 'HTML', disable_web_page_preview: true })
+}
+
+async function sendKbd(chat: number, text: string, kb?: any[][]) {
+  const p: any = { chat_id: chat, text, parse_mode: 'HTML', disable_web_page_preview: true }
+  if (kb?.length) p.reply_markup = { inline_keyboard: kb }
+  return tgApi('sendMessage', p)
+}
+
+async function sendVid(chat: number, vid: string, caption: string) {
+  const result = await tgApi('sendVideo', { 
+    chat_id: chat, 
+    video: vid, 
+    caption, 
+    parse_mode: 'HTML', 
+    protect_content: true 
+  })
+  if (!result?.ok) await sendTxt(chat, `⚠️ Erro ao enviar vídeo.`)
+  return result
+}
+
+async function sendPhoto(chat: number, photo: string, caption: string, kb?: any[][]) {
+  const p: any = { chat_id: chat, photo, caption, parse_mode: 'HTML', protect_content: true }
+  if (kb?.length) p.reply_markup = { inline_keyboard: kb }
+  const result = await tgApi('sendPhoto', p)
+  if (!result?.ok) await sendKbd(chat, caption, kb)
+  return result
+}
+
+async function logAdmin(context: string, error: any, details: any = {}) {
+  try {
+    const msg = `⚠️ <b>ERRO</b>\n🕒 ${new Date().toISOString()}\n📍 ${context}\n❌ <code>${String(error?.message || error).substring(0, 300)}</code>`
+    await sendTxt(Number(OWNER_ID), msg)
+  } catch (e) { console.error('logAdmin falhou:', e) }
+}
+
+// ==========================================
+// FUNÇÕES DE NAVEGAÇÃO
+// ==========================================
+async function enviarWelcome(chat: number, userId: number, supabase: any) {
+  try {
+    const { data: ex } = await supabase.from('users').select('start_count').eq('id', String(userId)).maybeSingle()
+    await supabase.from('users').upsert({
+      id: String(userId), first_name: 'Usuário',
+      last_visit: new Date().toISOString(),
+      start_count: (ex?.start_count || 0) + 1
+    }, { onConflict: 'id' })
+  } catch (e) { console.error('user upsert:', e) }
+
+  const caption = '🌟 <b>Bem-vindo ao Séries Curtas Express!</b>\n\nEscolha como navegar:'
+
+  const kb = [
+    [webAppBtn('🚀 Abrir Loja Visual (App)', MINI_APP_URL)],
+    [btn('📚 Catálogo (Bot)', 'catalogo_0'), btn('❤️ Favoritos', 'meus_favoritos')],
+    [btn('🎁 Indique', 'share_invite'), btn('🛠️ Suporte', 'suporte')]
+  ]
+
+  const BANNER_FILE_ID = 'AgACAgEAAxkBAAIB5WoiEV9CPQ-dszqQDak_ctgkoZ1IAAJgDGsbKwoQRT_rvMVUzMtLAQADAgADeQADOwQ'
+  if (BANNER_FILE_ID) {
+    await sendPhoto(chat, BANNER_FILE_ID, caption, kb)
+  } else {
+    await sendKbd(chat, caption, kb)
+  }
+}
+
+async function enviarCatalogo(chat: number, supabase: any, page: number = 0) {
+  try {
+    const { data: series } = await supabase.from('series').select('id, title, price').order('created_at', { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+    const { data: combos } = await supabase.from('combos').select('id, title, price').limit(5)
+
+    if (!series?.length && page === 0) {
+      await sendKbd(chat, '📭 Catálogo vazio.', [[btn('🏠 Início', 'home')]])
+      return
     }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-    body { background: var(--bg-body); color: var(--text-main); overflow-x: hidden; }
+    let msg = `📚 <b>Catálogo</b> (Página ${page + 1})\n\n`
+    const buttons: any[][] = []
 
-    /* PLAYER PROTEGIDO */
-    .video-player-overlay {
-      position: fixed; inset: 0; background: #000; z-index: 10000;
-      display: none; justify-content: center; align-items: center;
+    if (page === 0 && combos?.length) {
+      msg += '🔥 <b>OFERTAS ESPECIAIS</b>\n\n'
+      buttons.push([btn('📦 Pack Personalizado (2 séries) - R$ 12,90', 'pack_personalizado')])
+      combos.forEach(c => {
+        msg += `📦 <b>${c.title}</b> - R$ ${Number(c.price).toFixed(2)}\n`
+        buttons.push([btn(`📦 ${c.title.substring(0, 30)}`, `detalhes_combo_${c.id}`)])
+      })
+      msg += '\n━━━━━━━━━━━━\n\n'
     }
-    .video-player-overlay.active { display: flex; }
-    
-    .player-container {
-      width: 100%; height: 100%; max-width: 100%; max-height: 100%;
-      position: relative; background: #000; display: flex; flex-direction: column;
-    }
-    
-    video {
-      width: 100%; flex: 1; background: #000;
-      controlsList: nodownload noremoteplayback;
-    }
-    
-    video::-webkit-media-controls-enclosure { overflow: hidden; }
-    video::-webkit-media-controls-panel { width: calc(100% + 30px); }
-    
-    .player-header {
-      position: absolute; top: 0; left: 0; right: 0; z-index: 10;
-      padding: 20px; background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    .player-title { font-size: 16px; font-weight: 600; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .player-close {
-      background: rgba(255,255,255,0.1); border: none; color: white;
-      width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
-      font-size: 20px; backdrop-filter: blur(10px); transition: 0.3s;
-    }
-    .player-close:hover { background: var(--primary); }
-    
-    .player-watermark {
-      position: absolute; bottom: 80px; right: 20px; z-index: 5;
-      background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 4px;
-      font-size: 12px; color: rgba(255,255,255,0.7); pointer-events: none;
-      font-family: monospace; letter-spacing: 1px;
-    }
-    
-    .loading-player {
-      position: absolute; inset: 0; display: flex; flex-direction: column;
-      justify-content: center; align-items: center; background: #000; z-index: 20;
-    }
-    .spinner {
-      width: 50px; height: 50px; border: 3px solid rgba(255,255,255,0.1);
-      border-top-color: var(--primary); border-radius: 50%;
-      animation: spin 1s linear infinite; margin-bottom: 15px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* CARRINHO */
-    .cart-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.8);
-      z-index: 9998; opacity: 0; visibility: hidden; transition: 0.3s;
-    }
-    .cart-overlay.active { opacity: 1; visibility: visible; }
+    msg += '🎬 <b>Séries:</b>\n\n'
+    series?.forEach(s => {
+      const icon = Number(s.price) === 0 ? '🎁' : '🎬'
+      const price = Number(s.price) === 0 ? 'Grátis' : `R$ ${Number(s.price).toFixed(2)}`
+      msg += `${icon} ${s.title} - ${price}\n`
+      buttons.push([btn(`${icon} ${s.title.substring(0, 35)}`, `detalhes_${s.id}`)])
+    })
+
+    const nav: any[] = []
+    if (page > 0) nav.push(btn('⬅️ Anterior', `catalogo_${page - 1}`))
+    if ((page + 1) * PAGE_SIZE < (series?.length || 0)) nav.push(btn('Próxima ➡️', `catalogo_${page + 1}`))
+    if (nav.length) buttons.push(nav)
+
+    buttons.push([btn('🎁 Indique', 'share_invite'), btn('🏠 Início', 'home')])
+
+    await sendKbd(chat, msg, buttons)
+  } catch (e) {
+    await sendKbd(chat, '⚠️ Erro ao carregar catálogo.', [[btn('🏠 Início', 'home')]])
+  }
+}
+
+async function enviarDetalhes(chat: number, seriesId: string, supabase: any) {
+  try {
+    const { data: se } = await supabase.from('series').select('*').eq('id', seriesId).single()
+    if (!se) { await sendTxt(chat, '❌ Série não disponível.'); return }
+
+    const caption = `🌟 <b>${se.title}</b>\n\n${se.description || 'Sem descrição.'}\n\n💰 <b>${se.price == 0 ? 'GRÁTIS 🎁' : `R$ ${Number(se.price).toFixed(2)}`}</b>`
     
-    .cart-drawer {
-      position: fixed; top: 0; right: -420px; width: 100%; max-width: 400px; height: 100%;
-      background: var(--card-bg); z-index: 9999; transition: 0.4s ease;
-      display: flex; flex-direction: column; box-shadow: -10px 0 30px rgba(0,0,0,0.5);
-    }
-    .cart-drawer.active { right: 0; }
+    let kb: any[][] = []
     
-    .cart-header { padding: 25px; border-bottom: 1px solid rgba(128,128,128,0.2); display: flex; justify-content: space-between; align-items: center; }
-    .cart-header h3 { display: flex; align-items: center; gap: 10px; }
-    .cart-body { flex: 1; overflow-y: auto; padding: 20px; }
-    .cart-item { display: flex; gap: 15px; margin-bottom: 15px; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; position: relative; }
-    .cart-item img { width: 60px; height: 90px; object-fit: cover; border-radius: 6px; }
-    .cart-item-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
-    .cart-item-title { font-weight: 600; margin-bottom: 5px; font-size: 14px; }
-    .cart-item-price { color: var(--success); font-weight: 700; }
-    .cart-item-remove { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #ff4444; cursor: pointer; width: 30px; height: 30px; border-radius: 50%; transition: 0.3s; }
-    .cart-item-remove:hover { background: rgba(255,68,68,0.1); }
+    if (se.price == 0) {
+      // Série gratuita - assistir direto
+      kb = [
+        [btn('🎬 Assistir Agora', `assistir_${seriesId}`)],
+        [btn('⬅️ Voltar', 'catalogo_0'), btn('🏠 Início', 'home')]
+      ]
+    } else {
+      // Série paga - comprar
+      kb = [
+        [btn('🎬 Assistir Trailer', `ver_trailer_${seriesId}`)],
+        [btn('🛒 Comprar', `comprar_${seriesId}`), btn('🎁 Presentear', `gift_${seriesId}`)],
+        [btn('⬅️ Voltar', 'catalogo_0'), btn('🏠 Início', 'home')]
+      ]
+    }
+
+    if (se.cover_url || se.cover_file_id) {
+      const img = se.cover_url || se.cover_file_id
+      await sendPhoto(chat, img, caption, kb)
+    } else {
+      await sendKbd(chat, caption, kb)
+    }
+  } catch (e) {
+    await logAdmin('enviarDetalhes', e, { seriesId })
+  }
+}
+
+async function enviarTrailer(chat: number, seriesId: string, supabase: any) {
+  try {
+    const { data: se } = await supabase.from('series').select('title, trailer_file_id').eq('id', seriesId).single()
+    if (!se?.trailer_file_id) { await sendTxt(chat, '🎥 Trailer não disponível.'); return }
+    await sendVid(chat, se.trailer_file_id, `🎬 Trailer: ${se.title}`)
+    await sendKbd(chat, 'Gostou?', [[btn('🛒 Comprar', `comprar_${seriesId}`)], [btn('🏠 Início', 'home')]])
+  } catch (e) {
+    await logAdmin('enviarTrailer', e, { seriesId })
+  }
+}
+
+// FLUXO DE COMPRA - SÉRIES PAGAS
+async function comprar(chat: number, userId: string, seriesId: string, supabase: any) {
+  try {
+    const { data: se } = await supabase.from('series').select('title, price, video_file_id').eq('id', seriesId).single()
+    if (!se) return
+
+    if (se.price == 0) {
+      // GRATUITO - libera imediatamente
+      await supabase.from('vendas').insert({ 
+        user_id: userId, 
+        series_id: seriesId, 
+        status: 'paid',
+        created_at: new Date().toISOString()
+      })
+      await sendKbd(chat, `🎁 ${se.title} liberada!`, [[btn('🎥 Assistir', `assistir_${seriesId}`)]])
+      if (se.video_file_id) await sendVid(chat, se.video_file_id, `🎬 ${se.title} (Gratuita)`)
+      return
+    }
+
+    // PAGO - cria pagamento no Mercado Pago
+    const preference = {
+      items: [{
+        title: se.title,
+        unit_price: Number(se.price),
+        quantity: 1,
+        currency_id: 'BRL'
+      }],
+      external_reference: `${userId}_${seriesId}_${Date.now()}`,
+      notification_url: `https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/webhook/mercadopago`,
+      back_urls: {
+        success: MINI_APP_URL,
+        failure: MINI_APP_URL,
+        pending: MINI_APP_URL
+      },
+      auto_return: 'approved'
+    }
+
+    const mpRes = await fetch('https://api.mercadopago.com/checkout/preferences', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${MP_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(preference)
+    })
+
+    const mpData = await mpRes.json()
+
+    if (!mpData.id) {
+      await sendTxt(chat, '❌ Erro ao gerar pagamento. Tente novamente.')
+      return
+    }
+
+    // Salva pendência no banco
+    await supabase.from('pagamentos_pendentes').insert({
+      user_id: userId,
+      series_id: seriesId,
+      mp_preference_id: mpData.id,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    })
+
+    await sendTxt(chat, `🛒 <b>${se.title}</b>\n💰 Total: R$ ${se.price}\n\n⏳ Clique no link abaixo para pagar:`)
+    await sendKbd(chat, '💳 Finalizar compra:', [
+      [urlBtn('👉 Pagar com Mercado Pago', mpData.init_point)],
+      [btn('🏠 Início', 'home')]
+    ])
+
+  } catch (e) {
+    await logAdmin('comprar', e, { userId, seriesId })
+    await sendTxt(chat, '❌ Erro ao processar compra.')
+  }
+}
+
+// ASSISTIR VÍDEO (GRATUITO OU JÁ PAGO)
+async function assistir(chat: number, userId: string, seriesId: string, supabase: any) {
+  try {
+    // Verifica se é gratuito ou já comprou
+    const { data: serie } = await supabase.from('series').select('price, video_file_id, title').eq('id', seriesId).single()
     
-    .cart-footer { padding: 25px; border-top: 1px solid rgba(128,128,128,0.2); background: var(--darker); }
-    .cart-total { display: flex; justify-content: space-between; font-size: 18px; margin-bottom: 20px; font-weight: 700; }
-    .cart-total span:last-child { color: var(--success); font-size: 24px; }
+    if (!serie) {
+      await sendTxt(chat, '❌ Série não encontrada.')
+      return
+    }
 
-    /* HEADER */
-    .header {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-      padding: 15px 4%; display: flex; justify-content: space-between; align-items: center;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
-      transition: 0.3s;
-    }
-    .header.scrolled { background: var(--darker); box-shadow: 0 2px 20px rgba(0,0,0,0.5); }
-    .logo { font-size: 22px; font-weight: 800; color: var(--primary); text-decoration: none; display: flex; align-items: center; gap: 8px; }
-    .header-actions { display: flex; gap: 12px; }
-
-    .icon-btn {
-      background: rgba(128,128,128,0.2); border: none; color: var(--text-main);
-      width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; position: relative;
-      transition: 0.3s; font-size: 18px;
-    }
-    .icon-btn:hover { background: var(--primary); color: white; transform: scale(1.1); }
-    
-    .badge {
-      position: absolute; top: -5px; right: -5px; background: var(--primary);
-      color: white; font-size: 11px; font-weight: 700; width: 22px; height: 22px;
-      border-radius: 50%; display: flex; align-items: center; justify-content: center;
-      border: 2px solid var(--darker); animation: bounce 0.3s;
-    }
-    @keyframes bounce { 50% { transform: scale(1.2); } }
-
-    /* HERO */
-    .hero { position: relative; min-height: 85vh; display: flex; align-items: center; padding: 100px 0 60px 4%; overflow: hidden; }
-    .hero-content { width: 45%; max-width: 600px; z-index: 10; position: relative; padding-right: 40px; }
-    .hero-image-container {
-      position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-      width: 55%; height: 80%; display: flex; align-items: center; justify-content: center;
-      padding: 20px;
-    }
-    .hero-poster {
-      max-width: 100%; max-height: 100%; border-radius: 12px;
-      box-shadow: 0 25px 60px rgba(0,0,0,0.9); opacity: 0;
-      transition: opacity 0.8s ease; object-fit: contain;
-    }
-    .hero-poster.active { opacity: 1; }
-    .hero-gradient {
-      position: absolute; left: 0; top: 0; bottom: 0; width: 65%; z-index: 5;
-      background: linear-gradient(to right, var(--darker) 0%, rgba(15,15,15,0.95) 50%, transparent 100%);
-    }
-    
-    .hero-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--primary); color: white; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 20px; }
-    .hero h1 { font-size: 48px; font-weight: 800; margin-bottom: 20px; line-height: 1.1; }
-    .hero-desc { font-size: 18px; color: var(--text-dim); margin-bottom: 30px; line-height: 1.6; }
-
-    .btn { padding: 14px 28px; border-radius: 6px; border: none; font-size: 16px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; transition: all 0.3s; text-transform: uppercase; letter-spacing: 0.5px; }
-    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
-    .btn-primary { background: white; color: var(--dark); }
-    .btn-play { background: var(--primary); color: white; margin-left: 10px; }
-    .btn-free { background: var(--gold); color: #000; }
-    .btn-cart { background: var(--success); color: white; width: 100%; justify-content: center; }
-    .btn-outline { background: transparent; border: 2px solid var(--text-main); color: var(--text-main); }
-
-    /* MODAL */
-    .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 9997;
-      display: none; justify-content: center; align-items: center; padding: 20px;
-      opacity: 0; transition: opacity 0.3s;
-    }
-    .modal-overlay.active { display: flex; opacity: 1; }
-    .modal-content {
-      background: var(--card-bg); border-radius: 16px; max-width: 500px; width: 100%;
-      max-height: 90vh; overflow: hidden; position: relative; transform: scale(0.95);
-      transition: transform 0.3s; box-shadow: 0 25px 50px rgba(0,0,0,0.5);
-    }
-    .modal-overlay.active .modal-content { transform: scale(1); }
-    .modal-close { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.5); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; z-index: 10; transition: 0.3s; }
-    .modal-close:hover { background: var(--primary); }
-    .modal-hero { position: relative; height: 250px; overflow: hidden; }
-    .modal-hero img { width: 100%; height: 100%; object-fit: cover; }
-    .modal-body { padding: 30px; }
-    .modal-title { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
-    .modal-price { font-size: 24px; color: var(--success); font-weight: 700; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
-    .modal-price.free { color: var(--gold); }
-    .modal-desc { color: var(--text-dim); margin-bottom: 25px; line-height: 1.6; }
-    .modal-actions { display: flex; gap: 12px; flex-direction: column; }
-    .free-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,215,0,0.2); padding: 4px 12px; border-radius: 20px; font-size: 14px; }
-
-    /* TOAST */
-    .toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10001; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
-    .toast {
-      background: rgba(30,30,30,0.95); color: white; padding: 16px 24px; border-radius: 12px;
-      display: flex; align-items: center; gap: 12px; font-weight: 500;
-      transform: translateX(-50%) translateY(100px); opacity: 0; transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-      backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); min-width: 300px; pointer-events: all;
-    }
-    body.light-mode .toast { background: rgba(255,255,255,0.95); color: #141414; border: 1px solid rgba(0,0,0,0.1); }
-    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
-    .toast-icon { font-size: 20px; }
-    .toast-success .toast-icon { color: var(--success); }
-    .toast-error .toast-icon { color: #ff4444; }
-
-    /* CATÁLOGO */
-    .section { padding: 40px 4%; }
-    .search-box { position: relative; max-width: 600px; margin: 0 auto 30px; }
-    .search-box input { width: 100%; padding: 16px 24px 16px 50px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 12px; color: var(--text-main); font-size: 16px; outline: none; }
-    .search-box input:focus { border-color: var(--primary); }
-    .search-box i { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(--gray); }
-    
-    .categories { display: flex; gap: 12px; margin-bottom: 30px; flex-wrap: wrap; justify-content: center; }
-    .category-chip { padding: 10px 20px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 25px; color: var(--text-main); font-size: 14px; cursor: pointer; transition: 0.3s; }
-    .category-chip:hover, .category-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
-    
-    .section-title { font-size: 24px; font-weight: 700; margin-bottom: 25px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
-    
-    .card {
-      background: var(--card-bg); border-radius: 10px; overflow: hidden;
-      cursor: pointer; transition: all 0.3s; position: relative; aspect-ratio: 2/3;
-    }
-    .card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 15px 35px rgba(0,0,0,0.6); }
-    .card img { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.3s; }
-    .card img.loaded { opacity: 1; }
-    .card-info { position: absolute; bottom: 0; left: 0; right: 0; padding: 50px 15px 15px; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); opacity: 0; transition: opacity 0.3s; }
-    .card:hover .card-info { opacity: 1; }
-    .card-title { font-size: 14px; font-weight: 600; color: white; }
-    .price-tag { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); color: var(--success); padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; z-index: 5; }
-    .price-tag.free { color: #000; background: var(--gold); }
-
-    /* SKELETON */
-    .skeleton { background: linear-gradient(90deg, var(--skeleton) 25%, var(--hover) 50%, var(--skeleton) 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; }
-    @keyframes skeleton-loading { from { background-position: 200% 0; } to { background-position: -200% 0; } }
-
-    @media (max-width: 968px) {
-      .hero { flex-direction: column; min-height: auto; padding: 100px 4% 40px; text-align: center; }
-      .hero-content { width: 100%; padding-right: 0; margin-bottom: 30px; }
-      .hero-image-container { position: relative; width: 100%; height: 400px; transform: none; }
-      .hero-gradient { display: none; }
-      .hero h1 { font-size: 32px; }
-      .btn-play { margin-left: 0; margin-top: 10px; }
-      .cart-drawer { max-width: 100%; }
-    }
-  </style>
-</head>
-<body>
-
-  <!-- PLAYER PROTEGIDO -->
-  <div class="video-player-overlay" id="playerOverlay">
-    <div class="player-container">
-      <div class="player-header">
-        <div class="player-title" id="playerTitle">Carregando...</div>
-        <button class="player-close" onclick="closePlayer()">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
+    // Se é pago, verifica se comprou
+    if (serie.price > 0) {
+      const { data: compra } = await supabase.from('vendas')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('series_id', seriesId)
+        .eq('status', 'paid')
+        .single()
       
-      <div class="loading-player" id="playerLoading">
-        <div class="spinner"></div>
-        <div>Gerando acesso seguro...</div>
-      </div>
-      
-      <video 
-        id="mainVideo" 
-        controls 
-        controlsList="nodownload noremoteplayback" 
-        disablePictureInPicture
-        disableRemotePlayback
-        style="display: none;"
-      ></video>
-      
-      <div class="player-watermark" id="playerWatermark">
-        ID: <span id="watermarkId">---</span> | Acesso Vitalício
-      </div>
-    </div>
-  </div>
-
-  <!-- CARRINHO -->
-  <div class="cart-overlay" id="cartOverlay" onclick="toggleCart()"></div>
-  <div class="cart-drawer" id="cartDrawer">
-    <div class="cart-header">
-      <h3><i class="fas fa-shopping-cart"></i> Seu Carrinho</h3>
-      <button class="icon-btn" onclick="toggleCart()" style="width: 36px; height: 36px;">
-        <i class="fas fa-times"></i>
-      </button>
-    </div>
-    <div class="cart-body" id="cartItems"></div>
-    <div class="cart-footer">
-      <div class="cart-total">
-        <span>Total:</span>
-        <span id="cartTotal">R$ 0,00</span>
-      </div>
-      <button class="btn btn-cart" onclick="checkout()">
-        <i class="fas fa-check"></i> Finalizar Compra
-      </button>
-    </div>
-  </div>
-
-  <!-- MODAL DETALHES -->
-  <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
-    <div class="modal-content" onclick="event.stopPropagation()">
-      <button class="modal-close" onclick="closeModal()">
-        <i class="fas fa-times"></i>
-      </button>
-      <div class="modal-hero">
-        <img id="modalImg" src="" alt="">
-      </div>
-      <div class="modal-body">
-        <h2 class="modal-title" id="modalTitle">Título</h2>
-        <div class="modal-price" id="modalPrice">
-          <span id="priceValue">R$ 0,00</span>
-        </div>
-        <p class="modal-desc" id="modalDesc">Descrição...</p>
-        <div class="modal-actions" id="modalActions">
-          <!-- Botões inseridos via JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- TOASTS -->
-  <div class="toast-container" id="toastContainer"></div>
-
-  <!-- HEADER -->
-  <header class="header" id="header">
-    <a href="#" class="logo">
-      <i class="fas fa-play-circle"></i> SÉRIES EXPRESS
-    </a>
-    <div class="header-actions">
-      <button class="icon-btn" onclick="toggleTheme()" title="Alternar tema">
-        <i class="fas fa-moon" id="themeIcon"></i>
-      </button>
-      <button class="icon-btn" onclick="toggleCart()" title="Ver carrinho">
-        <i class="fas fa-shopping-cart"></i>
-        <span class="badge" id="cartBadge" style="display: none;">0</span>
-      </button>
-    </div>
-  </header>
-
-  <!-- HERO SLIDESHOW -->
-  <section class="hero">
-    <div class="hero-gradient"></div>
-    <div class="hero-content">
-      <span class="hero-badge">
-        <i class="fas fa-fire"></i> Destaque da Semana
-      </span>
-      <h1 id="heroTitle">Carregando...</h1>
-      <p class="hero-desc" id="heroDesc">Preparando o catálogo...</p>
-      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <button class="btn btn-primary" onclick="scrollToCatalog()">
-          <i class="fas fa-list"></i> Explorar
-        </button>
-        <button class="btn btn-play" id="heroPlayBtn" onclick="playHero()" style="display: none;">
-          <i class="fas fa-play"></i> Assistir
-        </button>
-      </div>
-    </div>
-    <div class="hero-image-container">
-      <img id="heroImg" class="hero-poster" alt="Poster">
-    </div>
-  </section>
-
-  <!-- CATÁLOGO -->
-  <section class="section" id="catalogSection">
-    <div class="search-box">
-      <i class="fas fa-search"></i>
-      <input type="text" id="searchInput" placeholder="Buscar séries..." onkeyup="searchSeries(this.value)">
-    </div>
-    
-    <div class="categories">
-      <div class="category-chip active" onclick="filterCategory('all', this)">Todas</div>
-      <div class="category-chip" onclick="filterCategory('romance', this)">❤️ Romance</div>
-      <div class="category-chip" onclick="filterCategory('drama', this)">🎭 Drama</div>
-      <div class="category-chip" onclick="filterCategory('suspense', this)">🔪 Suspense</div>
-    </div>
-
-    <h2 class="section-title">Catálogo Completo</h2>
-    <div class="grid" id="catalogGrid">
-      <div class="card skeleton"></div>
-      <div class="card skeleton"></div>
-      <div class="card skeleton"></div>
-      <div class="card skeleton"></div>
-    </div>
-  </section>
-
-  <script>
-    // CONFIGURAÇÃO
-    const tg = window.Telegram.WebApp;
-    tg.expand();
-    
-    const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
-    const userId = tg.initDataUnsafe?.user?.id || 'anonymous';
-    
-    // ESTADO GLOBAL
-    let allSeries = [];
-    let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
-    let currentHero = 0;
-    let currentModalSeries = null;
-    let heroInterval = null;
-
-    // INICIALIZAÇÃO
-    async function init() {
-      applyTheme();
-      await loadSeries();
-      updateCartUI();
-      
-      window.addEventListener('scroll', () => {
-        document.getElementById('header').classList.toggle('scrolled', window.scrollY > 50);
-      });
-      
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          closePlayer();
-          closeModal();
-        }
-      });
-    }
-
-    // TEMA CLARO/ESCURO
-    function applyTheme() {
-      if (localStorage.getItem('theme_series') === 'light') {
-        document.body.classList.add('light-mode');
-        document.getElementById('themeIcon').className = 'fas fa-sun';
-      }
-    }
-    
-    function toggleTheme() {
-      const isLight = document.body.classList.toggle('light-mode');
-      document.getElementById('themeIcon').className = isLight ? 'fas fa-sun' : 'fas fa-moon';
-      localStorage.setItem('theme_series', isLight ? 'light' : 'dark');
-      showToast(isLight ? 'Tema claro ativado' : 'Tema escuro ativado', 'success');
-    }
-
-    // CARREGAR DADOS DA API
-    async function loadSeries() {
-      try {
-        const res = await fetch(`${API_URL}/api/series`);
-        allSeries = await res.json();
-        renderGrid(allSeries);
-        initHero();
-      } catch (e) {
-        showToast('Erro ao carregar catálogo', 'error');
-        console.error(e);
+      if (!compra) {
+        await sendKbd(chat, '🔒 Você precisa comprar esta série primeiro.', [
+          [btn('🛒 Comprar', `comprar_${seriesId}`)],
+          [btn('🏠 Início', 'home')]
+        ])
+        return
       }
     }
 
-    // HERO SLIDESHOW
-    function initHero() {
-      if (!allSeries.length) return;
-      updateHero(0);
-      
-      heroInterval = setInterval(() => {
-        currentHero = (currentHero + 1) % allSeries.length;
-        updateHero(currentHero);
-      }, 6000);
+    // Envia o vídeo protegido
+    if (serie.video_file_id) {
+      await sendVid(chat, serie.video_file_id, `🎬 <b>${serie.title}</b>\n\n🔒 Conteúdo protegido - ID: ${userId}`)
+    } else {
+      await sendTxt(chat, '⚠️ Vídeo ainda não disponível.')
     }
 
-    function updateHero(index) {
-      const serie = allSeries[index];
-      document.getElementById('heroTitle').textContent = serie.title;
-      document.getElementById('heroDesc').textContent = serie.description || 'Uma história emocionante...';
-      
-      const img = document.getElementById('heroImg');
-      img.classList.remove('active');
-      setTimeout(() => {
-        img.src = serie.cover_url;
-        img.onload = () => img.classList.add('active');
-      }, 200);
-      
-      const playBtn = document.getElementById('heroPlayBtn');
-      playBtn.style.display = 'inline-flex';
-      playBtn.onclick = () => {
-        if (serie.price == 0) {
-          // Se for gratuito, vai direto pro player
-          openPlayer(serie.id, serie.title);
-        } else {
-          // Se for pago, abre modal
-          openModal(serie);
-        }
-      };
+  } catch (e) {
+    await logAdmin('assistir', e, { userId, seriesId })
+  }
+}
+
+async function enviarMinhasCompras(chat: number, userId: number, supabase: any) {
+  try {
+    const { data: sales } = await supabase.from('vendas').select('series_id').eq('user_id', userId).eq('status', 'paid').not('series_id', 'is', null)
+    if (!sales?.length) {
+      await sendKbd(chat, '📭 Nenhuma compra.', [[btn('📚 Catálogo', 'catalogo_0')]])
+      return
     }
 
-    function playHero() {
-      const serie = allSeries[currentHero];
-      if (serie.price == 0) {
-        openPlayer(serie.id, serie.title);
-      } else {
-        openModal(serie);
+    await sendTxt(chat, `📺 ${sales.length} compra(s):`)
+    for (const v of sales) {
+      const { data: se } = await supabase.from('series').select('title, video_file_id').eq('id', v.series_id).single()
+      if (se?.video_file_id) {
+        await sendVid(chat, se.video_file_id, `🎬 ${se.title}`)
+        await delay(VIDEO_DELAY)
       }
     }
+  } catch (e) {
+    await logAdmin('enviarMinhasCompras', e, { userId })
+  }
+}
 
-    // PLAYER PROTEGIDO - ACESSO VITALÍCIO COM URL TEMPORÁRIA
-    async function openPlayer(serieId, title) {
-      const overlay = document.getElementById('playerOverlay');
-      const loading = document.getElementById('playerLoading');
-      const video = document.getElementById('mainVideo');
+// ==========================================
+// HANDLER PRINCIPAL
+// ==========================================
+serve(async (req) => {
+  const url = new URL(req.url)
+  let path = url.pathname
+  
+  if (path.startsWith('/bot-unificado')) {
+    path = path.replace('/bot-unificado', '')
+  }
+  if (path === '') path = '/'
+
+  // STREAMING PROTEGIDO PARA MINI APP
+  if (path.startsWith('/api/stream/')) {
+    try {
+      const serieId = path.split('/')[3]
+      const requestUserId = url.searchParams.get('user_id')
       
-      overlay.classList.add('active');
-      loading.style.display = 'flex';
-      video.style.display = 'none';
-      document.getElementById('playerTitle').textContent = title || 'Carregando...';
-      document.getElementById('watermarkId').textContent = userId;
+      if (!requestUserId || !serieId) {
+        return new Response(JSON.stringify({ error: 'Parâmetros inválidos' }), {
+          status: 400, headers: { 'content-type': 'application/json' }
+        })
+      }
+
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
       
-      try {
-        // CHAMA API - GERA URL TEMPORÁRIA NOVA (30 min) A CADA REQUISIÇÃO
-        const res = await fetch(`${API_URL}/api/stream/${serieId}?user_id=${userId}`);
-        const data = await res.json();
+      const { data: serie } = await supabase.from('series').select('price, video_storage_path, video_file_id, title').eq('id', serieId).single()
+      
+      if (!serie) {
+        return new Response(JSON.stringify({ error: 'Série não encontrada' }), {
+          status: 404, headers: { 'content-type': 'application/json' }
+        })
+      }
+
+      // Verifica acesso (gratuito ou pago)
+      if (serie.price > 0) {
+        const { data: compra } = await supabase.from('vendas')
+          .select('*')
+          .eq('user_id', requestUserId)
+          .eq('series_id', serieId)
+          .eq('status', 'paid')
+          .single()
         
-        if (data.error) {
-          showToast(data.error, 'error');
-          closePlayer();
-          return;
+        if (!compra) {
+          return new Response(JSON.stringify({ 
+            error: 'Você precisa adquirir esta série primeiro' 
+          }), { status: 403, headers: { 'content-type': 'application/json' }})
         }
+      }
+
+      // Retorna URL do vídeo
+      if (serie.video_storage_path) {
+        const { data: signedUrl, error } = await supabase
+          .storage
+          .from('videos')
+          .createSignedUrl(serie.video_storage_path, 1800)
         
-        if (data.type === 'telegram') {
-          showToast('Abrindo no Telegram...', 'info');
-          tg.sendData(JSON.stringify({ action: 'request_video', series_id: serieId }));
-          setTimeout(() => {
-            closePlayer();
-            tg.close();
-          }, 1500);
-          return;
-        }
+        if (error) throw error
         
-        video.src = data.url;
-        
-        video.oncanplay = () => {
-          loading.style.display = 'none';
-          video.style.display = 'block';
-          video.play().catch(e => console.log('Autoplay bloqueado:', e));
-        };
-        
-        video.onerror = () => {
-          showToast('Erro ao carregar vídeo', 'error');
-          closePlayer();
-        };
-        
-        setTimeout(() => {
-          if (overlay.classList.contains('active')) {
-            showToast('Sessão expirando... Recarregue se necessário', 'info');
+        return new Response(JSON.stringify({
+          type: 'stream',
+          url: signedUrl.signedUrl,
+          title: serie.title
+        }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'access-control-allow-origin': '*'
           }
-        }, 1740000);
+        })
+      } else if (serie.video_file_id) {
+        return new Response(JSON.stringify({
+          type: 'telegram',
+          file_id: serie.video_file_id,
+          title: serie.title
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
+        })
+      }
+      
+      return new Response(JSON.stringify({ error: 'Vídeo não disponível' }), {
+        status: 404, headers: { 'content-type': 'application/json' }
+      })
+      
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message }), {
+        status: 500, headers: { 'content-type': 'application/json' }
+      })
+    }
+  }
+
+  // API PÚBLICA
+  if (path === '/api/series' || path === '/api/series/') {
+    try {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+      const { data: series } = await supabase
+        .from('series')
+        .select('id, title, price, cover_url, cover_file_id, category, description')
+        .order('created_at', { ascending: false })
+        .limit(50)
+      
+      return new Response(JSON.stringify(series || []), {
+        status: 200,
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' }
+      })
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message }), { status: 500 })
+    }
+  }
+
+  // WEBHOOK MERCADO PAGO
+  if (path === '/webhook/mercadopago') {
+    try {
+      const body = await req.json()
+      
+      if (body.type === 'payment' && body.data.status === 'approved') {
+        const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
         
-      } catch (e) {
-        console.error(e);
-        showToast('Erro de conexão', 'error');
-        closePlayer();
+        // Busca pagamento pendente
+        const { data: pendente } = await supabase
+          .from('pagamentos_pendentes')
+          .select('*')
+          .eq('mp_preference_id', body.data.external_reference)
+          .single()
+        
+        if (pendente) {
+          // Libera a série
+          await supabase.from('vendas').insert({
+            user_id: pendente.user_id,
+            series_id: pendente.series_id,
+            status: 'paid',
+            mp_payment_id: body.data.id,
+            created_at: new Date().toISOString()
+          })
+          
+          // Atualiza status do pagamento
+          await supabase.from('pagamentos_pendentes')
+            .update({ status: 'approved' })
+            .eq('id', pendente.id)
+          
+          // Notifica usuário
+          await sendTxt(Number(pendente.user_id), 
+            `✅ <b>Pagamento confirmado!</b>\n\nSua série já está disponível em "Minhas Compras".`
+          )
+        }
+      }
+      
+      return new Response('OK', { status: 200 })
+    } catch (e) {
+      console.error('Webhook error:', e)
+      return new Response('OK', { status: 200 })
+    }
+  }
+
+  // WEBHOOK TELEGRAM
+  if (WEBHOOK_SECRET) {
+    const secret = req.headers.get('X-Telegram-Bot-Api-Secret-Token')
+    if (secret !== WEBHOOK_SECRET) {
+      return new Response('Unauthorized', { status: 401 })
+    }
+  }
+
+  try {
+    const body = await req.json()
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+    const isCallback = !!body.callback_query
+    const chat = isCallback ? body.callback_query?.message?.chat?.id : body.message?.chat?.id
+    const userId = isCallback ? body.callback_query?.from?.id : body.message?.from?.id
+    const msgId = body.callback_query?.message?.message_id
+    const isAdmin = OWNER_ID && String(userId) === OWNER_ID
+    const txt = body.message?.text || ''
+    const cb = body.callback_query?.data
+
+    if (!chat || !userId) return new Response('OK', { status: 200 })
+
+    // CALLBACKS
+    if (isCallback && cb) {
+      tgApi('answerCallbackQuery', { callback_query_id: body.callback_query.id }).catch(() => {})
+      if (msgId) await deleteMsg(chat, msgId)
+
+      if (cb === 'home' || cb === 'start') await enviarWelcome(chat, userId, supabase)
+      else if (cb === 'catalogo_0' || cb.startsWith('catalogo_')) {
+        const page = parseInt(cb.split('_')[1]) || 0
+        await enviarCatalogo(chat, supabase, page)
+      }
+      else if (cb.startsWith('detalhes_')) await enviarDetalhes(chat, cb.replace('detalhes_', ''), supabase)
+      else if (cb.startsWith('ver_trailer_')) await enviarTrailer(chat, cb.replace('ver_trailer_', ''), supabase)
+      else if (cb.startsWith('comprar_')) await comprar(chat, String(userId), cb.replace('comprar_', ''), supabase)
+      else if (cb.startsWith('assistir_')) await assistir(chat, String(userId), cb.replace('assistir_', ''), supabase)
+      else if (cb === 'minhas_compras') await enviarMinhasCompras(chat, userId, supabase)
+      else if (cb === 'suporte') {
+        await sendKbd(chat, '🛠️ Suporte\n\n📩 https://t.me/Isis_meireles', [
+          [urlBtn('👤 Abrir Chat', 'https://t.me/Isis_meireles')],
+          [btn('🏠 Início', 'home')]
+        ])
+      }
+      else if (cb === 'share_invite') {
+        const link = `https://t.me/ShortNovelsBot?start=ref_${userId}`
+        await sendKbd(chat, `🎁 <b>Seu Link:</b>\n${link}`, [
+          [urlBtn('📤 Compartilhar', link)],
+          [btn('🏠 Início', 'home')]
+        ])
+      }
+      else if (cb === 'admin' && isAdmin) {
+        await sendKbd(chat, '⚙️ Painel Admin', [
+          [btn('🎬 Séries', 'manage_series'), btn('📦 Combos', 'manage_combos')],
+          [btn('➕ Nova (R$5,90)', 'add_series'), btn('🎁 Nova Gratuita', 'add_free_series')],
+          [btn('🏠 Início', 'home')]
+        ])
+      }
+      else if (cb === 'manage_series' && isAdmin) {
+        const { data } = await supabase.from('series').select('id, title, price').order('created_at', { ascending: false }).limit(20)
+        const buttons = data?.map(s => [btn(`${s.price == 0 ? '🎁' : '🎬'} ${s.title.substring(0,30)}`, `edit_series_${s.id}`)]) || []
+        buttons.push([btn('➕ Nova', 'add_series')], [btn('⬅️ Voltar', 'admin')])
+        await sendKbd(chat, `🎬 Séries (${data?.length || 0})`, buttons)
+      }
+      else if (cb === 'add_series' && isAdmin) {
+        await supabase.from('admin_sessions').upsert({ owner_id: String(userId), action: 'add_title', target_id: 'new', temp_data: { is_free: false } })
+        await sendKbd(chat, '➕ <b>Passo 1/5:</b> Envie o título (R$5,90):', [[btn('❌ Cancelar', 'cancel_add')]])
+      }
+      else if (cb === 'add_free_series' && isAdmin) {
+        await supabase.from('admin_sessions').upsert({ owner_id: String(userId), action: 'add_title', target_id: 'new', temp_data: { is_free: true } })
+        await sendKbd(chat, '🎁 <b>Passo 1/5:</b> Envie o título (GRÁTIS):', [[btn('❌ Cancelar', 'cancel_add')]])
+      }
+      else if (cb === 'cancel_add' && isAdmin) {
+        await supabase.from('admin_sessions').delete().eq('owner_id', String(userId))
+        await sendKbd(chat, '✅ Cancelado.', [[btn('⬅️ Admin', 'admin')]])
+      }
+      else {
+        await sendKbd(chat, '⚠️ Ação não reconhecida.', [[btn('🏠 Início', 'home')]])
+      }
+      
+      return new Response('OK', { status: 200 })
+    }
+
+    // COMANDOS
+    if (txt.startsWith('/')) {
+      if (txt === '/admin' && isAdmin) {
+        await sendKbd(chat, '⚙️ Painel Admin', [
+          [btn('🎬 Séries', 'manage_series'), btn('➕ Nova', 'add_series')],
+          [btn('🏠 Início', 'home')]
+        ])
+        return new Response('OK', { status: 200 })
+      }
+      if (txt === '/start') {
+        await enviarWelcome(chat, userId, supabase)
+        return new Response('OK', { status: 200 })
+      }
+      if (txt === '/catalogo') {
+        await enviarCatalogo(chat, supabase, 0)
+        return new Response('OK', { status: 200 })
+      }
+      if (txt === '/minhas-compras') {
+        await enviarMinhasCompras(chat, userId, supabase)
+        return new Response('OK', { status: 200 })
       }
     }
 
-    function closePlayer() {
-      const overlay = document.getElementById('playerOverlay');
-      const video = document.getElementById('mainVideo');
-      const loading = document.getElementById('playerLoading');
+    // SESSÕES ADMIN
+    if (isAdmin) {
+      const { data: session } = await supabase.from('admin_sessions').select('*').eq('owner_id', String(userId)).single()
       
-      video.pause();
-      video.src = '';
-      video.style.display = 'none';
-      loading.style.display = 'none';
-      overlay.classList.remove('active');
-    }
+      if (session) {
+        const { action, temp_data = {} } = session
+        const isFree = temp_data?.is_free || false
+        const priceToUse = isFree ? 0 : DEFAULT_PRICE
 
-    // CARRINHO DE COMPRAS
-    function toggleCart() {
-      document.getElementById('cartOverlay').classList.toggle('active');
-      document.getElementById('cartDrawer').classList.toggle('active');
-      document.body.style.overflow = document.getElementById('cartDrawer').classList.contains('active') ? 'hidden' : '';
-    }
-
-    function addToCart(serie) {
-      if (cart.find(item => item.id === serie.id)) {
-        showToast('Já está no carrinho!', 'error');
-        return;
-      }
-      cart.push(serie);
-      localStorage.setItem('cart_series', JSON.stringify(cart));
-      updateCartUI();
-      showToast('Adicionado ao carrinho!', 'success');
-    }
-
-    function removeFromCart(id) {
-      cart = cart.filter(item => item.id !== id);
-      localStorage.setItem('cart_series', JSON.stringify(cart));
-      updateCartUI();
-    }
-
-    function updateCartUI() {
-      const container = document.getElementById('cartItems');
-      const badge = document.getElementById('cartBadge');
-      const totalEl = document.getElementById('cartTotal');
-      
-      badge.textContent = cart.length;
-      badge.style.display = cart.length > 0 ? 'flex' : 'none';
-      
-      let total = 0;
-      
-      if (cart.length === 0) {
-        container.innerHTML = `
-          <div style="text-align: center; padding: 60px 20px; color: var(--gray);">
-            <i class="fas fa-shopping-basket" style="font-size: 48px; margin-bottom: 15px; opacity: 0.3;"></i>
-            <p>Seu carrinho está vazio</p>
-            <p style="font-size: 14px; margin-top: 10px;">Adicione séries para começar!</p>
-          </div>
-        `;
-      } else {
-        container.innerHTML = cart.map(item => {
-          total += parseFloat(item.price);
-          return `
-            <div class="cart-item">
-              <img src="${item.cover_url}" alt="${item.title}" onerror="this.src='https://placehold.co/60x90'">
-              <div class="cart-item-info">
-                <div class="cart-item-title">${item.title}</div>
-                <div class="cart-item-price">${item.price == 0 ? 'GRÁTIS' : 'R$ ' + item.price}</div>
-              </div>
-              <button class="cart-item-remove" onclick="removeFromCart('${item.id}')">
-                <i class="fas fa-trash"></i>
-              </button>
-            </div>
-          `;
-        }).join('');
-      }
-      
-      totalEl.textContent = total === 0 ? 'Grátis' : 'R$ ' + total.toFixed(2);
-    }
-
-    function checkout() {
-      if (cart.length === 0) {
-        showToast('Carrinho vazio!', 'error');
-        return;
-      }
-      
-      const total = cart.reduce((sum, item) => sum + parseFloat(item.price), 0);
-      
-      tg.sendData(JSON.stringify({
-        action: 'checkout_cart',
-        items: cart,
-        total: total,
-        user_id: userId
-      }));
-      
-      showToast('Finalizando compra...', 'success');
-      
-      setTimeout(() => {
-        cart = [];
-        localStorage.setItem('cart_series', JSON.stringify(cart));
-        updateCartUI();
-        toggleCart();
-        tg.close();
-      }, 1000);
-    }
-
-    // MODAL DE DETALHES - COM LÓGICA PARA GRATUITOS
-    function openModal(serie) {
-      currentModalSeries = serie;
-      document.getElementById('modalImg').src = serie.cover_url;
-      document.getElementById('modalTitle').textContent = serie.title;
-      document.getElementById('modalDesc').textContent = serie.description || 'Sem descrição disponível.';
-      
-      const priceEl = document.getElementById('modalPrice');
-      const priceValue = document.getElementById('priceValue');
-      const actionsDiv = document.getElementById('modalActions');
-      
-      // LIMPA BOTÕES ANTERIORES
-      actionsDiv.innerHTML = '';
-      
-      if (serie.price == 0) {
-        // SÉRIE GRATUITA - VAI DIRETO PRO PLAYER
-        priceEl.className = 'modal-price free';
-        priceEl.innerHTML = `
-          <span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>
-        `;
+        if (action === 'add_title') {
+          await supabase.from('admin_sessions').update({ 
+            action: 'add_desc', 
+            temp_data: { ...temp_data, title: txt } 
+          }).eq('owner_id', String(userId))
+          await sendKbd(chat, `✅ Título: <b>${txt}</b>\n\nPasso 2/5: Envie a descrição:`, [[btn('❌ Cancelar', 'cancel_add')]])
+          return new Response('OK', { status: 200 })
+        }
         
-        // Botão único e grande para assistir
-        const watchBtn = document.createElement('button');
-        watchBtn.className = 'btn btn-free';
-        watchBtn.style.width = '100%';
-        watchBtn.style.padding = '18px';
-        watchBtn.style.fontSize = '18px';
-        watchBtn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
-        watchBtn.onclick = () => {
-          closeModal();
-          openPlayer(serie.id, serie.title);
-        };
-        actionsDiv.appendChild(watchBtn);
-        
-      } else {
-        // SÉRIE PAGA - BOTÕES DE COMPRA
-        priceEl.className = 'modal-price';
-        priceEl.innerHTML = `<span id="priceValue">R$ ${serie.price}</span>`;
-        
-        // Botão Adicionar ao Carrinho
-        const cartBtn = document.createElement('button');
-        cartBtn.className = 'btn btn-play';
-        cartBtn.style.flex = '1';
-        cartBtn.innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar';
-        cartBtn.onclick = () => {
-          addToCart(serie);
-          closeModal();
-        };
-        
-        // Botão Comprar Agora
-        const buyBtn = document.createElement('button');
-        buyBtn.className = 'btn btn-primary';
-        buyBtn.style.flex = '1';
-        buyBtn.innerHTML = '<i class="fas fa-shopping-bag"></i> Comprar';
-        buyBtn.onclick = () => {
-          tg.sendData(JSON.stringify({
-            action: 'buy',
-            series_id: serie.id,
-            title: serie.title,
-            price: serie.price
-          }));
-          tg.close();
-        };
-        
-        const row = document.createElement('div');
-        row.style.display = 'flex';
-        row.style.gap = '12px';
-        row.appendChild(cartBtn);
-        row.appendChild(buyBtn);
-        actionsDiv.appendChild(row);
-      }
-      
-      document.getElementById('modalOverlay').classList.add('active');
-      document.body.style.overflow = 'hidden';
-    }
-
-    function closeModal(e) {
-      if (!e || e.target.id === 'modalOverlay') {
-        document.getElementById('modalOverlay').classList.remove('active');
-        document.body.style.overflow = '';
+        if (action === 'add_desc') {
+          await supabase.from('admin_sessions').update({ 
+            action: 'add_cover', 
+            temp_data: { ...temp_data, description: txt } 
+          }).eq('owner_id', String(userId))
+          await sendKbd(chat, `✅ Salvo!\n\nPasso 3/5: Envie a FOTO DE CAPA:`, [[btn('❌ Cancelar', 'cancel_add')]])
+          return new Response('OK', { status: 200 })
+        }
       }
     }
 
-    // GRID DO CATÁLOGO
-    function renderGrid(series) {
-      const grid = document.getElementById('catalogGrid');
-      grid.innerHTML = series.map(s => `
-        <div class="card" onclick='openModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>
-          <span class="price-tag ${s.price == 0 ? 'free' : ''}">
-            ${s.price == 0 ? 'GRÁTIS' : 'R$ ' + s.price}
-          </span>
-          <img src="${s.cover_url}" alt="${s.title}" loading="lazy" onload="this.classList.add('loaded')" onerror="this.style.opacity=1">
-          <div class="card-info">
-            <div class="card-title">${s.title}</div>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    function filterCategory(cat, el) {
-      document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
-      el.classList.add('active');
-      renderGrid(cat === 'all' ? allSeries : allSeries.filter(s => s.category === cat));
-    }
-
-    function searchSeries(term) {
-      const filtered = term 
-        ? allSeries.filter(s => s.title.toLowerCase().includes(term.toLowerCase()))
-        : allSeries;
-      renderGrid(filtered);
-    }
-
-    function scrollToCatalog() {
-      document.getElementById('catalogSection').scrollIntoView({ behavior: 'smooth' });
-    }
-
-    // SISTEMA DE TOASTS
-    function showToast(message, type = 'info') {
-      const container = document.getElementById('toastContainer');
-      const toast = document.createElement('div');
-      toast.className = `toast toast-${type}`;
+    // CAPTURA DE FILE_ID (PARA ADMIN)
+    if ((body.message?.photo?.length || body.message?.video?.file_id) && isAdmin) {
+      const isPhoto = !!body.message?.photo?.length
+      const capturedFileId = isPhoto 
+        ? body.message.photo[body.message.photo.length-1].file_id 
+        : body.message.video.file_id
       
-      const icons = { success: 'check-circle', error: 'exclamation-circle', info: 'info-circle' };
-      const colors = { success: '#4CAF50', error: '#ff4444', info: '#2196F3' };
+      const fileTypeName = isPhoto ? 'FOTO' : 'VÍDEO'
       
-      toast.innerHTML = `
-        <i class="fas fa-${icons[type]} toast-icon" style="color: ${colors[type]};"></i>
-        <span>${message}</span>
-      `;
+      await sendTxt(chat, `📎 <b>File ID capturado (${fileTypeName}):</b>\n\n<code>${capturedFileId}</code>\n\n📋 Clique no código acima para copiar.`)
       
-      container.appendChild(toast);
-      setTimeout(() => toast.classList.add('show'), 10);
-      setTimeout(() => { toast.remove(); }, 3000);
+      const { data: hasSession } = await supabase.from('admin_sessions').select('action').eq('owner_id', String(userId)).maybeSingle()
+      
+      if (!hasSession) {
+        return new Response('OK', { status: 200 })
+      }
     }
 
-    // Previne menu de contexto no vídeo
-    document.getElementById('mainVideo').addEventListener('contextmenu', e => {
-      e.preventDefault();
-      return false;
-    });
+    // ARQUIVOS (Upload para bucket)
+    let fileId = '', fileType = ''
 
-    // INICIAR APLICAÇÃO
-    init();
-  </script>
-</body>
-</html>
+    if (body.message?.video?.file_id) { 
+      fileId = body.message.video.file_id; 
+      fileType = 'video' 
+    }
+    else if (body.message?.photo?.length) { 
+      fileId = body.message.photo[body.message.photo.length-1].file_id; 
+      fileType = 'photo' 
+    }
+
+    if (fileId && isAdmin) {
+      const { data: session } = await supabase.from('admin_sessions').select('*').eq('owner_id', String(userId)).single()
+      
+      if (!session) {
+        return new Response('OK', { status: 200 })
+      }
+      
+      const isFree = session.temp_data?.is_free || false
+      const priceToUse = isFree ? 0 : DEFAULT_PRICE
+
+      if (session.action === 'add_cover' && fileType === 'photo') {
+        try {
+          const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`)
+          const fileData = await fileRes.json()
+          
+          if (!fileData.ok) throw new Error('Erro ao obter arquivo')
+          
+          const filePath = fileData.result.file_path
+          const telegramUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`
+          
+          const imageRes = await fetch(telegramUrl)
+          const imageBuffer = await imageRes.arrayBuffer()
+          const imageBlob = new Blob([imageBuffer], { type: 'image/jpeg' })
+          
+          const fileExt = filePath.split('.').pop() || 'jpg'
+          const storagePath = `${userId}/${Date.now()}_cover.${fileExt}`
+          
+          const { error: uploadError } = await supabase
+            .storage
+            .from('covers')
+            .upload(storagePath, imageBlob, { contentType: 'image/jpeg', upsert: true })
+          
+          if (uploadError) throw uploadError
+          
+          const { data: { publicUrl } } = supabase.storage.from('covers').getPublicUrl(storagePath)
+          
+          await supabase.from('admin_sessions').update({ 
+            action: 'add_video', 
+            temp_data: { ...session.temp_data, cover_url: publicUrl, cover_path: storagePath } 
+          }).eq('owner_id', String(userId))
+          
+          await sendKbd(chat, `✅ Capa salva!\n\nPasso 4/5: Envie o VÍDEO:`, [[btn('❌ Cancelar', 'cancel_add')]])
+          
+        } catch (e) {
+          await sendTxt(chat, `❌ Erro: ${e.message}`)
+        }
+        return new Response('OK', { status: 200 })
+      }
+      
+      if (session.action === 'add_video' && fileType === 'video') {
+        await supabase.from('admin_sessions').update({ 
+          action: 'add_trailer', 
+          temp_data: { ...session.temp_data, video_file_id: fileId } 
+        }).eq('owner_id', String(userId))
+        await sendKbd(chat, `✅ Vídeo salvo!\n\nPasso 5/5: Envie o TRAILER ou /pular:`, [[btn('❌ Cancelar', 'cancel_add')]])
+        return new Response('OK', { status: 200 })
+      }
+      
+      if (session.action === 'add_trailer' && fileType === 'video') {
+        const { title, description, cover_url, cover_path, video_file_id } = session.temp_data
+        
+        await supabase.from('series').insert({
+          title, description, cover_url, cover_storage_path: cover_path,
+          video_file_id, trailer_file_id: fileId, price: priceToUse,
+          created_at: new Date().toISOString()
+        })
+        
+        await supabase.from('admin_sessions').delete().eq('owner_id', String(userId))
+        const msg = isFree ? '🎁 SÉRIE GRATUITA!' : `🎉 Série R$ ${priceToUse}`
+        await sendPhoto(chat, cover_url, `${msg}\n\n<b>${title}</b>`, [[btn('⬅️ Admin', 'admin')]])
+        return new Response('OK', { status: 200 })
+      }
+    }
+
+    if (txt === '/pular' && isAdmin) {
+      const { data: session } = await supabase.from('admin_sessions').select('*').eq('owner_id', String(userId)).single()
+      if (session?.action === 'add_trailer') {
+        const { title, description, cover_url, cover_path, video_file_id } = session.temp_data
+        const isFree = session.temp_data?.is_free || false
+        const priceToUse = isFree ? 0 : DEFAULT_PRICE
+        
+        await supabase.from('series').insert({
+          title, description, cover_url, cover_storage_path: cover_path,
+          video_file_id, trailer_file_id: null, price: priceToUse
+        })
+        
+        await supabase.from('admin_sessions').delete().eq('owner_id', String(userId))
+        await sendPhoto(chat, cover_url, `✅ ${title}\n\n${isFree ? 'GRÁTIS' : `R$ ${priceToUse}`}`, [[btn('⬅️ Admin', 'admin')]])
+        return new Response('OK', { status: 200 })
+      }
+    }
+
+    await sendKbd(chat, '🌟 Olá! Use o menu:', [
+      [webAppBtn('🚀 Abrir Loja Visual', MINI_APP_URL)],
+      [btn('📚 Catálogo', 'catalogo_0')],
+      [btn('🏠 Início', 'home')]
+    ])
+    return new Response('OK', { status: 200 })
+
+  } catch (e) {
+    console.error('💥 ERRO:', e)
+    return new Response('OK', { status: 200 })
+  }
+})
