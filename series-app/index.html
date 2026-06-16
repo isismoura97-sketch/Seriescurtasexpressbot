@@ -61,15 +61,15 @@
       gap: 8px;
     }
     
-    /* NOVO: Estilo do Hero com slideshow */
+    /* HERO COM ALTA QUALIDADE */
     .hero {
       position: relative;
-      height: 70vh;
-      min-height: 500px;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.3), var(--darker));
+      height: 85vh; /* Aumentado para melhor visualização */
+      min-height: 600px;
+      background: var(--darker);
       display: flex;
       align-items: flex-end;
-      padding: 0 4% 60px;
+      padding: 0 4% 80px;
       margin-bottom: 20px;
       overflow: hidden;
     }
@@ -80,17 +80,29 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background-size: cover;
-      background-position: center top;
-      transition: opacity 0.8s ease-in-out;
       z-index: 0;
       opacity: 0;
+      transition: opacity 1s ease-in-out;
+      /* CONFIGURAÇÃO DE ALTA QUALIDADE */
+      background-size: cover; /* Mantém proporção cobrindo toda área */
+      background-position: center center; /* Centraliza */
+      background-repeat: no-repeat;
+      /* Otimizações de renderização */
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+      will-change: opacity;
+      /* Evita pixelização */
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
     }
     
     .hero-bg.active {
       opacity: 1;
     }
     
+    /* Gradiente sobre a imagem para legibilidade do texto */
     .hero-bg::after {
       content: '';
       position: absolute;
@@ -98,60 +110,85 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(20,20,20,0) 40%, var(--darker) 100%);
+      background: linear-gradient(
+        to bottom, 
+        rgba(0,0,0,0.2) 0%, 
+        rgba(0,0,0,0) 30%,
+        rgba(20,20,20,0.4) 70%,
+        var(--darker) 100%
+      );
     }
     
     .hero-content {
       position: relative;
       z-index: 2;
-      max-width: 600px;
+      max-width: 650px;
+      animation: fadeInUp 0.8s ease;
+    }
+    
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
     
     .hero-badge {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      background: rgba(229, 9, 20, 0.2);
-      color: var(--primary);
-      padding: 6px 12px;
+      background: rgba(229, 9, 20, 0.9);
+      color: var(--light);
+      padding: 8px 16px;
       border-radius: 4px;
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
       text-transform: uppercase;
-      margin-bottom: 15px;
-      border: 1px solid rgba(229, 9, 20, 0.3);
+      margin-bottom: 20px;
+      letter-spacing: 1px;
+      box-shadow: 0 4px 15px rgba(229, 9, 20, 0.3);
     }
     
     .hero h1 {
-      font-size: 42px;
+      font-size: 48px;
       font-weight: 800;
-      margin-bottom: 15px;
+      margin-bottom: 16px;
       line-height: 1.1;
-      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+      text-shadow: 2px 2px 8px rgba(0,0,0,0.8);
+      letter-spacing: -0.5px;
     }
     
     .hero-desc {
-      font-size: 16px;
-      line-height: 1.5;
-      margin-bottom: 25px;
-      color: #ddd;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
+      font-size: 18px;
+      line-height: 1.6;
+      margin-bottom: 30px;
+      color: #e5e5e5;
+      text-shadow: 1px 1px 4px rgba(0,0,0,0.8);
+      max-width: 550px;
     }
     
     .btn {
-      padding: 12px 24px;
-      border-radius: 4px;
+      padding: 14px 28px;
+      border-radius: 6px;
       border: none;
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      transition: all 0.2s;
+      gap: 10px;
+      transition: all 0.3s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.3);
     }
     
     .btn-primary {
@@ -159,28 +196,37 @@
       color: var(--dark);
     }
     
+    .btn-primary:hover {
+      background: #e5e5e5;
+    }
+    
     .btn-secondary {
       background: rgba(255,255,255,0.2);
       color: var(--light);
       backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.3);
     }
     
-    /* NOVO: Controles do slideshow */
+    .btn-secondary:hover {
+      background: rgba(255,255,255,0.3);
+    }
+    
+    /* Controles do slideshow */
     .hero-controls {
       position: absolute;
       right: 4%;
-      bottom: 100px;
+      bottom: 120px;
       z-index: 10;
       display: flex;
-      gap: 10px;
+      gap: 12px;
     }
     
     .hero-nav {
-      width: 40px;
-      height: 40px;
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
       background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.3);
+      border: 2px solid rgba(255,255,255,0.5);
       color: white;
       cursor: pointer;
       backdrop-filter: blur(10px);
@@ -188,36 +234,44 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: 18px;
     }
     
     .hero-nav:hover {
       background: rgba(255,255,255,0.3);
       transform: scale(1.1);
+      border-color: var(--primary);
     }
     
     .hero-dots {
       position: absolute;
-      bottom: 30px;
+      bottom: 40px;
       left: 50%;
       transform: translateX(-50%);
       display: flex;
-      gap: 8px;
+      gap: 10px;
       z-index: 10;
     }
     
     .hero-dot {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
       background: rgba(255,255,255,0.3);
       cursor: pointer;
       transition: all 0.3s;
+      border: 2px solid transparent;
+    }
+    
+    .hero-dot:hover {
+      background: rgba(255,255,255,0.6);
     }
     
     .hero-dot.active {
       background: var(--primary);
-      width: 24px;
-      border-radius: 4px;
+      width: 30px;
+      border-radius: 5px;
+      border-color: rgba(255,255,255,0.5);
     }
     
     .section {
@@ -233,14 +287,14 @@
     }
     
     .section-title {
-      font-size: 20px;
-      font-weight: 600;
+      font-size: 22px;
+      font-weight: 700;
     }
     
     .movies-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 15px;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 18px;
     }
     
     .movie-card {
@@ -248,16 +302,16 @@
       background: var(--card-bg);
       border-radius: 8px;
       overflow: hidden;
-      transition: all 0.3s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       cursor: pointer;
       aspect-ratio: 2/3;
       box-shadow: 0 4px 6px rgba(0,0,0,0.3);
     }
     
     .movie-card:hover {
-      transform: scale(1.08);
+      transform: scale(1.05) translateY(-5px);
       z-index: 10;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      box-shadow: 0 15px 35px rgba(0,0,0,0.6);
     }
     
     .movie-bg {
@@ -268,6 +322,7 @@
       align-items: center;
       justify-content: center;
       position: relative;
+      overflow: hidden;
     }
     
     .movie-bg i {
@@ -284,6 +339,9 @@
       object-fit: cover;
       opacity: 0;
       transition: opacity 0.3s;
+      /* ALTA QUALIDADE NAS MINIATURAS */
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
     }
     
     .movie-image.loaded {
@@ -292,16 +350,17 @@
     
     .price-badge {
       position: absolute;
-      top: 8px;
-      right: 8px;
-      background: rgba(0,0,0,0.8);
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.85);
       color: #4CAF50;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 13px;
       font-weight: 700;
       backdrop-filter: blur(10px);
       z-index: 5;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
     
     .price-badge.free {
@@ -314,8 +373,8 @@
       bottom: 0;
       left: 0;
       right: 0;
-      padding: 50px 12px 12px;
-      background: linear-gradient(to top, rgba(0,0,0,0.95), transparent);
+      padding: 60px 15px 15px;
+      background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 50%, transparent 100%);
       opacity: 0;
       transition: opacity 0.3s;
     }
@@ -325,10 +384,10 @@
     }
     
     .movie-title {
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 600;
-      margin-bottom: 5px;
-      line-height: 1.2;
+      margin-bottom: 6px;
+      line-height: 1.3;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
@@ -336,14 +395,14 @@
     }
     
     .movie-price {
-      font-size: 13px;
+      font-size: 14px;
       color: #4CAF50;
       font-weight: 700;
     }
     
     .categories-scroll {
       display: flex;
-      gap: 10px;
+      gap: 12px;
       overflow-x: auto;
       padding: 10px 0;
       scrollbar-width: none;
@@ -354,26 +413,28 @@
     }
     
     .category-chip {
-      padding: 8px 16px;
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 20px;
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 25px;
       color: var(--light);
       font-size: 14px;
       cursor: pointer;
       white-space: nowrap;
       transition: all 0.3s;
+      font-weight: 500;
     }
     
     .category-chip:hover, .category-chip.active {
       background: var(--light);
       color: var(--dark);
       font-weight: 600;
+      transform: scale(1.05);
     }
     
     .search-container {
       padding: 0 4%;
-      margin-bottom: 20px;
+      margin-bottom: 25px;
     }
     
     .search-box {
@@ -384,27 +445,40 @@
     
     .search-box input {
       width: 100%;
-      padding: 15px 20px 15px 45px;
+      padding: 16px 24px 16px 50px;
       background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
       color: var(--light);
       font-size: 16px;
       outline: none;
+      transition: all 0.3s;
+    }
+    
+    .search-box input:focus {
+      background: rgba(255,255,255,0.15);
+      border-color: rgba(255,255,255,0.3);
     }
     
     .search-box i {
       position: absolute;
-      left: 15px;
+      left: 18px;
       top: 50%;
       transform: translateY(-50%);
       color: var(--gray);
+      font-size: 18px;
     }
     
     @media (max-width: 768px) {
-      .hero h1 { font-size: 28px; }
-      .movies-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
-      .hero-controls { display: none; } /* Esconde controles no mobile para não ocupar espaço */
+      .hero { 
+        height: 75vh; 
+        min-height: 500px;
+        padding: 0 4% 60px;
+      }
+      .hero h1 { font-size: 32px; }
+      .hero-desc { font-size: 16px; }
+      .hero-controls { display: none; }
+      .movies-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
     }
   </style>
 </head>
@@ -439,13 +513,13 @@
       </div>
     </div>
     
-    <!-- Controles do slideshow -->
+    <!-- Controles de navegação -->
     <div class="hero-controls">
       <button onclick="prevHero()" class="hero-nav"><i class="fas fa-chevron-left"></i></button>
       <button onclick="nextHero()" class="hero-nav"><i class="fas fa-chevron-right"></i></button>
     </div>
     
-    <!-- Indicadores de página -->
+    <!-- Indicadores -->
     <div class="hero-dots" id="hero-dots"></div>
   </section>
 
@@ -469,9 +543,7 @@
     <div class="section-header">
       <h2 class="section-title">Catálogo Completo</h2>
     </div>
-    <div class="movies-grid" id="movies-grid">
-      <!-- Cards serão inseridos aqui -->
-    </div>
+    <div class="movies-grid" id="movies-grid"></div>
   </section>
 
   <script>
@@ -484,14 +556,15 @@
     let featuredSeries = null;
     let currentHeroIndex = 0;
     let heroInterval;
+    let preloadedImages = {};
     
-    // Imagens placeholder por categoria (fallback)
+    // Placeholders por categoria (fallback apenas)
     const placeholderImages = {
-      romance: 'https://images.unsplash.com/photo-1518621736915-f3b1c41bfd00?w=400&q=80',
-      drama: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=400&q=80',
-      suspense: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=400&q=80',
-      comedia: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=400&q=80',
-      default: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=400&q=80'
+      romance: 'https://images.unsplash.com/photo-1518621736915-f3b1c41bfd00?w=1920&q=90',
+      drama: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=1920&q=90',
+      suspense: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1920&q=90',
+      comedia: 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=1920&q=90',
+      default: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=1920&q=90'
     };
     
     // Scroll do header
@@ -501,8 +574,32 @@
       else header.classList.remove('scrolled');
     });
     
-    // FUNÇÕES DO SLIDESHOW
-    function updateHeroBackground() {
+    // PRÉ-CARREGAMENTO EM ALTA QUALIDADE
+    function preloadImage(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(url);
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+    
+    async function preloadAllImages(series) {
+      const promises = series.map(async (s) => {
+        if (s.cover_url) {
+          try {
+            await preloadImage(s.cover_url);
+            preloadedImages[s.id] = s.cover_url;
+          } catch (e) {
+            console.log('Erro ao pré-carregar:', s.title);
+          }
+        }
+      });
+      await Promise.all(promises);
+    }
+    
+    // SLIDESHOW COM ALTA QUALIDADE
+    async function updateHeroBackground() {
       const heroBg = document.getElementById('hero-bg');
       const heroTitle = document.getElementById('hero-title');
       const heroDesc = document.getElementById('hero-desc');
@@ -511,8 +608,15 @@
       
       const serie = allSeries[currentHeroIndex];
       
-      // Pega a imagem da série (cover_url do bucket ou placeholder)
+      // Usa a imagem original do bucket em alta qualidade
       const imageUrl = serie.cover_url || placeholderImages[serie.category] || placeholderImages.default;
+      
+      // Aguarda a imagem carregar antes de mostrar (evita "piscar" em baixa qualidade)
+      try {
+        await preloadImage(imageUrl);
+      } catch (e) {
+        console.log('Usando imagem do cache ou fallback');
+      }
       
       // Transição suave
       heroBg.style.opacity = '0';
@@ -523,14 +627,20 @@
         heroBg.style.opacity = '1';
       }, 300);
       
-      // Atualiza texto
-      heroTitle.textContent = serie.title;
-      heroDesc.textContent = serie.description || 'Uma história emocionante que vai prender você do início ao fim.';
+      // Atualiza texto com animação
+      heroTitle.style.opacity = '0';
+      heroDesc.style.opacity = '0';
       
-      // Atualiza série em destaque para o botão comprar
+      setTimeout(() => {
+        heroTitle.textContent = serie.title;
+        heroDesc.textContent = serie.description || 'Uma história emocionante que vai prender você do início ao fim.';
+        heroTitle.style.opacity = '1';
+        heroDesc.style.opacity = '1';
+        heroTitle.style.transition = 'opacity 0.5s ease';
+        heroDesc.style.transition = 'opacity 0.5s ease';
+      }, 400);
+      
       featuredSeries = serie;
-      
-      // Atualiza dots indicadores
       updateHeroDots();
     }
     
@@ -545,13 +655,12 @@
     
     function startHeroSlideshow() {
       if (heroInterval) clearInterval(heroInterval);
-      
       updateHeroBackground();
       
-      // Muda a cada 6 segundos (igual Netflix)
+      // Troca a cada 8 segundos para dar tempo de apreciar a imagem em alta qualidade
       heroInterval = setInterval(() => {
         nextHero();
-      }, 6000);
+      }, 8000);
     }
     
     function nextHero() {
@@ -562,24 +671,23 @@
     function prevHero() {
       currentHeroIndex = (currentHeroIndex - 1 + allSeries.length) % allSeries.length;
       updateHeroBackground();
-      // Reseta o timer para não trocar imediatamente depois de clicar
-      if (heroInterval) {
-        clearInterval(heroInterval);
-        heroInterval = setInterval(nextHero, 6000);
-      }
+      resetTimer();
     }
     
     function goToHero(index) {
       currentHeroIndex = index;
       updateHeroBackground();
-      // Reseta o timer
+      resetTimer();
+    }
+    
+    function resetTimer() {
       if (heroInterval) {
         clearInterval(heroInterval);
-        heroInterval = setInterval(nextHero, 6000);
+        heroInterval = setInterval(nextHero, 8000);
       }
     }
     
-    // CARREGAR SÉRIES
+    // CARREGAR DADOS
     async function loadSeries() {
       try {
         const res = await fetch(API_URL);
@@ -587,9 +695,11 @@
         
         allSeries = await res.json();
         
-        // Inicia o slideshow no hero
-        startHeroSlideshow();
+        // Pré-carrega todas as imagens em alta qualidade
+        await preloadAllImages(allSeries);
         
+        // Inicia o slideshow
+        startHeroSlideshow();
         renderGrid(allSeries);
         
       } catch (e) {
@@ -613,8 +723,8 @@
         const priceText = isFree ? 'GRÁTIS' : `R$ ${s.price}`;
         const priceClass = isFree ? 'free' : '';
         
-        // Usa a imagem do bucket (cover_url) ou fallback
-        const imgUrl = s.cover_url || getPlaceholderImage(s.category) + '&random=' + index;
+        // Usa a imagem do bucket em alta qualidade
+        const imgUrl = s.cover_url || placeholderImages[s.category] || placeholderImages.default;
         
         return `
           <div class="movie-card" onclick="buy('${s.id}', '${s.title.replace(/'/g, "\\'")}', ${s.price})">
@@ -623,6 +733,7 @@
               <img src="${imgUrl}" 
                    class="movie-image" 
                    alt="${s.title}"
+                   loading="lazy"
                    onload="this.classList.add('loaded')"
                    onerror="this.style.display='none'">
             </div>
@@ -634,10 +745,6 @@
           </div>
         `;
       }).join('');
-    }
-    
-    function getPlaceholderImage(category) {
-      return placeholderImages[category] || placeholderImages.default;
     }
     
     function filterCategory(cat) {
@@ -677,7 +784,7 @@
       document.getElementById('grid-section').scrollIntoView({ behavior: 'smooth' });
     }
     
-    // Inicia
+    // Inicia a aplicação
     loadSeries();
   </script>
 </body>
