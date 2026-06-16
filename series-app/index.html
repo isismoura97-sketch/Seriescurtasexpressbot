@@ -62,22 +62,75 @@
     }
     
     .hero {
-      position: relative;
-      height: 70vh;
-      min-height: 500px;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.3), var(--darker)),
-                  url('https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1920&q=80') center/cover;
-      display: flex;
-      align-items: flex-end;
-      padding: 0 4% 60px;
-      margin-bottom: 20px;
-    }
+  position: relative;
+  height: 70vh;
+  min-height: 500px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.3), var(--darker));
+  display: flex;
+  align-items: flex-end;
+  padding: 0 4% 60px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.hero-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-size: cover;
+  background-position: center;
+  transition: opacity 0.8s ease-in-out;
+  z-index: 0;
+}
+
+.hero-bg::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(20,20,20,0) 50%, var(--darker) 100%);
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  max-width: 600px;
+}
     
     .hero-content {
       position: relative;
       z-index: 2;
       max-width: 600px;
     }
+    .hero-controls {
+  position: absolute;
+  right: 4%;
+  bottom: 100px;
+  z-index: 10;
+  display: flex;
+  gap: 10px;
+}
+
+.hero-nav {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: white;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s;
+}
+
+.hero-nav:hover {
+  background: rgba(255,255,255,0.3);
+  transform: scale(1.1);
+}
     
     .hero-badge {
       display: inline-flex;
@@ -332,8 +385,13 @@
     </a>
   </header>
 
-  <section class="hero">
-    <div class="hero-content">
+  <section class="hero" id="hero-section">
+  <div class="hero-bg" id="hero-bg"></div>
+  <div class="hero-content">
+  <div class="hero-controls">
+  <button onclick="prevHero()" class="hero-nav"><i class="fas fa-chevron-left"></i></button>
+  <button onclick="nextHero()" class="hero-nav"><i class="fas fa-chevron-right"></i></button>
+</div>
       <span class="hero-badge">
         <i class="fas fa-fire"></i>
         Destaque da Semana
@@ -504,7 +562,74 @@
     function scrollToGrid() {
       document.getElementById('grid-section').scrollIntoView({ behavior: 'smooth' });
     }
+  let currentHeroIndex = 0;
+let heroInterval;
+
+function updateHeroBackground() {
+  const heroBg = document.getElementById('hero-bg');
+  if (!heroBg || !allSeries.length) return;
+  
+  const serie = allSeries[currentHeroIndex];
+  const imageUrl = serie.cover_url || placeholderImages[serie.category] || placeholderImages.default;
+  
+  heroBg.style.opacity = '0';
+  
+  setTimeout(() => {
+    heroBg.style.backgroundImage = `url('${imageUrl}')`;
+    heroBg.style.opacity = '1';
+  }, 300);
+  
+  // Atualiza texto também se quiser que mude junto com a imagem
+  document.getElementById('hero-title').textContent = serie.title;
+  document.getElementById('hero-desc').textContent = serie.description || 'Uma história emocionante que vai prender você do início ao fim.';
+  featuredSeries = serie;
+}
+
+function startHeroSlideshow() {
+  if (heroInterval) clearInterval(heroInterval);
+  
+  updateHeroBackground();
+  
+  // Muda a cada 5 segundos (igual Netflix)
+  heroInterval = setInterval(() => {
+    currentHeroIndex = (currentHeroIndex + 1) % allSeries.length;
+    updateHeroBackground();
+  }, 5000);
+}
+
+// Modifique a função loadSeries para iniciar o slideshow
+async function loadSeries() {
+  try {
+    const res = await fetch(API_URL);
+    if (!res.ok) throw new Error('Erro na API');
     
+    allSeries = await res.json();
+    
+    // Inicia o slideshow no hero
+    startHeroSlideshow();
+    
+    renderGrid(allSeries);
+    
+  } catch (e) {
+    console.error('Erro:', e);
+    document.getElementById('movies-grid').innerHTML = 
+      '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">' +
+      '<i class="fas fa-exclamation-circle" style="font-size: 48px; margin-bottom: 15px;"></i>' +
+      '<p>Erro ao carregar séries. Tente recarregar.</p></div>';
+  }
+}
+    function nextHero() {
+  currentHeroIndex = (currentHeroIndex + 1) % allSeries.length;
+  updateHeroBackground();
+  // Reseta o timer
+  startHeroSlideshow();
+}
+
+function prevHero() {
+  currentHeroIndex = (currentHeroIndex - 1 + allSeries.length) % allSeries.length;
+  updateHeroBackground();
+  startHeroSlideshow();
+}
     loadSeries();
   </script>
 </body>
