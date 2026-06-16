@@ -61,76 +61,51 @@
       gap: 8px;
     }
     
+    /* NOVO: Estilo do Hero com slideshow */
     .hero {
-  position: relative;
-  height: 70vh;
-  min-height: 500px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.3), var(--darker));
-  display: flex;
-  align-items: flex-end;
-  padding: 0 4% 60px;
-  margin-bottom: 20px;
-  overflow: hidden;
-}
-
-.hero-bg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-size: cover;
-  background-position: center;
-  transition: opacity 0.8s ease-in-out;
-  z-index: 0;
-}
-
-.hero-bg::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(20,20,20,0) 50%, var(--darker) 100%);
-}
-
-.hero-content {
-  position: relative;
-  z-index: 2;
-  max-width: 600px;
-}
+      position: relative;
+      height: 70vh;
+      min-height: 500px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.3), var(--darker));
+      display: flex;
+      align-items: flex-end;
+      padding: 0 4% 60px;
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    
+    .hero-bg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-size: cover;
+      background-position: center top;
+      transition: opacity 0.8s ease-in-out;
+      z-index: 0;
+      opacity: 0;
+    }
+    
+    .hero-bg.active {
+      opacity: 1;
+    }
+    
+    .hero-bg::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(20,20,20,0) 40%, var(--darker) 100%);
+    }
     
     .hero-content {
       position: relative;
       z-index: 2;
       max-width: 600px;
     }
-    .hero-controls {
-  position: absolute;
-  right: 4%;
-  bottom: 100px;
-  z-index: 10;
-  display: flex;
-  gap: 10px;
-}
-
-.hero-nav {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.3);
-  color: white;
-  cursor: pointer;
-  backdrop-filter: blur(10px);
-  transition: all 0.3s;
-}
-
-.hero-nav:hover {
-  background: rgba(255,255,255,0.3);
-  transform: scale(1.1);
-}
     
     .hero-badge {
       display: inline-flex;
@@ -188,6 +163,61 @@
       background: rgba(255,255,255,0.2);
       color: var(--light);
       backdrop-filter: blur(10px);
+    }
+    
+    /* NOVO: Controles do slideshow */
+    .hero-controls {
+      position: absolute;
+      right: 4%;
+      bottom: 100px;
+      z-index: 10;
+      display: flex;
+      gap: 10px;
+    }
+    
+    .hero-nav {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .hero-nav:hover {
+      background: rgba(255,255,255,0.3);
+      transform: scale(1.1);
+    }
+    
+    .hero-dots {
+      position: absolute;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    
+    .hero-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.3);
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .hero-dot.active {
+      background: var(--primary);
+      width: 24px;
+      border-radius: 4px;
     }
     
     .section {
@@ -374,6 +404,7 @@
     @media (max-width: 768px) {
       .hero h1 { font-size: 28px; }
       .movies-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+      .hero-controls { display: none; } /* Esconde controles no mobile para não ocupar espaço */
     }
   </style>
 </head>
@@ -381,17 +412,13 @@
   <header class="header" id="header">
     <a href="#" class="logo">
       <i class="fas fa-play-circle"></i>
-      SÉRIES CURTAS EXPRESS
+      SÉRIES CURTAS
     </a>
   </header>
 
   <section class="hero" id="hero-section">
-  <div class="hero-bg" id="hero-bg"></div>
-  <div class="hero-content">
-  <div class="hero-controls">
-  <button onclick="prevHero()" class="hero-nav"><i class="fas fa-chevron-left"></i></button>
-  <button onclick="nextHero()" class="hero-nav"><i class="fas fa-chevron-right"></i></button>
-</div>
+    <div class="hero-bg" id="hero-bg"></div>
+    <div class="hero-content">
       <span class="hero-badge">
         <i class="fas fa-fire"></i>
         Destaque da Semana
@@ -411,6 +438,15 @@
         </button>
       </div>
     </div>
+    
+    <!-- Controles do slideshow -->
+    <div class="hero-controls">
+      <button onclick="prevHero()" class="hero-nav"><i class="fas fa-chevron-left"></i></button>
+      <button onclick="nextHero()" class="hero-nav"><i class="fas fa-chevron-right"></i></button>
+    </div>
+    
+    <!-- Indicadores de página -->
+    <div class="hero-dots" id="hero-dots"></div>
   </section>
 
   <div class="search-container">
@@ -446,8 +482,10 @@
     const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api/series';
     let allSeries = [];
     let featuredSeries = null;
+    let currentHeroIndex = 0;
+    let heroInterval;
     
-    // Imagens placeholder por categoria
+    // Imagens placeholder por categoria (fallback)
     const placeholderImages = {
       romance: 'https://images.unsplash.com/photo-1518621736915-f3b1c41bfd00?w=400&q=80',
       drama: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=400&q=80',
@@ -456,12 +494,92 @@
       default: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=400&q=80'
     };
     
+    // Scroll do header
     window.addEventListener('scroll', () => {
       const header = document.getElementById('header');
       if (window.scrollY > 50) header.classList.add('scrolled');
       else header.classList.remove('scrolled');
     });
     
+    // FUNÇÕES DO SLIDESHOW
+    function updateHeroBackground() {
+      const heroBg = document.getElementById('hero-bg');
+      const heroTitle = document.getElementById('hero-title');
+      const heroDesc = document.getElementById('hero-desc');
+      
+      if (!allSeries.length || !heroBg) return;
+      
+      const serie = allSeries[currentHeroIndex];
+      
+      // Pega a imagem da série (cover_url do bucket ou placeholder)
+      const imageUrl = serie.cover_url || placeholderImages[serie.category] || placeholderImages.default;
+      
+      // Transição suave
+      heroBg.style.opacity = '0';
+      
+      setTimeout(() => {
+        heroBg.style.backgroundImage = `url('${imageUrl}')`;
+        heroBg.classList.add('active');
+        heroBg.style.opacity = '1';
+      }, 300);
+      
+      // Atualiza texto
+      heroTitle.textContent = serie.title;
+      heroDesc.textContent = serie.description || 'Uma história emocionante que vai prender você do início ao fim.';
+      
+      // Atualiza série em destaque para o botão comprar
+      featuredSeries = serie;
+      
+      // Atualiza dots indicadores
+      updateHeroDots();
+    }
+    
+    function updateHeroDots() {
+      const dotsContainer = document.getElementById('hero-dots');
+      if (!dotsContainer || !allSeries.length) return;
+      
+      dotsContainer.innerHTML = allSeries.map((_, index) => 
+        `<div class="hero-dot ${index === currentHeroIndex ? 'active' : ''}" onclick="goToHero(${index})"></div>`
+      ).join('');
+    }
+    
+    function startHeroSlideshow() {
+      if (heroInterval) clearInterval(heroInterval);
+      
+      updateHeroBackground();
+      
+      // Muda a cada 6 segundos (igual Netflix)
+      heroInterval = setInterval(() => {
+        nextHero();
+      }, 6000);
+    }
+    
+    function nextHero() {
+      currentHeroIndex = (currentHeroIndex + 1) % allSeries.length;
+      updateHeroBackground();
+    }
+    
+    function prevHero() {
+      currentHeroIndex = (currentHeroIndex - 1 + allSeries.length) % allSeries.length;
+      updateHeroBackground();
+      // Reseta o timer para não trocar imediatamente depois de clicar
+      if (heroInterval) {
+        clearInterval(heroInterval);
+        heroInterval = setInterval(nextHero, 6000);
+      }
+    }
+    
+    function goToHero(index) {
+      currentHeroIndex = index;
+      updateHeroBackground();
+      // Reseta o timer
+      if (heroInterval) {
+        clearInterval(heroInterval);
+        heroInterval = setInterval(nextHero, 6000);
+      }
+    }
+    
+    // CARREGAR SÉRIES
     async function loadSeries() {
       try {
         const res = await fetch(API_URL);
@@ -469,12 +587,8 @@
         
         allSeries = await res.json();
         
-        // Definir destaque
-        featuredSeries = allSeries.find(s => s.price > 0) || allSeries[0];
-        if (featuredSeries) {
-          document.getElementById('hero-title').textContent = featuredSeries.title;
-          document.getElementById('hero-desc').textContent = featuredSeries.description || 'Uma história emocionante que vai prender você do início ao fim.';
-        }
+        // Inicia o slideshow no hero
+        startHeroSlideshow();
         
         renderGrid(allSeries);
         
@@ -485,10 +599,6 @@
           '<i class="fas fa-exclamation-circle" style="font-size: 48px; margin-bottom: 15px;"></i>' +
           '<p>Erro ao carregar séries. Tente recarregar.</p></div>';
       }
-    }
-    
-    function getPlaceholderImage(category) {
-      return placeholderImages[category] || placeholderImages.default;
     }
     
     function renderGrid(series) {
@@ -503,7 +613,7 @@
         const priceText = isFree ? 'GRÁTIS' : `R$ ${s.price}`;
         const priceClass = isFree ? 'free' : '';
         
-        // Usar imagem placeholder baseada na categoria ou índice
+        // Usa a imagem do bucket (cover_url) ou fallback
         const imgUrl = s.cover_url || getPlaceholderImage(s.category) + '&random=' + index;
         
         return `
@@ -524,6 +634,10 @@
           </div>
         `;
       }).join('');
+    }
+    
+    function getPlaceholderImage(category) {
+      return placeholderImages[category] || placeholderImages.default;
     }
     
     function filterCategory(cat) {
@@ -562,74 +676,8 @@
     function scrollToGrid() {
       document.getElementById('grid-section').scrollIntoView({ behavior: 'smooth' });
     }
-  let currentHeroIndex = 0;
-let heroInterval;
-
-function updateHeroBackground() {
-  const heroBg = document.getElementById('hero-bg');
-  if (!heroBg || !allSeries.length) return;
-  
-  const serie = allSeries[currentHeroIndex];
-  const imageUrl = serie.cover_url || placeholderImages[serie.category] || placeholderImages.default;
-  
-  heroBg.style.opacity = '0';
-  
-  setTimeout(() => {
-    heroBg.style.backgroundImage = `url('${imageUrl}')`;
-    heroBg.style.opacity = '1';
-  }, 300);
-  
-  // Atualiza texto também se quiser que mude junto com a imagem
-  document.getElementById('hero-title').textContent = serie.title;
-  document.getElementById('hero-desc').textContent = serie.description || 'Uma história emocionante que vai prender você do início ao fim.';
-  featuredSeries = serie;
-}
-
-function startHeroSlideshow() {
-  if (heroInterval) clearInterval(heroInterval);
-  
-  updateHeroBackground();
-  
-  // Muda a cada 5 segundos (igual Netflix)
-  heroInterval = setInterval(() => {
-    currentHeroIndex = (currentHeroIndex + 1) % allSeries.length;
-    updateHeroBackground();
-  }, 5000);
-}
-
-// Modifique a função loadSeries para iniciar o slideshow
-async function loadSeries() {
-  try {
-    const res = await fetch(API_URL);
-    if (!res.ok) throw new Error('Erro na API');
     
-    allSeries = await res.json();
-    
-    // Inicia o slideshow no hero
-    startHeroSlideshow();
-    
-    renderGrid(allSeries);
-    
-  } catch (e) {
-    console.error('Erro:', e);
-    document.getElementById('movies-grid').innerHTML = 
-      '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">' +
-      '<i class="fas fa-exclamation-circle" style="font-size: 48px; margin-bottom: 15px;"></i>' +
-      '<p>Erro ao carregar séries. Tente recarregar.</p></div>';
-  }
-}
-    function nextHero() {
-  currentHeroIndex = (currentHeroIndex + 1) % allSeries.length;
-  updateHeroBackground();
-  // Reseta o timer
-  startHeroSlideshow();
-}
-
-function prevHero() {
-  currentHeroIndex = (currentHeroIndex - 1 + allSeries.length) % allSeries.length;
-  updateHeroBackground();
-  startHeroSlideshow();
-}
+    // Inicia
     loadSeries();
   </script>
 </body>
