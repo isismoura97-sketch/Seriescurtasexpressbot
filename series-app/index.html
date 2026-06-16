@@ -24,7 +24,7 @@
       --bg-body: #0F0F0F;
       --skeleton: #252525;
     }
-    
+
     body.light-mode {
       --dark: #f5f5f5;
       --darker: #ffffff;
@@ -37,7 +37,7 @@
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-    body { background: var(--bg-body); color: var(--text-main); overflow-x: hidden; }
+    body { background: var(----bg-body); color: var(----text-main); overflow-x: hidden; }
 
     /* PLAYER PROTEGIDO */
     .video-player-overlay {
@@ -45,20 +45,21 @@
       display: none; justify-content: center; align-items: center;
     }
     .video-player-overlay.active { display: flex; }
-    
+
     .player-container {
       width: 100%; height: 100%; max-width: 100%; max-height: 100%;
       position: relative; background: #000; display: flex; flex-direction: column;
     }
-    
+
     video {
       width: 100%; flex: 1; background: #000;
       controlsList: nodownload noremoteplayback;
     }
     
+    /* Fix crucial para Telegram/iOS */
     video::-webkit-media-controls-enclosure { overflow: hidden; }
     video::-webkit-media-controls-panel { width: calc(100% + 30px); }
-    
+
     .player-header {
       position: absolute; top: 0; left: 0; right: 0; z-index: 10;
       padding: 20px; background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
@@ -70,22 +71,22 @@
       width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
       font-size: 20px; backdrop-filter: blur(10px); transition: 0.3s;
     }
-    .player-close:hover { background: var(--primary); }
-    
+    .player-close:hover { background: var(----primary); }
+
     .player-watermark {
       position: absolute; bottom: 80px; right: 20px; z-index: 5;
       background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 4px;
       font-size: 12px; color: rgba(255,255,255,0.7); pointer-events: none;
       font-family: monospace; letter-spacing: 1px;
     }
-    
+
     .loading-player {
       position: absolute; inset: 0; display: flex; flex-direction: column;
       justify-content: center; align-items: center; background: #000; z-index: 20;
     }
     .spinner {
       width: 50px; height: 50px; border: 3px solid rgba(255,255,255,0.1);
-      border-top-color: var(--primary); border-radius: 50%;
+      border-top-color: var(----primary); border-radius: 50%;
       animation: spin 1s linear infinite; margin-bottom: 15px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -98,12 +99,12 @@
     .cart-overlay.active { opacity: 1; visibility: visible; }
     
     .cart-drawer {
-      position: fixed; top: 0; right: -420px; width: 100%; max-width: 400px; height: 100%;
-      background: var(--card-bg); z-index: 9999; transition: 0.4s ease;
+      position: fixed; top: 0; right: -420px; width: 100%; max-width: 400px;
+      height: 100%; background: var(----card-bg); z-index: 9999; transition: 0.4s ease;
       display: flex; flex-direction: column; box-shadow: -10px 0 30px rgba(0,0,0,0.5);
     }
     .cart-drawer.active { right: 0; }
-    
+
     .cart-header { padding: 25px; border-bottom: 1px solid rgba(128,128,128,0.2); display: flex; justify-content: space-between; align-items: center; }
     .cart-header h3 { display: flex; align-items: center; gap: 10px; }
     .cart-body { flex: 1; overflow-y: auto; padding: 20px; }
@@ -111,13 +112,13 @@
     .cart-item img { width: 60px; height: 90px; object-fit: cover; border-radius: 6px; }
     .cart-item-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
     .cart-item-title { font-weight: 600; margin-bottom: 5px; font-size: 14px; }
-    .cart-item-price { color: var(--success); font-weight: 700; }
+    .cart-item-price { color: var(----success); font-weight: 700; }
     .cart-item-remove { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #ff4444; cursor: pointer; width: 30px; height: 30px; border-radius: 50%; transition: 0.3s; }
     .cart-item-remove:hover { background: rgba(255,68,68,0.1); }
-    
-    .cart-footer { padding: 25px; border-top: 1px solid rgba(128,128,128,0.2); background: var(--darker); }
+
+    .cart-footer { padding: 25px; border-top: 1px solid rgba(128,128,128,0.2); background: var(----darker); }
     .cart-total { display: flex; justify-content: space-between; font-size: 18px; margin-bottom: 20px; font-weight: 700; }
-    .cart-total span:last-child { color: var(--success); font-size: 24px; }
+    .cart-total span:last-child { color: var(----success); font-size: 24px; }
 
     /* HEADER */
     .header {
@@ -126,23 +127,22 @@
       background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
       transition: 0.3s;
     }
-    .header.scrolled { background: var(--darker); box-shadow: 0 2px 20px rgba(0,0,0,0.5); }
-    .logo { font-size: 22px; font-weight: 800; color: var(--primary); text-decoration: none; display: flex; align-items: center; gap: 8px; }
+    .header.scrolled { background: var(----darker); box-shadow: 0 2px 20px rgba(0,0,0,0.5); }
+    .logo { font-size: 22px; font-weight: 800; color: var(----primary); text-decoration: none; display: flex; align-items: center; gap: 8px; }
     .header-actions { display: flex; gap: 12px; }
 
     .icon-btn {
-      background: rgba(128,128,128,0.2); border: none; color: var(--text-main);
+      background: rgba(128,128,128,0.2); border: none; color: var(----text-main);
       width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
       display: flex; align-items: center; justify-content: center; position: relative;
       transition: 0.3s; font-size: 18px;
     }
-    .icon-btn:hover { background: var(--primary); color: white; transform: scale(1.1); }
-    
+    .icon-btn:hover { background: var(----primary); color: white; transform: scale(1.1); }
     .badge {
-      position: absolute; top: -5px; right: -5px; background: var(--primary);
+      position: absolute; top: -5px; right: -5px; background: var(----primary);
       color: white; font-size: 11px; font-weight: 700; width: 22px; height: 22px;
       border-radius: 50%; display: flex; align-items: center; justify-content: center;
-      border: 2px solid var(--darker); animation: bounce 0.3s;
+      border: 2px solid var(----darker); animation: bounce 0.3s;
     }
     @keyframes bounce { 50% { transform: scale(1.2); } }
 
@@ -162,20 +162,19 @@
     .hero-poster.active { opacity: 1; }
     .hero-gradient {
       position: absolute; left: 0; top: 0; bottom: 0; width: 65%; z-index: 5;
-      background: linear-gradient(to right, var(--darker) 0%, rgba(15,15,15,0.95) 50%, transparent 100%);
+      background: linear-gradient(to right, var(----darker) 0%, rgba(15,15,15,0.95) 50%, transparent 100%);
     }
-    
-    .hero-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--primary); color: white; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 20px; }
+    .hero-badge { display: inline-flex; align-items: center; gap: 6px; background: var(----primary); color: white; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 20px; }
     .hero h1 { font-size: 48px; font-weight: 800; margin-bottom: 20px; line-height: 1.1; }
-    .hero-desc { font-size: 18px; color: var(--text-dim); margin-bottom: 30px; line-height: 1.6; }
+    .hero-desc { font-size: 18px; color: var(----text-dim); margin-bottom: 30px; line-height: 1.6; }
 
     .btn { padding: 14px 28px; border-radius: 6px; border: none; font-size: 16px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; transition: all 0.3s; text-transform: uppercase; letter-spacing: 0.5px; }
     .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
-    .btn-primary { background: white; color: var(--dark); }
-    .btn-play { background: var(--primary); color: white; margin-left: 10px; }
-    .btn-free { background: var(--gold); color: #000; }
-    .btn-cart { background: var(--success); color: white; width: 100%; justify-content: center; }
-    .btn-outline { background: transparent; border: 2px solid var(--text-main); color: var(--text-main); }
+    .btn-primary { background: white; color: var(----dark); }
+    .btn-play { background: var(----primary); color: white; margin-left: 10px; }
+    .btn-free { background: var(----gold); color: #000; }
+    .btn-cart { background: var(----success); color: white; width: 100%; justify-content: center; }
+    .btn-outline { background: transparent; border: 2px solid var(----text-main); color: var(----text-main); }
 
     /* MODAL */
     .modal-overlay {
@@ -185,53 +184,54 @@
     }
     .modal-overlay.active { display: flex; opacity: 1; }
     .modal-content {
-      background: var(--card-bg); border-radius: 16px; max-width: 500px; width: 100%;
+      background: var(----card-bg); border-radius: 16px; max-width: 500px; width: 100%;
       max-height: 90vh; overflow: hidden; position: relative; transform: scale(0.95);
       transition: transform 0.3s; box-shadow: 0 25px 50px rgba(0,0,0,0.5);
     }
     .modal-overlay.active .modal-content { transform: scale(1); }
     .modal-close { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.5); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; font-size: 20px; z-index: 10; transition: 0.3s; }
-    .modal-close:hover { background: var(--primary); }
+    .modal-close:hover { background: var(----primary); }
     .modal-hero { position: relative; height: 250px; overflow: hidden; }
     .modal-hero img { width: 100%; height: 100%; object-fit: cover; }
     .modal-body { padding: 30px; }
     .modal-title { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
-    .modal-price { font-size: 24px; color: var(--success); font-weight: 700; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
-    .modal-price.free { color: var(--gold); }
-    .modal-desc { color: var(--text-dim); margin-bottom: 25px; line-height: 1.6; }
+    .modal-price { font-size: 24px; color: var(----success); font-weight: 700; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+    .modal-price.free { color: var(----gold); }
+    .modal-desc { color: var(----text-dim); margin-bottom: 25px; line-height: 1.6; }
     .modal-actions { display: flex; gap: 12px; flex-direction: column; }
     .free-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,215,0,0.2); padding: 4px 12px; border-radius: 20px; font-size: 14px; }
 
     /* TOAST */
     .toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10001; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
     .toast {
-      background: rgba(30,30,30,0.95); color: white; padding: 16px 24px; border-radius: 12px;
-      display: flex; align-items: center; gap: 12px; font-weight: 500;
-      transform: translateX(-50%) translateY(100px); opacity: 0; transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-      backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); min-width: 300px; pointer-events: all;
+      background: rgba(30,30,30,0.95); color: white; padding: 16px 24px;
+      border-radius: 12px; display: flex; align-items: center; gap: 12px; font-weight: 500;
+      transform: translateX(-50%) translateY(100%); opacity: 0; transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+      backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
+      min-width: 300px; pointer-events: all;
     }
     body.light-mode .toast { background: rgba(255,255,255,0.95); color: #141414; border: 1px solid rgba(0,0,0,0.1); }
     .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
     .toast-icon { font-size: 20px; }
-    .toast-success .toast-icon { color: var(--success); }
+    .toast-success .toast-icon { color: var(----success); }
     .toast-error .toast-icon { color: #ff4444; }
 
     /* CATÁLOGO */
     .section { padding: 40px 4%; }
     .search-box { position: relative; max-width: 600px; margin: 0 auto 30px; }
-    .search-box input { width: 100%; padding: 16px 24px 16px 50px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 12px; color: var(--text-main); font-size: 16px; outline: none; }
-    .search-box input:focus { border-color: var(--primary); }
-    .search-box i { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(--gray); }
-    
+    .search-box input { width: 100%; padding: 16px 24px 16px 50px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 12px; color: var(----text-main); font-size: 16px; outline: none; }
+    .search-box input:focus { border-color: var(----primary); }
+    .search-box i { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(----gray); }
+
     .categories { display: flex; gap: 12px; margin-bottom: 30px; flex-wrap: wrap; justify-content: center; }
-    .category-chip { padding: 10px 20px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 25px; color: var(--text-main); font-size: 14px; cursor: pointer; transition: 0.3s; }
-    .category-chip:hover, .category-chip.active { background: var(--primary); color: white; border-color: var(--primary); }
-    
+    .category-chip { padding: 10px 20px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 25px; color: var(----text-main); font-size: 14px; cursor: pointer; transition: 0.3s; }
+    .category-chip:hover, .category-chip.active { background: var(----primary); color: white; border-color: var(----primary); }
+
     .section-title { font-size: 24px; font-weight: 700; margin-bottom: 25px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
-    
+
     .card {
-      background: var(--card-bg); border-radius: 10px; overflow: hidden;
+      background: var(----card-bg); border-radius: 10px; overflow: hidden;
       cursor: pointer; transition: all 0.3s; position: relative; aspect-ratio: 2/3;
     }
     .card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 15px 35px rgba(0,0,0,0.6); }
@@ -240,11 +240,11 @@
     .card-info { position: absolute; bottom: 0; left: 0; right: 0; padding: 50px 15px 15px; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); opacity: 0; transition: opacity 0.3s; }
     .card:hover .card-info { opacity: 1; }
     .card-title { font-size: 14px; font-weight: 600; color: white; }
-    .price-tag { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); color: var(--success); padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; z-index: 5; }
-    .price-tag.free { color: #000; background: var(--gold); }
+    .price-tag { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); color: var(----success); padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; z-index: 5; }
+    .price-tag.free { color: #000; background: var(----gold); }
 
     /* SKELETON */
-    .skeleton { background: linear-gradient(90deg, var(--skeleton) 25%, var(--hover) 50%, var(--skeleton) 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; }
+    .skeleton { background: linear-gradient(90deg, var(----skeleton) 25%, var(----hover) 50%, var(----skeleton) 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; }
     @keyframes skeleton-loading { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
     @media (max-width: 968px) {
@@ -269,21 +269,27 @@
           <i class="fas fa-times"></i>
         </button>
       </div>
-      
+
       <div class="loading-player" id="playerLoading">
         <div class="spinner"></div>
         <div>Gerando acesso seguro...</div>
       </div>
-      
+
+      <!-- ALTERAÇÃO: Adicionado playsinline e atributos webkit para mobile -->
       <video 
-        id="mainVideo" 
+        id="mainVideo"
         controls 
-        controlsList="nodownload noremoteplayback" 
+        controlsList="nodownload noremoteplayback"
+        playsinline 
+        webkit-playsinline="true"
+        x5-video-player-type="h5"
+        x5-video-player-fullscreen="true"
+        preload="auto"
+        style="display: none"
         disablePictureInPicture
         disableRemotePlayback
-        style="display: none;"
       ></video>
-      
+
       <div class="player-watermark" id="playerWatermark">
         ID: <span id="watermarkId">---</span> | Acesso Vitalício
       </div>
@@ -343,10 +349,10 @@
     </a>
     <div class="header-actions">
       <button class="icon-btn" onclick="toggleTheme()" title="Alternar tema">
-        <i class="fas fa-moon" id="themeIcon"></i>
+        <i class="fa-moon" id="themeIcon"></i>
       </button>
       <button class="icon-btn" onclick="toggleCart()" title="Ver carrinho">
-        <i class="fas fa-shopping-cart"></i>
+        <i class="fa-shopping-cart"></i>
         <span class="badge" id="cartBadge" style="display: none;">0</span>
       </button>
     </div>
@@ -356,9 +362,7 @@
   <section class="hero">
     <div class="hero-gradient"></div>
     <div class="hero-content">
-      <span class="hero-badge">
-        <i class="fas fa-fire"></i> Destaque da Semana
-      </span>
+      <span class="hero-badge"><i class="fa-fire"></i> Destaque da Semana</span>
       <h1 id="heroTitle">Carregando...</h1>
       <p class="hero-desc" id="heroDesc">Preparando o catálogo...</p>
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
@@ -381,12 +385,12 @@
       <i class="fas fa-search"></i>
       <input type="text" id="searchInput" placeholder="Buscar séries..." onkeyup="searchSeries(this.value)">
     </div>
-    
+
     <div class="categories">
       <div class="category-chip active" onclick="filterCategory('all', this)">Todas</div>
-      <div class="category-chip" onclick="filterCategory('romance', this)">❤️ Romance</div>
-      <div class="category-chip" onclick="filterCategory('drama', this)">🎭 Drama</div>
-      <div class="category-chip" onclick="filterCategory('suspense', this)">🔪 Suspense</div>
+      <div class="category-chip" onclick="filterCategory('romance', this)">Romance</div>
+      <div class="category-chip" onclick="filterCategory('drama', this)">Drama</div>
+      <div class="category-chip" onclick="filterCategory('suspense', this)">Suspense</div>
     </div>
 
     <h2 class="section-title">Catálogo Completo</h2>
@@ -402,10 +406,10 @@
     // CONFIGURAÇÃO
     const tg = window.Telegram.WebApp;
     tg.expand();
-    
+
     const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
     const userId = tg.initDataUnsafe?.user?.id || 'anonymous';
-    
+
     // ESTADO GLOBAL
     let allSeries = [];
     let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
@@ -422,7 +426,7 @@
       window.addEventListener('scroll', () => {
         document.getElementById('header').classList.toggle('scrolled', window.scrollY > 50);
       });
-      
+
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
           closePlayer();
@@ -438,7 +442,7 @@
         document.getElementById('themeIcon').className = 'fas fa-sun';
       }
     }
-    
+
     function toggleTheme() {
       const isLight = document.body.classList.toggle('light-mode');
       document.getElementById('themeIcon').className = isLight ? 'fas fa-sun' : 'fas fa-moon';
@@ -463,7 +467,7 @@
     function initHero() {
       if (!allSeries.length) return;
       updateHero(0);
-      
+
       heroInterval = setInterval(() => {
         currentHero = (currentHero + 1) % allSeries.length;
         updateHero(currentHero);
@@ -474,22 +478,20 @@
       const serie = allSeries[index];
       document.getElementById('heroTitle').textContent = serie.title;
       document.getElementById('heroDesc').textContent = serie.description || 'Uma história emocionante...';
-      
+
       const img = document.getElementById('heroImg');
       img.classList.remove('active');
       setTimeout(() => {
         img.src = serie.cover_url;
         img.onload = () => img.classList.add('active');
       }, 200);
-      
+
       const playBtn = document.getElementById('heroPlayBtn');
       playBtn.style.display = 'inline-flex';
       playBtn.onclick = () => {
         if (serie.price == 0) {
-          // Se for gratuito, vai direto pro player
           openPlayer(serie.id, serie.title);
         } else {
-          // Se for pago, abre modal
           openModal(serie);
         }
       };
@@ -504,76 +506,166 @@
       }
     }
 
-    // PLAYER PROTEGIDO - ACESSO VITALÍCIO COM URL TEMPORÁRIA
+    // ============================================================
+    // PLAYER PROTEGIDO - CORREÇÃO PRINCIPAL AQUI
+    // ============================================================
     async function openPlayer(serieId, title) {
       const overlay = document.getElementById('playerOverlay');
       const loading = document.getElementById('playerLoading');
       const video = document.getElementById('mainVideo');
-      
+
+      // Reset visual
       overlay.classList.add('active');
       loading.style.display = 'flex';
+      loading.innerHTML = '<div class="spinner"></div><div>Gerando acesso seguro...</div>';
       video.style.display = 'none';
       document.getElementById('playerTitle').textContent = title || 'Carregando...';
       document.getElementById('watermarkId').textContent = userId;
-      
+
       try {
-        // CHAMA API - GERA URL TEMPORÁRIA NOVA (30 min) A CADA REQUISIÇÃO
+        // CHAMA API PARA GERAR LINK TEMPORÁRIO
         const res = await fetch(`${API_URL}/api/stream/${serieId}?user_id=${userId}`);
         const data = await res.json();
-        
+
         if (data.error) {
           showToast(data.error, 'error');
           closePlayer();
           return;
         }
-        
+
+        // SE RETORNAR TIPO TELEGRAM (PARA APP NATIVO)
         if (data.type === 'telegram') {
           showToast('Abrindo no Telegram...', 'info');
           tg.sendData(JSON.stringify({ action: 'request_video', series_id: serieId }));
+          
           setTimeout(() => {
             closePlayer();
             tg.close();
           }, 1500);
           return;
         }
-        
+
+        // CONFIGURA VIDEO
         video.src = data.url;
-        
-        video.oncanplay = () => {
-          loading.style.display = 'none';
-          video.style.display = 'block';
-          video.play().catch(e => console.log('Autoplay bloqueado:', e));
-        };
-        
-        video.onerror = () => {
-          showToast('Erro ao carregar vídeo', 'error');
-          closePlayer();
-        };
-        
-        setTimeout(() => {
-          if (overlay.classList.contains('active')) {
-            showToast('Sessão expirando... Recarregue se necessário', 'info');
+        video.load(); // Força reload
+
+        // Limpa handlers antigos
+        video.oncanplay = null;
+        video.onerror = null;
+
+        // QUANDO VIDEO ESTIVER PRONTO
+        video.oncanplay = async () => {
+          try {
+            loading.style.display = 'none';
+            video.style.display = 'block';
+            
+            // ESTRATÉGIA DE AUTOPLAY PARA MOBILE
+            video.muted = true;
+            await video.play();
+            
+            // Tenta desmutar após começar (funciona se já interagiu antes)
+            setTimeout(() => {
+              video.muted = false;
+            }, 300);
+
+          } catch (playError) {
+            console.warn('Autoplay bloqueado:', playError);
+            loading.style.display = 'none';
+            video.style.display = 'block';
+            
+            // BOTÃO PLAY CENTRAL COMO FALLBACK
+            const playButton = document.createElement('div');
+            playButton.innerHTML = '<i class="fas fa-play" style="font-size: 40px;"></i>';
+            playButton.style.cssText = `
+              position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+              width: 80px; height: 80px; background: rgba(229,9,20,0.9);
+              border-radius: 50%; display: flex; align-items: center; justify-content: center;
+              cursor: pointer; color: white; z-index: 30; box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            `;
+            
+            playButton.onclick = async () => {
+              try {
+                await video.play();
+                video.muted = false;
+                playButton.remove();
+              } catch(e) {
+                // Se mesmo assim falhar, toca mudo
+                video.muted = true;
+                await video.play();
+                playButton.remove();
+              }
+            };
+            
+            video.parentElement.appendChild(playButton);
+            showToast('Clique para reproduzir', 'info');
           }
-        }, 1740000);
-        
+        };
+
+        // ERRO NO VIDEO
+        video.onerror = () => {
+          loading.innerHTML = `
+            <div style="color:#ff4444;text-align:center;padding:20px;">
+              <i class="fas fa-exclamation-triangle" style="font-size:40px;margin-bottom:15px;display:block;"></i>
+              Erro ao carregar vídeo<br>
+              <small style="color:#888;margin-top:10px;display:block;">Verifique sua conexão</small>
+              <br><br>
+              <button onclick="openPlayer('${serieId}','${title}')" style="
+                padding:10px 20px;background:var(----primary);border:none;color:white;border-radius:5px;cursor:pointer;margin-top:10px;
+              ">Tentar Novamente</button>
+            </div>
+          `;
+          showToast('Erro ao carregar vídeo', 'error');
+        };
+
+        // TIMEOUT DE SEGURANÇA
+        setTimeout(() => {
+          if (overlay.classList.contains('active') && loading.style.display !== 'none') {
+            showToast('Demorando para carregar...', 'info');
+          }
+        }, 15000);
+
       } catch (e) {
-        console.error(e);
+        console.error('Erro:', e);
         showToast('Erro de conexão', 'error');
         closePlayer();
       }
     }
 
+    // FECHAR PLAYER (CORRIGIDA - LIMPA MEMÓRIA)
     function closePlayer() {
       const overlay = document.getElementById('playerOverlay');
       const video = document.getElementById('mainVideo');
       const loading = document.getElementById('playerLoading');
-      
-      video.pause();
-      video.src = '';
-      video.style.display = 'none';
-      loading.style.display = 'none';
-      overlay.classList.remove('active');
+
+      // Remove botão de play fallback se existir
+      const btnFallback = overlay.querySelector('[style*="position: absolute"]');
+      if (btnFallback) btnFallback.remove();
+
+      if (video) {
+        video.pause();
+        video.removeAttribute('src'); // Libera memória
+        video.load(); // Reseta estado
+        video.style.display = 'none';
+        video.muted = false;
+      }
+
+      if (loading) {
+        loading.style.display = 'flex';
+        loading.innerHTML = '<div class="spinner"></div><div>Gerando acesso seguro...</div>';
+      }
+
+      if (overlay) {
+        overlay.classList.remove('active');
+      }
     }
+
+    // PREVINE MENU DE CONTEXTO NO VIDEO (para não travar o app)
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('mainVideo')?.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        return false;
+      });
+    });
 
     // CARRINHO DE COMPRAS
     function toggleCart() {
@@ -603,38 +695,32 @@
       const container = document.getElementById('cartItems');
       const badge = document.getElementById('cartBadge');
       const totalEl = document.getElementById('cartTotal');
-      
+
       badge.textContent = cart.length;
       badge.style.display = cart.length > 0 ? 'flex' : 'none';
-      
+
       let total = 0;
-      
+
       if (cart.length === 0) {
-        container.innerHTML = `
-          <div style="text-align: center; padding: 60px 20px; color: var(--gray);">
-            <i class="fas fa-shopping-basket" style="font-size: 48px; margin-bottom: 15px; opacity: 0.3;"></i>
-            <p>Seu carrinho está vazio</p>
-            <p style="font-size: 14px; margin-top: 10px;">Adicione séries para começar!</p>
-          </div>
-        `;
+        container.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--gray);"><i class="fa-shopping-basket" style="font-size:48px;margin-bottom:15px;opacity:0.3;"></i><p>Seu carrinho está vazio</p></div>';
       } else {
         container.innerHTML = cart.map(item => {
           total += parseFloat(item.price);
           return `
             <div class="cart-item">
-              <img src="${item.cover_url}" alt="${item.title}" onerror="this.src='https://placehold.co/60x90'">
+              <img src="${item.cover_url}" alt="${item.title}" onerror="this.src='https://via.placeholder.com/60x90'">
               <div class="cart-item-info">
                 <div class="cart-item-title">${item.title}</div>
                 <div class="cart-item-price">${item.price == 0 ? 'GRÁTIS' : 'R$ ' + item.price}</div>
               </div>
               <button class="cart-item-remove" onclick="removeFromCart('${item.id}')">
-                <i class="fas fa-trash"></i>
+                <i class="fa-trash"></i>
               </button>
             </div>
           `;
         }).join('');
       }
-      
+
       totalEl.textContent = total === 0 ? 'Grátis' : 'R$ ' + total.toFixed(2);
     }
 
@@ -643,49 +729,47 @@
         showToast('Carrinho vazio!', 'error');
         return;
       }
-      
+
       const total = cart.reduce((sum, item) => sum + parseFloat(item.price), 0);
-      
+
       tg.sendData(JSON.stringify({
         action: 'checkout_cart',
         items: cart,
         total: total,
         user_id: userId
       }));
-      
+
       showToast('Finalizando compra...', 'success');
-      
+
       setTimeout(() => {
         cart = [];
         localStorage.setItem('cart_series', JSON.stringify(cart));
         updateCartUI();
+        
         toggleCart();
         tg.close();
       }, 1000);
     }
 
-    // MODAL DE DETALHES - COM LÓGICA PARA GRATUITOS
+    // MODAL DE DETALHES
     function openModal(serie) {
       currentModalSeries = serie;
       document.getElementById('modalImg').src = serie.cover_url;
       document.getElementById('modalTitle').textContent = serie.title;
       document.getElementById('modalDesc').textContent = serie.description || 'Sem descrição disponível.';
-      
+
       const priceEl = document.getElementById('modalPrice');
       const priceValue = document.getElementById('priceValue');
       const actionsDiv = document.getElementById('modalActions');
-      
-      // LIMPA BOTÕES ANTERIORES
+
       actionsDiv.innerHTML = '';
-      
+
       if (serie.price == 0) {
-        // SÉRIE GRATUITA - VAI DIRETO PRO PLAYER
+        // SÉRIE GRÁTUITA - VAI DIRETO PRO PLAYER
         priceEl.className = 'modal-price free';
-        priceEl.innerHTML = `
-          <span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>
-        `;
-        
-        // Botão único e grande para assistir
+        priceValue.textContent = '';
+        priceEl.innerHTML = '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>';
+
         const watchBtn = document.createElement('button');
         watchBtn.className = 'btn btn-free';
         watchBtn.style.width = '100%';
@@ -697,27 +781,26 @@
           openPlayer(serie.id, serie.title);
         };
         actionsDiv.appendChild(watchBtn);
-        
+
       } else {
-        // SÉRIE PAGA - BOTÕES DE COMPRA
+        // SÉRIE PAGA
         priceEl.className = 'modal-price';
         priceEl.innerHTML = `<span id="priceValue">R$ ${serie.price}</span>`;
         
-        // Botão Adicionar ao Carrinho
         const cartBtn = document.createElement('button');
-        cartBtn.className = 'btn btn-play';
+        cartBtn.className = 'btn btn-cart';
         cartBtn.style.flex = '1';
-        cartBtn.innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar';
+        cartBtn.innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
         cartBtn.onclick = () => {
           addToCart(serie);
           closeModal();
         };
-        
-        // Botão Comprar Agora
+        actionsDiv.appendChild(cartBtn);
+
         const buyBtn = document.createElement('button');
         buyBtn.className = 'btn btn-primary';
         buyBtn.style.flex = '1';
-        buyBtn.innerHTML = '<i class="fas fa-shopping-bag"></i> Comprar';
+        buyBtn.innerHTML = '<i class="fas fa-shopping-bag"></i> Comprar Agora';
         buyBtn.onclick = () => {
           tg.sendData(JSON.stringify({
             action: 'buy',
@@ -726,22 +809,24 @@
             price: serie.price
           }));
           tg.close();
+          
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;gap:12px;margin-top:15px;';
+          row.append(cartBtn.cloneNode(true), buyBtn.cloneNode(true));
+          actionsDiv.append(row);
+          
+          document.getElementById('modalOverlay').classList.add('active');
+          document.body.style.overflow = 'hidden';
         };
-        
-        const row = document.createElement('div');
-        row.style.display = 'flex';
-        row.style.gap = '12px';
-        row.appendChild(cartBtn);
-        row.appendChild(buyBtn);
-        actionsDiv.appendChild(row);
+        actionsDiv.appendChild(buyBtn);
       }
-      
+
       document.getElementById('modalOverlay').classList.add('active');
       document.body.style.overflow = 'hidden';
     }
 
     function closeModal(e) {
-      if (!e || e.target.id === 'modalOverlay') {
+      if (!e || e.target.id === 'modalOverlay' || e.target.closest('.modal-close')) {
         document.getElementById('modalOverlay').classList.remove('active');
         document.body.style.overflow = '';
       }
@@ -751,13 +836,11 @@
     function renderGrid(series) {
       const grid = document.getElementById('catalogGrid');
       grid.innerHTML = series.map(s => `
-        <div class="card" onclick='openModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>
-          <span class="price-tag ${s.price == 0 ? 'free' : ''}">
-            ${s.price == 0 ? 'GRÁTIS' : 'R$ ' + s.price}
-          </span>
+        <div class="card" onclick="openModal(${JSON.stringify(s).replace(/"/g, '&quot;')})">
+          <span class="price-tag ${s.price == 0 ? 'free' : ''}">${s.price == 0 ? 'GRÁTIS' : 'R$ ' + s.price}</span>
           <img src="${s.cover_url}" alt="${s.title}" loading="lazy" onload="this.classList.add('loaded')" onerror="this.style.opacity=1">
           <div class="card-info">
-            <div class="card-title">${s.title}</div>
+            <div class="card-item-title">${s.title}</div>
           </div>
         </div>
       `).join('');
@@ -770,7 +853,7 @@
     }
 
     function searchSeries(term) {
-      const filtered = term 
+      const filtered = term
         ? allSeries.filter(s => s.title.toLowerCase().includes(term.toLowerCase()))
         : allSeries;
       renderGrid(filtered);
@@ -788,22 +871,20 @@
       
       const icons = { success: 'check-circle', error: 'exclamation-circle', info: 'info-circle' };
       const colors = { success: '#4CAF50', error: '#ff4444', info: '#2196F3' };
-      
+
       toast.innerHTML = `
-        <i class="fas fa-${icons[type]} toast-icon" style="color: ${colors[type]};"></i>
+        <i class="fas fa-${icons[type]} toast-icon" style="color:${colors[type]};"></i>
         <span>${message}</span>
       `;
-      
-      container.appendChild(toast);
-      setTimeout(() => toast.classList.add('show'), 10);
-      setTimeout(() => { toast.remove(); }, 3000);
-    }
 
-    // Previne menu de contexto no vídeo
-    document.getElementById('mainVideo').addEventListener('contextmenu', e => {
-      e.preventDefault();
-      return false;
-    });
+      container.appendChild(toast);
+      
+      setTimeout(() => toast.classList.add('show'), 10);
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
 
     // INICIAR APLICAÇÃO
     init();
