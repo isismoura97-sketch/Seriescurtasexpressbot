@@ -2,627 +2,439 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Séries Curtas Express</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Séries Curtas Express - HD</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    /* ==========================================
-       VARIÁVEIS E TEMA DINÂMICO
-       ========================================== */
     :root {
       --primary: #E50914;
-      --primary-dark: #B20710;
       --dark: #141414;
       --darker: #0F0F0F;
-      --gray: #808080;
-      --light: #FFFFFF;
       --card-bg: #181818;
-      --hover: #2F2F2F;
-      --skeleton-base: #1a1a1a;
-      --skeleton-highlight: #2a2a2a;
-      --text-primary: #FFFFFF;
-      --text-secondary: #e5e5e5;
+      --text-main: #FFFFFF;
+      --text-dim: #E5E5E5;
       --bg-body: #0F0F0F;
-      --success: #4CAF50;
     }
-    
-    body.light-mode {
-      --dark: #f5f5f5;
-      --darker: #ffffff;
-      --card-bg: #f0f0f0;
-      --hover: #e0e0e0;
-      --skeleton-base: #e0e0e0;
-      --skeleton-highlight: #f0f0f0;
-      --text-primary: #141414;
-      --text-secondary: #333333;
-      --bg-body: #f5f5f5;
-    }
-    
+
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
-    body { background: var(--bg-body); color: var(--text-primary); overflow-x: hidden; transition: background 0.3s, color 0.3s; }
-    
-    /* ==========================================
-       HEADER E BOTÕES GLOBAIS
-       ========================================== */
+    body { background: var(--bg-body); color: var(--text-main); overflow-x: hidden; }
+
+    /* OTIMIZAÇÕES DE IMAGEM - ANTI PIXELAÇÃO */
+    img {
+      /* Força renderização nítida */
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+      /* Evita que o navegador interpole pixels */
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+      /* Suavização */
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
     .header {
       position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
       padding: 15px 4%;
-      background: linear-gradient(to bottom, rgba(0,0,0,0.9) 10%, transparent);
       display: flex; justify-content: space-between; align-items: center;
-      transition: all 0.3s;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, transparent 100%);
     }
-    body.light-mode .header { background: linear-gradient(to bottom, rgba(255,255,255,0.9) 10%, transparent); }
-    .header.scrolled { background: var(--darker); box-shadow: 0 2px 20px rgba(0,0,0,0.5); }
+
+    .logo { font-size: 22px; font-weight: 800; color: var(--primary); text-decoration: none; display: flex; align-items: center; gap: 8px; }
     
-    .logo { font-size: 24px; font-weight: 800; color: var(--primary); text-decoration: none; display: flex; align-items: center; gap: 8px; }
-    .header-actions { display: flex; align-items: center; gap: 15px; }
+    .header-actions { display: flex; gap: 12px; }
     
-    .btn-icon {
-      background: rgba(128,128,128,0.2); border: none; color: var(--text-primary);
-      width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
-      font-size: 18px; display: flex; align-items: center; justify-content: center;
-      transition: all 0.3s; backdrop-filter: blur(10px); position: relative;
+    .icon-btn {
+      background: rgba(128,128,128,0.2); border: none; color: var(--text-main);
+      width: 40px; height: 40px; border-radius: 50%; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.3s; backdrop-filter: blur(10px);
     }
-    .btn-icon:hover { background: var(--primary); color: white; transform: scale(1.1); }
-    
-    .cart-badge {
-      position: absolute; top: -5px; right: -5px; background: var(--primary); color: white;
-      font-size: 12px; font-weight: 700; width: 22px; height: 22px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center; border: 2px solid var(--dark);
-    }
-    
-    /* ==========================================
-       DRAWER DO CARRINHO
-       ========================================== */
-    .cart-overlay {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.8); backdrop-filter: blur(5px);
-      z-index: 9998; opacity: 0; visibility: hidden; transition: all 0.3s;
-    }
-    .cart-overlay.active { opacity: 1; visibility: visible; }
-    
-    .cart-drawer {
-      position: fixed; top: 0; right: -400px; width: 100%; max-width: 400px; height: 100%;
-      background: var(--card-bg); z-index: 9999; transition: right 0.3s ease;
-      display: flex; flex-direction: column; box-shadow: -10px 0 30px rgba(0,0,0,0.5);
-    }
-    .cart-overlay.active + .cart-drawer, .cart-drawer.active { right: 0; }
-    
-    .cart-header { padding: 20px; border-bottom: 1px solid rgba(128,128,128,0.2); display: flex; justify-content: space-between; align-items: center; }
-    .cart-title { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
-    .cart-close { background: none; border: none; color: var(--text-primary); font-size: 24px; cursor: pointer; width: 40px; height: 40px; }
-    
-    .cart-items { flex: 1; overflow-y: auto; padding: 20px; }
-    .cart-empty { text-align: center; padding: 60px 20px; color: var(--gray); }
-    .cart-empty i { font-size: 64px; margin-bottom: 20px; opacity: 0.3; }
-    
-    .cart-item { display: flex; gap: 15px; padding: 15px; background: rgba(128,128,128,0.05); border-radius: 12px; margin-bottom: 15px; position: relative; }
-    .cart-item img { width: 80px; height: 120px; object-fit: cover; border-radius: 8px; }
-    .cart-item-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
-    .cart-item-title { font-weight: 600; margin-bottom: 5px; font-size: 14px; padding-right: 25px; }
-    .cart-item-price { color: var(--success); font-weight: 700; font-size: 16px; }
-    .cart-item-price.free { color: var(--primary); }
-    .cart-item-remove { position: absolute; top: 10px; right: 10px; background: rgba(229,9,20,0.1); border: none; color: var(--primary); width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .cart-item-remove:hover { background: var(--primary); color: white; }
-    
-    .cart-footer { padding: 20px; border-top: 1px solid rgba(128,128,128,0.2); background: var(--darker); }
-    .cart-total { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 18px; }
-    .cart-total-value { font-weight: 800; font-size: 24px; color: var(--success); }
-    .btn-checkout { width: 100%; padding: 16px; background: var(--success); color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; text-transform: uppercase; }
-    .btn-checkout:hover { background: #45a049; }
-    .btn-checkout:disabled { background: var(--gray); cursor: not-allowed; }
-    
-    /* ==========================================
-       HERO (CARTAZ DE CINEMA ALTA QUALIDADE)
-       ========================================== */
+    .icon-btn:hover { background: var(--primary); }
+
+    /* HERO COM IMAGEM EM ALTA QUALIDADE */
     .hero {
-      position: relative; height: 85vh; min-height: 600px; background: var(--darker);
-      display: flex; align-items: center; padding: 80px 0 60px 4%; margin-bottom: 20px; overflow: hidden;
+      position: relative; min-height: 85vh; display: flex; align-items: center;
+      padding: 100px 4% 60px; background: var(--darker);
     }
-    .hero-content { position: relative; z-index: 10; width: 40%; max-width: 550px; padding-right: 60px; animation: fadeInLeft 0.8s ease; }
-    @keyframes fadeInLeft { from { opacity: 0; transform: translateX(-30px); } to { opacity: 1; transform: translateX(0); } }
     
+    .hero-content { width: 40%; max-width: 600px; z-index: 10; position: relative; }
+    
+    /* Container da imagem com tamanho máximo definido para não esticar */
     .hero-image-container {
-      position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-      width: 55%; height: 90%; z-index: 1; display: flex; align-items: center; justify-content: center; padding: 20px;
+      position: absolute; right: 5%; top: 50%; transform: translateY(-50%);
+      width: 50%; max-width: 600px; height: 70vh;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1;
     }
-    .hero-image {
-      max-width: 100%; max-height: 100%; width: auto; height: auto;
-      object-fit: contain; /* SEM ZOOM, TAMANHO ORIGINAL DO CARTAZ */
-      opacity: 0; transition: opacity 0.8s ease-in-out;
-      image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;
-      border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    
+    /* Imagem com tamanho natural preservado */
+    .hero-poster {
+      max-width: 100%; max-height: 100%;
+      width: auto; height: auto;
+      object-fit: contain; /* Mantém proporção sem cortar */
+      border-radius: 12px;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.8);
+      opacity: 0; transition: opacity 0.5s;
+      /* CRUCIAL: evita pixelização em upscaling */
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
     }
-    .hero-image.active { opacity: 1; }
+    
+    .hero-poster.active { opacity: 1; }
+    .hero-poster.loaded { opacity: 1; }
     
     .hero-gradient {
-      position: absolute; left: 0; top: 0; bottom: 0; width: 55%;
-      background: linear-gradient(to right, var(--darker) 0%, rgba(15,15,15,0.98) 25%, rgba(15,15,15,0.85) 45%, rgba(15,15,15,0.4) 60%, transparent 100%);
-      z-index: 5; pointer-events: none;
+      position: absolute; left: 0; top: 0; bottom: 0; width: 60%; z-index: 5;
+      background: linear-gradient(to right, var(--darker) 20%, transparent 100%);
+      pointer-events: none;
     }
-    body.light-mode .hero-gradient { background: linear-gradient(to right, var(--darker) 0%, rgba(255,255,255,0.98) 25%, rgba(255,255,255,0.85) 45%, rgba(255,255,255,0.4) 60%, transparent 100%); }
+
+    .hero h1 { font-size: 48px; font-weight: 800; margin-bottom: 15px; line-height: 1.1; }
+    .hero-desc { font-size: 18px; color: var(--text-dim); margin-bottom: 25px; line-height: 1.5; }
+
+    /* GRID COM QUALIDADE OTIMIZADA */
+    .section { padding: 20px 4%; }
     
-    .hero-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(229, 9, 20, 0.9); color: white; padding: 8px 16px; border-radius: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 20px; letter-spacing: 1px; }
-    .hero h1 { font-size: 48px; font-weight: 800; margin-bottom: 20px; line-height: 1.1; letter-spacing: -0.5px; }
-    .hero-desc { font-size: 18px; line-height: 1.6; margin-bottom: 30px; color: var(--text-secondary); }
+    .grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); 
+      gap: 20px; 
+    }
     
-    .btn { padding: 14px 28px; border-radius: 6px; border: none; font-size: 16px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 10px; transition: all 0.3s; text-transform: uppercase; letter-spacing: 0.5px; }
-    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
-    .btn-primary { background: var(--light); color: var(--dark); }
-    .btn-secondary { background: rgba(128,128,128,0.2); color: var(--text-primary); backdrop-filter: blur(10px); border: 1px solid rgba(128,128,128,0.3); }
-    .btn-cart { background: var(--success); color: white; margin-top: 15px; width: 100%; justify-content: center; }
-    .btn-cart:hover { background: #45a049; }
+    .card {
+      background: var(--card-bg); border-radius: 8px; overflow: hidden;
+      cursor: pointer; transition: transform 0.3s; position: relative;
+      aspect-ratio: 2/3; /* Proporção de poster de filme */
+      /* Container não estica imagem */
+      display: flex; align-items: center; justify-content: center;
+    }
     
-    .hero-controls { display: flex; gap: 12px; margin-top: 30px; align-items: center; }
-    .hero-nav { width: 44px; height: 44px; border-radius: 50%; background: rgba(128,128,128,0.2); border: 2px solid rgba(128,128,128,0.5); color: var(--text-primary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
-    .hero-nav:hover { background: var(--primary); border-color: var(--primary); color: white; }
-    .hero-dots { display: flex; gap: 8px; margin-left: 15px; }
-    .hero-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(128,128,128,0.5); cursor: pointer; }
-    .hero-dot.active { background: var(--primary); width: 28px; border-radius: 5px; }
+    .card:hover { transform: scale(1.05); z-index: 10; }
     
-    /* ==========================================
-       CATÁLOGO E CARDS
-       ========================================== */
-    .section { padding: 20px 4%; margin-bottom: 30px; }
-    .section-title { font-size: 22px; font-weight: 700; margin-bottom: 20px; }
+    /* IMAGENS DO CATÁLOGO - QUALIDADE MÁXIMA */
+    .card img { 
+      width: 100%; height: 100%; 
+      object-fit: cover; /* Cobre o espaço mantendo proporção */
+      /* QUALIDADE: */
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
     
-    .movies-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px; }
+    /* Previne que imagens pequenas fiquem esticadas */
+    .card img[src=""], .card img:not([src]) {
+      opacity: 0;
+    }
+
+    .price-tag { 
+      position: absolute; top: 10px; right: 10px; 
+      background: var(--primary); padding: 4px 10px; 
+      border-radius: 4px; font-size: 12px; font-weight: 700;
+      z-index: 2;
+    }
+
+    /* CARRINHO */
+    .cart-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1999; display: none; }
+    .cart-overlay.active { display: block; }
     
-    .movie-card { position: relative; background: var(--card-bg); border-radius: 8px; overflow: hidden; transition: all 0.3s; cursor: pointer; aspect-ratio: 2/3; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-    .movie-card:hover { transform: scale(1.05); z-index: 10; box-shadow: 0 15px 35px rgba(0,0,0,0.6); }
+    .cart-drawer {
+      position: fixed; top: 0; right: -100%; width: 100%; max-width: 400px; height: 100%;
+      background: var(--card-bg); z-index: 2000; transition: 0.3s;
+      display: flex; flex-direction: column;
+    }
+    .cart-drawer.active { right: 0; }
     
-    .movie-image { width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.3s; image-rendering: crisp-edges; }
-    .movie-image.loaded { opacity: 1; }
+    .cart-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; }
+    .cart-body { flex: 1; overflow-y: auto; padding: 20px; }
+    .cart-footer { padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); }
     
-    /* SKELETON LOADING */
-    .skeleton { background: linear-gradient(90deg, var(--skeleton-base) 25%, var(--skeleton-highlight) 50%, var(--skeleton-base) 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; border-radius: 8px; }
-    @keyframes skeleton-loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-    
-    .add-cart-overlay { position: absolute; top: 10px; left: 10px; width: 36px; height: 36px; background: var(--success); border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0; transform: scale(0.8); transition: all 0.3s; cursor: pointer; z-index: 10; border: none; color: white; }
-    .movie-card:hover .add-cart-overlay { opacity: 1; transform: scale(1); }
-    .add-cart-overlay:hover { background: #45a049; transform: scale(1.1); }
-    
-    .price-badge { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); color: var(--success); padding: 6px 10px; border-radius: 6px; font-size: 13px; font-weight: 700; z-index: 5; }
-    .price-badge.free { color: #FFD700; background: var(--primary); }
-    
-    .movie-info { position: absolute; bottom: 0; left: 0; right: 0; padding: 60px 15px 15px; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); opacity: 0; transition: opacity 0.3s; }
-    .movie-card:hover .movie-info { opacity: 1; }
-    .movie-title { font-size: 14px; font-weight: 600; color: white; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    
-    /* ==========================================
-       BUSCA E CATEGORIAS
-       ========================================== */
-    .categories-scroll { display: flex; gap: 12px; overflow-x: auto; padding: 10px 0; margin-bottom: 20px; scrollbar-width: none; }
-    .categories-scroll::-webkit-scrollbar { display: none; }
-    .category-chip { padding: 10px 20px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 25px; color: var(--text-primary); font-size: 14px; cursor: pointer; white-space: nowrap; transition: all 0.3s; }
-    .category-chip.active, .category-chip:hover { background: var(--primary); color: white; border-color: var(--primary); }
-    
-    .search-box { position: relative; max-width: 600px; margin: 0 auto 25px; }
-    .search-box input { width: 100%; padding: 16px 24px 16px 50px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 10px; color: var(--text-primary); font-size: 16px; outline: none; }
-    .search-box i { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: var(--gray); }
-    
-    /* ==========================================
-       MODAL DE DETALHES
-       ========================================== */
-    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 9997; display: none; justify-content: center; align-items: center; padding: 20px; opacity: 0; transition: opacity 0.3s; backdrop-filter: blur(5px); }
-    .modal-overlay.active { display: flex; opacity: 1; }
-    
-    .modal-content { background: var(--card-bg); border-radius: 16px; max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto; position: relative; transform: scale(0.9); transition: transform 0.3s; }
-    .modal-overlay.active .modal-content { transform: scale(1); }
-    
-    .modal-close { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.5); border: none; color: white; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; z-index: 10; font-size: 18px; }
-    .modal-close:hover { background: var(--primary); }
-    
-    .modal-hero { position: relative; height: 400px; overflow: hidden; background: var(--darker); display: flex; justify-content: center; }
-    .modal-hero img { height: 100%; width: auto; object-fit: contain; }
-    .modal-gradient { position: absolute; bottom: 0; left: 0; right: 0; height: 200px; background: linear-gradient(to top, var(--card-bg), transparent); }
-    
-    .modal-body { padding: 30px; margin-top: -80px; position: relative; z-index: 2; }
-    .modal-title { font-size: 36px; font-weight: 800; margin-bottom: 10px; }
-    .modal-desc { color: var(--text-secondary); line-height: 1.6; margin-bottom: 20px; }
-    .modal-price { font-size: 24px; font-weight: 700; color: var(--success); margin-bottom: 20px; }
-    .modal-price.free { color: var(--primary); }
-    
-    .modal-actions { display: flex; gap: 15px; flex-wrap: wrap; }
-    
-    /* ==========================================
-       TOAST & OFFLINE
-       ========================================== */
-    .toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10000; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
-    .toast { background: rgba(30,30,30,0.95); color: white; padding: 16px 24px; border-radius: 12px; display: flex; align-items: center; gap: 12px; font-weight: 500; transform: translateY(100px); opacity: 0; transition: all 0.4s; min-width: 300px; pointer-events: all; border: 1px solid rgba(255,255,255,0.1); }
-    body.light-mode .toast { background: white; color: black; border-color: rgba(0,0,0,0.1); }
-    .toast.show { transform: translateY(0); opacity: 1; }
-    
-    .offline-banner { position: fixed; top: 0; left: 0; right: 0; background: #ff9800; color: #000; text-align: center; padding: 10px; font-weight: 600; z-index: 10001; transform: translateY(-100%); transition: transform 0.3s; display: flex; align-items: center; justify-content: center; gap: 10px; }
-    body.offline .offline-banner { transform: translateY(0); }
-    body.offline .header { top: 40px; }
-    
-    /* ==========================================
-       RESPONSIVO MOBILE
-       ========================================== */
+    .cart-item { display: flex; gap: 15px; margin-bottom: 15px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; }
+    .cart-item img { width: 60px; height: 90px; object-fit: cover; border-radius: 4px; }
+    .cart-total { display: flex; justify-content: space-between; font-size: 20px; font-weight: 700; margin-bottom: 15px; }
+
+    .btn {
+      padding: 12px 24px; border-radius: 6px; border: none; font-weight: 700;
+      cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+    }
+    .btn-primary { background: var(--primary); color: white; width: 100%; justify-content: center; }
+    .btn-cart { background: #4CAF50; color: white; }
+
+    /* MODAL */
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 3000; display: none; align-items: center; justify-content: center; padding: 20px; }
+    .modal.active { display: flex; }
+    .modal-content { background: var(--card-bg); width: 100%; max-width: 500px; border-radius: 16px; overflow: hidden; }
+    .modal-img { width: 100%; height: 300px; object-fit: cover; }
+    .modal-body { padding: 25px; }
+
+    /* RESPONSIVO */
     @media (max-width: 968px) {
-      .hero { flex-direction: column; height: auto; min-height: auto; padding: 100px 4% 40px; }
-      .hero-content { width: 100%; padding-right: 0; margin-bottom: 30px; text-align: center; }
-      .hero-image-container { position: relative; width: 100%; height: 500px; transform: none; top: auto; }
+      .hero { flex-direction: column; text-align: center; padding-top: 80px; }
+      .hero-content { width: 100%; margin-bottom: 30px; }
+      .hero-image-container { position: relative; width: 80%; height: 400px; right: auto; transform: none; }
       .hero-gradient { display: none; }
-      .hero h1 { font-size: 36px; }
-      .hero-controls { justify-content: center; }
-      .cart-drawer { max-width: 100%; }
-      .modal-hero { height: 300px; }
-      .modal-title { font-size: 28px; }
+      .hero h1 { font-size: 32px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
     }
   </style>
 </head>
 <body>
 
-  <!-- OFFLINE BANNER -->
-  <div class="offline-banner" id="offline-banner">
-    <i class="fas fa-wifi-slash"></i> Você está offline. As imagens podem demorar a carregar.
-  </div>
-
-  <header class="header" id="header">
-    <a href="#" class="logo">
-      <i class="fas fa-play-circle"></i> SÉRIES CURTAS
-    </a>
+  <header class="header">
+    <a href="#" class="logo"><i class="fas fa-play-circle"></i> SÉRIES HD</a>
     <div class="header-actions">
-      <button class="btn-icon theme-toggle" onclick="toggleTheme()" title="Alternar tema">
-        <i class="fas fa-moon" id="theme-icon"></i>
-      </button>
-      <button class="btn-icon cart-btn" onclick="toggleCart()" title="Ver carrinho">
+      <button class="icon-btn" onclick="toggleCart()">
         <i class="fas fa-shopping-cart"></i>
-        <span class="cart-badge" id="cart-count" style="display: none;">0</span>
+        <span id="cart-count" style="position: absolute; top: -5px; right: -5px; background: var(--primary); color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; display: flex; align-items: center; justify-content: center; display: none;">0</span>
       </button>
     </div>
   </header>
 
-  <!-- OVERLAY E DRAWER DO CARRINHO -->
-  <div class="cart-overlay" id="cart-overlay" onclick="toggleCart()"></div>
-  <div class="cart-drawer" id="cart-drawer">
-    <div class="cart-header">
-      <div class="cart-title"><i class="fas fa-shopping-cart"></i> Seu Carrinho</div>
-      <button class="cart-close" onclick="toggleCart()"><i class="fas fa-times"></i></button>
-    </div>
-    <div class="cart-items" id="cart-items">
-      <!-- Itens renderizados via JS -->
-    </div>
-    <div class="cart-footer">
-      <div class="cart-total">
-        <span>Total:</span>
-        <span class="cart-total-value" id="cart-total">R$ 0,00</span>
-      </div>
-      <button class="btn-checkout" onclick="checkout()" id="checkout-btn" disabled>
-        <i class="fas fa-check-circle"></i> Finalizar Compra
-      </button>
-    </div>
-  </div>
-
-  <!-- HERO SECTION: TEXTO ESQUERDA, IMAGEM DIREITA -->
-  <section class="hero" id="hero-section">
+  <!-- HERO -->
+  <section class="hero">
     <div class="hero-gradient"></div>
     <div class="hero-content">
-      <span class="hero-badge"><i class="fas fa-fire"></i> Destaque da Semana</span>
-      <h1 id="hero-title"><div class="skeleton" style="height:48px; width:80%;"></div></h1>
-      <p class="hero-desc" id="hero-desc"><div class="skeleton" style="height:20px; width:100%; margin-bottom:10px;"></div><div class="skeleton" style="height:20px; width:60%;"></div></p>
-      
-      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+      <h1 id="hero-title">Carregando...</h1>
+      <p class="hero-desc" id="hero-desc">Aguarde enquanto preparamos o catálogo em alta definição.</p>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
         <button class="btn btn-primary" onclick="buyFeatured()">
-          <i class="fas fa-bolt"></i> Comprar Rápido
+          <i class="fas fa-play"></i> COMPRAR AGORA
         </button>
-        <button class="btn btn-secondary" onclick="scrollToGrid()">
-          <i class="fas fa-list"></i> Catálogo
+        <button class="btn" style="background: rgba(255,255,255,0.2); color: white;" onclick="addToCartFeatured()">
+          <i class="fas fa-cart-plus"></i> ADICIONAR
         </button>
-      </div>
-      
-      <button class="btn btn-cart" onclick="addToCartFromHero()">
-        <i class="fas fa-cart-plus"></i> Adicionar ao Carrinho
-      </button>
-      
-      <div class="hero-controls">
-        <button onclick="prevHero()" class="hero-nav"><i class="fas fa-chevron-left"></i></button>
-        <div class="hero-dots" id="hero-dots"></div>
-        <button onclick="nextHero()" class="hero-nav"><i class="fas fa-chevron-right"></i></button>
       </div>
     </div>
     <div class="hero-image-container">
-      <img id="hero-img" class="hero-image" src="" alt="Banner">
+      <!-- Imagem com data-src para lazy loading controlado -->
+      <img data-src="" id="hero-img" class="hero-poster" alt="Capa" loading="eager">
     </div>
   </section>
 
-  <div style="padding: 0 4%;">
-    <div class="search-box">
-      <i class="fas fa-search"></i>
-      <input type="text" id="searchInput" placeholder="Buscar séries pelo nome..." onkeyup="searchSeries(this.value)">
+  <!-- CATÁLOGO -->
+  <section class="section">
+    <h2 style="margin-bottom: 20px; font-size: 24px;">Catálogo em HD</h2>
+    <div class="grid" id="catalog-grid">
+      <!-- Grid preenchido via JS -->
     </div>
-  </div>
+  </section>
 
-  <div class="section">
-    <div class="categories-scroll">
-      <div class="category-chip active" onclick="filterCategory('all')">Todas</div>
-      <div class="category-chip" onclick="filterCategory('romance')">❤️ Romance</div>
-      <div class="category-chip" onclick="filterCategory('drama')">🎭 Drama</div>
-      <div class="category-chip" onclick="filterCategory('suspense')">🔪 Suspense</div>
+  <!-- CARRINHO -->
+  <div class="cart-overlay" onclick="toggleCart()"></div>
+  <div class="cart-drawer" id="cart-drawer">
+    <div class="cart-header">
+      <h3>Seu Carrinho</h3>
+      <button class="icon-btn" onclick="toggleCart()"><i class="fas fa-times"></i></button>
     </div>
-    
-    <h2 class="section-title">Catálogo Completo</h2>
-    <div class="movies-grid" id="movies-grid">
-      <!-- Skeletons iniciais -->
-      <div class="movie-card skeleton"></div><div class="movie-card skeleton"></div>
-      <div class="movie-card skeleton"></div><div class="movie-card skeleton"></div>
-      <div class="movie-card skeleton"></div><div class="movie-card skeleton"></div>
-    </div>
-  </div>
-
-  <!-- MODAL DE DETALHES -->
-  <div class="modal-overlay" id="modal" onclick="closeModal(event)">
-    <div class="modal-content" onclick="event.stopPropagation()">
-      <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
-      <div class="modal-hero">
-        <img id="modal-img" src="" alt="Capa">
-        <div class="modal-gradient"></div>
+    <div class="cart-body" id="cart-items"></div>
+    <div class="cart-footer">
+      <div class="cart-total">
+        <span>Total:</span>
+        <span id="cart-total">R$ 0,00</span>
       </div>
+      <button class="btn btn-primary" onclick="checkout()">
+        <i class="fas fa-check"></i> FINALIZAR COMPRA
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal" id="modal" onclick="closeModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <img id="modal-img" class="modal-img" src="" alt="">
       <div class="modal-body">
-        <h2 class="modal-title" id="modal-title">Título</h2>
-        <div id="modal-price" class="modal-price"></div>
-        <p id="modal-desc" class="modal-desc"></p>
-        <div class="modal-actions">
-          <button class="btn btn-add-cart" onclick="addToCartFromModal()">
-            <i class="fas fa-cart-plus"></i> Por no Carrinho
-          </button>
-          <button class="btn btn-primary" onclick="buyFromModal()">
-            <i class="fas fa-bolt"></i> Compra Rápida
-          </button>
+        <h2 id="modal-title" style="margin-bottom: 10px;"></h2>
+        <p id="modal-desc" style="color: var(--text-dim); margin-bottom: 20px;"></p>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn btn-primary" onclick="buyModal()" style="flex: 1;">COMPRAR</button>
+          <button class="btn btn-cart" onclick="addModalToCart()" style="flex: 1;"><i class="fas fa-plus"></i> CARRINHO</button>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="toast-container" id="toast-container"></div>
-
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.expand();
-    tg.ready();
-    
     const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api/series';
     let allSeries = [];
-    let featuredSeries = null;
-    let currentHeroIndex = 0;
-    let currentModalSeries = null;
-    let heroInterval;
-    
-    const placeholderImages = { default: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=800&q=90' };
-    
-    // CARRINHO (LocalStorage)
-    let cart = JSON.parse(localStorage.getItem('series_cart')) || [];
-    
-    function saveCart() {
-      localStorage.setItem('series_cart', JSON.stringify(cart));
-      updateCartUI();
-    }
-    
-    function updateCartUI() {
-      const count = cart.length;
-      const badge = document.getElementById('cart-count');
-      const itemsContainer = document.getElementById('cart-items');
-      const totalEl = document.getElementById('cart-total');
-      const checkoutBtn = document.getElementById('checkout-btn');
-      
-      badge.textContent = count;
-      badge.style.display = count > 0 ? 'flex' : 'none';
-      
-      const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
-      totalEl.textContent = total === 0 ? 'Grátis' : `R$ ${total.toFixed(2)}`;
-      checkoutBtn.disabled = count === 0;
-      
-      if (count === 0) {
-        itemsContainer.innerHTML = `<div class="cart-empty"><i class="fas fa-shopping-basket"></i><p>Seu carrinho está vazio</p></div>`;
-      } else {
-        itemsContainer.innerHTML = cart.map((item, index) => `
-          <div class="cart-item">
-            <img src="${item.cover_url || placeholderImages.default}" alt="${item.title}">
-            <div class="cart-item-info">
-              <div class="cart-item-title">${item.title}</div>
-              <div class="cart-item-price ${item.price == 0 ? 'free' : ''}">${item.price == 0 ? 'GRÁTIS' : `R$ ${item.price}`}</div>
-            </div>
-            <button class="cart-item-remove" onclick="removeFromCart(${index})" title="Remover"><i class="fas fa-trash"></i></button>
-          </div>
-        `).join('');
-      }
-    }
-    
-    function toggleCart() {
-      const overlay = document.getElementById('cart-overlay');
-      const drawer = document.getElementById('cart-drawer');
-      overlay.classList.toggle('active');
-      drawer.classList.toggle('active');
-      document.body.style.overflow = overlay.classList.contains('active') ? 'hidden' : '';
-    }
-    
-    function addToCart(serie) {
-      if (cart.find(item => item.id === serie.id)) {
-        showToast('Série já está no carrinho!', 'error');
-        return;
-      }
-      cart.push(serie);
-      saveCart();
-      showToast(`${serie.title} no carrinho!`, 'success');
-      trackEvent('add_to_cart', serie.id, serie.title);
-    }
-    
-    function addToCartFromHero() { if (featuredSeries) addToCart(featuredSeries); }
-    function addToCartFromModal() { if (currentModalSeries) { addToCart(currentModalSeries); closeModal(); } }
-    function removeFromCart(index) { cart.splice(index, 1); saveCart(); }
-    
-    // CHECKOUT COM ENTREGA PROTEGIDA VIA BOT
-    function checkout() {
-      if (cart.length === 0) return;
-      const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
-      
-      const confirmacao = confirm(`Resumo da Compra:\n\n${cart.map(i => `• ${i.title}`).join('\n')}\n\nTotal: R$ ${total.toFixed(2)}\n\nFinalizar e receber os vídeos no bot?`);
-      if (!confirmacao) return;
+    let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
+    let currentHero = 0;
+    let modalSeries = null;
 
-      trackEvent('checkout', 'cart', `Total: ${total}`);
-      
-      // Envia os dados para o Telegram (o Bot processa e envia os vídeos)
-      tg.sendData(JSON.stringify({ 
-        action: 'checkout_cart', 
-        items: cart,
-        total: total,
-        user_id: tg.initDataUnsafe?.user?.id
-      }));
-
-      showToast('Enviando pedido para o Bot...', 'success');
-      
-      setTimeout(() => {
-        cart = []; saveCart(); tg.close();
-      }, 1500);
-    }
-    
-    // UTILIDADES (Toast, Analytics, Tema, Offline)
-    function showToast(message, type = 'info') {
-      const container = document.getElementById('toast-container');
-      const toast = document.createElement('div');
-      toast.className = `toast toast-${type}`;
-      const icon = type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
-      const color = type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : '#2196F3';
-      toast.innerHTML = `<i class="fas ${icon}" style="color: ${color}"></i><span>${message}</span>`;
-      container.appendChild(toast);
-      setTimeout(() => toast.classList.add('show'), 10);
-      setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 3000);
-    }
-    
-    function trackEvent(event, id, title) { console.log(`[Analytics] ${event} - ${title} (${id})`); }
-    
-    function toggleTheme() {
-      document.body.classList.toggle('light-mode');
-      const icon = document.getElementById('theme-icon');
-      if (document.body.classList.contains('light-mode')) {
-        icon.classList.replace('fa-moon', 'fa-sun'); localStorage.setItem('theme', 'light');
-      } else {
-        icon.classList.replace('fa-sun', 'fa-moon'); localStorage.setItem('theme', 'dark');
-      }
-    }
-    if (localStorage.getItem('theme') === 'light') toggleTheme();
-    
-    window.addEventListener('online', () => { document.body.classList.remove('offline'); showToast('Conexão restaurada!', 'success'); });
-    window.addEventListener('offline', () => document.body.classList.add('offline'));
-    if (!navigator.onLine) document.body.classList.add('offline');
-    
-    // MODAL
-    function openModal(serie) {
-      currentModalSeries = serie;
-      document.getElementById('modal-img').src = serie.cover_url || placeholderImages.default;
-      document.getElementById('modal-title').textContent = serie.title;
-      document.getElementById('modal-desc').textContent = serie.description || 'Uma história emocionante para você assistir agora mesmo.';
-      const priceEl = document.getElementById('modal-price');
-      priceEl.textContent = serie.price == 0 ? 'GRÁTIS' : `R$ ${serie.price}`;
-      priceEl.className = `modal-price ${serie.price == 0 ? 'free' : ''}`;
-      document.getElementById('modal').classList.add('active');
-      document.body.style.overflow = 'hidden';
-      trackEvent('view_item', serie.id, serie.title);
-    }
-    function closeModal(e) { if (!e || e.target.id === 'modal') { document.getElementById('modal').classList.remove('active'); document.body.style.overflow = ''; } }
-    
-    // COMPRA RÁPIDA (Item único)
-    function buy(id, title, price) {
-      trackEvent('buy_single', id, title);
-      tg.sendData(JSON.stringify({ action: 'buy', series_id: id, title, price }));
-      tg.close();
-    }
-    function buyFromModal() { if (currentModalSeries) buy(currentModalSeries.id, currentModalSeries.title, currentModalSeries.price); }
-    function buyFeatured() { if (featuredSeries) buy(featuredSeries.id, featuredSeries.title, featuredSeries.price); }
-    
-    // HERO SLIDESHOW (ALTA QUALIDADE / CARTAZ)
-    function preloadImage(url) { return new Promise((res, rej) => { const img = new Image(); img.onload = () => res(url); img.onerror = rej; img.src = url; }); }
-    
-    async function updateHeroBackground() {
-      const heroImg = document.getElementById('hero-img');
-      const heroTitle = document.getElementById('hero-title');
-      const heroDesc = document.getElementById('hero-desc');
-      if (!allSeries.length || !heroImg) return;
-      
-      const serie = allSeries[currentHeroIndex];
-      const imageUrl = serie.cover_url || placeholderImages.default;
-      
-      try { await preloadImage(imageUrl); } catch(e) {}
-      
-      heroImg.classList.remove('active');
-      setTimeout(() => { heroImg.src = imageUrl; heroImg.onload = () => heroImg.classList.add('active'); }, 300);
-      
-      heroTitle.style.opacity = '0'; heroDesc.style.opacity = '0';
-      setTimeout(() => {
-        heroTitle.textContent = serie.title;
-        heroDesc.textContent = serie.description || 'Uma história emocionante para você assistir.';
-        heroTitle.style.opacity = '1'; heroDesc.style.opacity = '1';
-        heroTitle.style.transition = 'opacity 0.5s'; heroDesc.style.transition = 'opacity 0.5s';
-      }, 400);
-      
-      featuredSeries = serie;
-      document.getElementById('hero-dots').innerHTML = allSeries.map((_, i) => `<div class="hero-dot ${i === currentHeroIndex ? 'active' : ''}" onclick="goToHero(${i})"></div>`).join('');
-    }
-    
-    function startHeroSlideshow() { clearInterval(heroInterval); updateHeroBackground(); heroInterval = setInterval(nextHero, 7000); }
-    function nextHero() { currentHeroIndex = (currentHeroIndex + 1) % allSeries.length; updateHeroBackground(); }
-    function prevHero() { currentHeroIndex = (currentHeroIndex - 1 + allSeries.length) % allSeries.length; updateHeroBackground(); resetTimer(); }
-    function goToHero(index) { currentHeroIndex = index; updateHeroBackground(); resetTimer(); }
-    function resetTimer() { clearInterval(heroInterval); heroInterval = setInterval(nextHero, 7000); }
-    
-    // DADOS E RENDERIZAÇÃO
-    async function loadSeries() {
+    // Carregar dados com tratamento de alta qualidade
+    async function loadData() {
       try {
         const res = await fetch(API_URL);
-        if (!res.ok) throw new Error('API Error');
         allSeries = await res.json();
         
-        startHeroSlideshow();
-        renderGrid(allSeries);
-      } catch (e) {
-        showToast('Erro de conexão.', 'error');
-        document.getElementById('movies-grid').innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;">Erro ao carregar. Tente novamente.</div>';
+        // Renderiza grid
+        renderGrid();
+        
+        // Inicia hero com a primeira série
+        if(allSeries.length > 0) {
+          updateHero(0);
+          // Troca automática a cada 8 segundos
+          setInterval(() => {
+            currentHero = (currentHero + 1) % allSeries.length;
+            updateHero(currentHero);
+          }, 8000);
+        }
+        
+        updateCartUI();
+      } catch(e) {
+        console.error('Erro:', e);
       }
     }
-    
-    function renderGrid(series) {
-      const grid = document.getElementById('movies-grid');
-      if (!series.length) { grid.innerHTML = '<p style="grid-column:1/-1;text-align:center;">Nada encontrado.</p>'; return; }
+
+    function renderGrid() {
+      const grid = document.getElementById('catalog-grid');
+      grid.innerHTML = allSeries.map(s => `
+        <div class="card" onclick="openModal('${s.id}')">
+          <span class="price-tag">R$ ${s.price}</span>
+          <img 
+            src="${s.cover_url || 'https://via.placeholder.com/300x450/1a1a1a/666?text=Sem+Imagem'}" 
+            alt="${s.title}"
+            loading="lazy"
+            onerror="this.src='https://via.placeholder.com/300x450/1a1a1a/666?text=Erro'"
+          >
+        </div>
+      `).join('');
+    }
+
+    function updateHero(index) {
+      const s = allSeries[index];
+      document.getElementById('hero-title').textContent = s.title;
+      document.getElementById('hero-desc').textContent = s.description || 'Clique para adquirir esta série em alta definição.';
       
-      grid.innerHTML = series.map(s => {
-        const isFree = s.price == 0;
-        const imgUrl = s.cover_url || placeholderImages.default;
-        // Evitando aspas que quebram o JSON no onclick
-        const safeSerie = JSON.stringify(s).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
-        
-        return `
-          <div class="movie-card" onclick="openModal(${safeSerie})">
-            <img src="${imgUrl}" class="movie-image" alt="${s.title}" loading="lazy" onload="this.classList.add('loaded')">
-            <button class="add-cart-overlay" onclick="event.stopPropagation(); addToCart(${safeSerie})" title="Adicionar">
-              <i class="fas fa-plus"></i>
-            </button>
-            <span class="price-badge ${isFree ? 'free' : ''}">${isFree ? 'GRÁTIS' : `R$ ${s.price}`}</span>
-            <div class="movie-info"><h3 class="movie-title">${s.title}</h3></div>
-          </div>
-        `;
-      }).join('');
+      const img = document.getElementById('hero-img');
+      img.classList.remove('active');
+      
+      // Pequeno delay para transição suave
+      setTimeout(() => {
+        img.src = s.cover_url;
+        img.onload = () => {
+          img.classList.add('active');
+        };
+      }, 200);
     }
-    
-    function filterCategory(cat) {
-      document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
-      event.target.classList.add('active');
-      renderGrid(cat === 'all' ? allSeries : allSeries.filter(s => s.category === cat || s.title.toLowerCase().includes(cat)));
+
+    // Carrinho
+    function toggleCart() {
+      document.getElementById('cart-drawer').classList.toggle('active');
+      document.querySelector('.cart-overlay').classList.toggle('active');
     }
-    function searchSeries(term) {
-      if(!term) return renderGrid(allSeries);
-      const t = term.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      renderGrid(allSeries.filter(s => s.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(t)));
+
+    function addToCart(id) {
+      const item = allSeries.find(s => s.id === id);
+      if(!cart.find(c => c.id === id)) {
+        cart.push(item);
+        localStorage.setItem('cart_series', JSON.stringify(cart));
+        updateCartUI();
+        alert('Adicionado ao carrinho!');
+      } else {
+        alert('Item já está no carrinho!');
+      }
     }
-    function scrollToGrid() { window.scrollTo({ top: document.querySelector('.section').offsetTop - 80, behavior: 'smooth' }); }
-    
-    window.addEventListener('scroll', () => { document.getElementById('header').classList.toggle('scrolled', window.scrollY > 50); });
-    
-    updateCartUI();
-    loadSeries();
+
+    function removeFromCart(id) {
+      cart = cart.filter(c => c.id !== id);
+      localStorage.setItem('cart_series', JSON.stringify(cart));
+      updateCartUI();
+    }
+
+    function updateCartUI() {
+      const container = document.getElementById('cart-items');
+      const countBadge = document.getElementById('cart-count');
+      const totalEl = document.getElementById('cart-total');
+      
+      countBadge.textContent = cart.length;
+      countBadge.style.display = cart.length > 0 ? 'flex' : 'none';
+      
+      let total = 0;
+      
+      if(cart.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:gray; padding:40px;">Carrinho vazio</p>';
+      } else {
+        container.innerHTML = cart.map(item => {
+          total += parseFloat(item.price);
+          return `
+            <div class="cart-item">
+              <img src="${item.cover_url}" alt="${item.title}">
+              <div style="flex:1">
+                <div style="font-weight:600; margin-bottom:5px;">${item.title}</div>
+                <div style="color: #4CAF50; font-weight:700;">R$ ${item.price}</div>
+              </div>
+              <button onclick="removeFromCart('${item.id}')" style="background:none; border:none; color:#ff4444; cursor:pointer;">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          `;
+        }).join('');
+      }
+      
+      totalEl.textContent = `R$ ${total.toFixed(2)}`;
+    }
+
+    function addToCartFeatured() {
+      if(allSeries[currentHero]) addToCart(allSeries[currentHero].id);
+    }
+
+    // Modal
+    function openModal(id) {
+      modalSeries = allSeries.find(s => s.id === id);
+      document.getElementById('modal-img').src = modalSeries.cover_url;
+      document.getElementById('modal-title').textContent = modalSeries.title;
+      document.getElementById('modal-desc').textContent = modalSeries.description || 'Sem descrição disponível.';
+      document.getElementById('modal').classList.add('active');
+    }
+
+    function closeModal(e) {
+      if(e.target.id === 'modal') document.getElementById('modal').classList.remove('active');
+    }
+
+    function buyModal() {
+      if(modalSeries) {
+        window.Telegram.WebApp.sendData(JSON.stringify({
+          action: 'buy',
+          series_id: modalSeries.id,
+          title: modalSeries.title,
+          price: modalSeries.price
+        }));
+      }
+    }
+
+    function addModalToCart() {
+      if(modalSeries) {
+        addToCart(modalSeries.id);
+        document.getElementById('modal').classList.remove('active');
+      }
+    }
+
+    function buyFeatured() {
+      if(allSeries[currentHero]) {
+        window.Telegram.WebApp.sendData(JSON.stringify({
+          action: 'buy',
+          series_id: allSeries[currentHero].id,
+          title: allSeries[currentHero].title,
+          price: allSeries[currentHero].price
+        }));
+      }
+    }
+
+    function checkout() {
+      if(cart.length === 0) return;
+      
+      window.Telegram.WebApp.sendData(JSON.stringify({
+        action: 'checkout_cart',
+        items: cart,
+        total: cart.reduce((sum, item) => sum + parseFloat(item.price), 0)
+      }));
+    }
+
+    // Inicializar
+    window.Telegram.WebApp.expand();
+    loadData();
   </script>
 </body>
 </html>
