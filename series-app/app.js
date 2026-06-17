@@ -1,26 +1,22 @@
 /**
  * Séries Curtas Express - Mini App Telegram
- * Versão Revisada e Otimizada
+ * Versão Final Otimizada - 2025
+ * Compatível com HTML e CSS revisados (Player & Modal Premium)
  */
 
 'use strict';
 
 // ====================== UTILITIES ======================
 
-/** Fetch com timeout e tratamento robusto de erros */
-async function fetchWithTimeout(url, options = {}, timeout = 10000) {
+async function fetchWithTimeout(url, options = {}, timeout = 12000) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-        const res = await fetch(url, {
-            ...options,
-            signal: controller.signal
-        });
-
+        const res = await fetch(url, { ...options, signal: controller.signal });
         clearTimeout(timeoutId);
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const contentType = res.headers.get('content-type');
         if (!contentType?.includes('application/json')) {
@@ -35,7 +31,6 @@ async function fetchWithTimeout(url, options = {}, timeout = 10000) {
     }
 }
 
-/** Formata preço em Real Brasileiro */
 function formatPrice(price) {
     if (price === 0 || price === null) return 'GRÁTIS';
     return new Intl.NumberFormat('pt-BR', {
@@ -44,16 +39,14 @@ function formatPrice(price) {
     }).format(price);
 }
 
-/** Escapa HTML para prevenir XSS */
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-/** Exibe Toast Notification */
 function showToast(message, type = 'info') {
-    const container = document.getElementById('toastContainer');
+    const container = DOM.toastContainer;
     if (!container) return;
 
     const toast = document.createElement('div');
@@ -61,31 +54,29 @@ function showToast(message, type = 'info') {
     toast.setAttribute('role', 'status');
     toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
 
+    const icons = {
+        success: '<i class="fas fa-check-circle"></i>',
+        error: '<i class="fas fa-times-circle"></i>',
+        info: '<i class="fas fa-info-circle"></i>'
+    };
+
     toast.innerHTML = `
-        <span class="toast-icon">
-            ${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}
-        </span>
+        <span class="toast-icon">${icons[type] || icons.info}</span>
         <span>${escapeHtml(message)}</span>
     `;
 
     container.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add('show'));
 
-    const timeout = setTimeout(() => {
+    setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 400);
-    }, 3000);
-
-    toast.addEventListener('mouseenter', () => clearTimeout(timeout));
-    toast.addEventListener('mouseleave', () => {
-        setTimeout(() => toast.remove(), 400);
-    });
+    }, 3500);
 }
 
 // ====================== DOM CACHE ======================
 
 const DOM = {
-    // Player
     playerOverlay: document.getElementById('playerOverlay'),
     mainVideo: document.getElementById('mainVideo'),
     playerTitle: document.getElementById('playerTitle'),
@@ -94,14 +85,12 @@ const DOM = {
     playerWatermark: document.getElementById('playerWatermark'),
     watermarkId: document.getElementById('watermarkId'),
 
-    // Cart
     cartOverlay: document.getElementById('cartOverlay'),
     cartDrawer: document.getElementById('cartDrawer'),
     cartItems: document.getElementById('cartItems'),
     cartTotal: document.getElementById('cartTotal'),
     cartBadge: document.getElementById('cartBadge'),
 
-    // Modal
     modalOverlay: document.getElementById('modalOverlay'),
     modalImg: document.getElementById('modalImg'),
     modalTitle: document.getElementById('modalTitle'),
@@ -109,19 +98,20 @@ const DOM = {
     modalDesc: document.getElementById('modalDesc'),
     modalActions: document.getElementById('modalActions'),
 
-    // Hero
     heroImg: document.getElementById('heroImg'),
     heroTitle: document.getElementById('heroTitle'),
     heroDesc: document.getElementById('heroDesc'),
     heroBadge: document.getElementById('heroBadge'),
-    heroPlayBtn: null, // será criado dinamicamente
+    heroPlayBtn: document.getElementById('heroPlayBtn'),
 
-    // Catalog
     catalogGrid: document.getElementById('catalogGrid'),
     netflixScroll: document.getElementById('netflixScroll'),
     searchInput: document.getElementById('searchInput'),
     toastContainer: document.getElementById('toastContainer'),
     header: document.getElementById('header'),
+    themeBtn: document.getElementById('themeBtn'),
+    themeIcon: document.getElementById('themeIcon'),
+    cartBtn: document.getElementById('cartBtn')
 };
 
 // ====================== STATE & CONFIG ======================
@@ -133,7 +123,6 @@ let heroInterval = null;
 let currentModalSeries = null;
 let playerRetryData = null;
 let savedFocus = null;
-let currentFocusTrap = null;
 
 const tg = window.Telegram?.WebApp;
 const API_URL = 'https://uyyeascxvnrrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
@@ -147,9 +136,7 @@ async function init() {
     if (tg) {
         tg.ready();
         tg.expand();
-        tg.setHeaderColor('#0f0f0f');
-
-        // Suporte ao tema do Telegram
+        tg.setHeaderColor('#0F0F0F');
         tg.onEvent('themeChanged', applyTheme);
     }
 
@@ -163,7 +150,7 @@ async function init() {
 // ====================== EVENT LISTENERS ======================
 
 function setupEventListeners() {
-    // Scroll header
+    // Header scroll
     window.addEventListener('scroll', () => {
         DOM.header.classList.toggle('scrolled', window.scrollY > 50);
     });
@@ -176,33 +163,33 @@ function setupEventListeners() {
     // Category chips
     document.querySelectorAll('.category-chip').forEach((chip, index) => {
         chip.addEventListener('click', () => {
+            document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
             const category = index === 0 ? 'all' : chip.textContent.trim().toLowerCase();
-            filterCategory(category, chip);
+            filterCategory(category);
         });
     });
 
     // Cart
-    document.getElementById('cartBtn')?.addEventListener('click', () => toggleCart(true));
+    DOM.cartBtn?.addEventListener('click', () => toggleCart(true));
     DOM.cartOverlay?.addEventListener('click', (e) => {
         if (e.target.id === 'cartOverlay') toggleCart(false);
     });
 
-    // Player
+    // Theme
+    DOM.themeBtn?.addEventListener('click', toggleTheme);
+
+    // Player buttons
     document.querySelectorAll('.player-back, .player-close').forEach(btn => {
         btn.addEventListener('click', closePlayer);
     });
 
-    // Modal
+    // Modal close
+    document.querySelector('.modal-close')?.addEventListener('click', closeModal);
     DOM.modalOverlay?.addEventListener('click', (e) => {
         if (e.target.id === 'modalOverlay') closeModal();
     });
-    document.querySelector('.modal-close')?.addEventListener('click', closeModal);
-
-    // Theme
-    document.getElementById('themeBtn')?.addEventListener('click', toggleTheme);
 }
-
-// ====================== KEYBOARD & ACCESSIBILITY ======================
 
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
@@ -219,38 +206,36 @@ function setupKeyboardShortcuts() {
 function applyTheme() {
     const isLight = localStorage.getItem('theme_series') === 'light';
     document.body.classList.toggle('light-mode', isLight);
-    
-    const icon = document.getElementById('themeIcon');
-    if (icon) icon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
+    if (DOM.themeIcon) {
+        DOM.themeIcon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
+    }
 }
 
 function toggleTheme() {
     const isLight = document.body.classList.toggle('light-mode');
     localStorage.setItem('theme_series', isLight ? 'light' : 'dark');
     applyTheme();
-    showToast(isLight ? 'Tema claro ativado' : 'Tema escuro ativado', 'success');
+    showToast(isLight ? '🌞 Tema Claro ativado' : '🌙 Tema Escuro ativado', 'success');
 }
 
 // ====================== DATA LOADING ======================
 
 async function loadSeries() {
     try {
-        const data = await fetchWithTimeout(`${API_URL}/api/series`, {}, 12000);
-        
-        if (!Array.isArray(data)) throw new Error('Formato de dados inválido');
+        const data = await fetchWithTimeout(`${API_URL}/api/series`, {}, 15000);
+        if (!Array.isArray(data)) throw new Error('Formato inválido');
 
         allSeries = data;
         renderNetflixRow(allSeries);
         renderGrid(allSeries);
         initHero();
-
     } catch (err) {
-        console.error('Erro ao carregar catálogo:', err);
+        console.error(err);
         showToast('Erro ao carregar catálogo: ' + err.message, 'error');
     }
 }
 
-// ====================== HERO SLIDESHOW ======================
+// ====================== HERO ======================
 
 function initHero() {
     if (!allSeries.length) return;
@@ -266,44 +251,34 @@ function updateHero(index) {
     const serie = allSeries[index];
     if (!serie) return;
 
-    DOM.heroTitle.textContent = serie.title;
+    DOM.heroTitle.textContent = serie.title || 'Destaque';
     DOM.heroDesc.textContent = serie.description || 'Uma história emocionante...';
-    DOM.heroImg.src = serie.cover_url;
-    DOM.heroImg.alt = serie.title;
+    DOM.heroImg.src = serie.cover_url || '';
+    DOM.heroImg.alt = serie.title || 'Poster';
 
     const isFree = serie.price === 0;
 
     DOM.heroBadge.className = isFree ? 'hero-badge-free' : 'hero-badge';
     DOM.heroBadge.innerHTML = isFree 
-        ? `<i class="fas fa-gift"></i> GRÁTIS`
+        ? `<i class="fas fa-gift"></i> GRÁTIS` 
         : `<i class="fas fa-fire"></i> Destaque da Semana`;
 
-    // Botão dinâmico (evita listeners duplicados)
-    let playBtn = DOM.heroPlayBtn || document.querySelector('.hero-content .btn');
-    
-    if (!playBtn) {
-        playBtn = document.createElement('button');
-        playBtn.className = 'btn btn-play';
-        playBtn.innerHTML = `<i class="fas fa-play"></i> Assistir`;
-        document.querySelector('.hero-content').appendChild(playBtn);
-        DOM.heroPlayBtn = playBtn;
-    }
-
-    playBtn.onclick = () => {
+    DOM.heroPlayBtn.style.display = 'inline-flex';
+    DOM.heroPlayBtn.onclick = () => {
         if (isFree) openPlayer(serie.id, serie.title);
         else openModal(serie);
     };
 }
 
-// ====================== RENDER FUNCTIONS ======================
+// ====================== RENDER ======================
 
 function renderNetflixRow(series) {
     const container = DOM.netflixScroll;
     if (!container) return;
-
     container.innerHTML = '';
+
     series.slice(0, 10).forEach(serie => {
-        const card = createCard(serie, true); // true = netflix style
+        const card = createCard(serie, true);
         container.appendChild(card);
     });
     document.getElementById('netflixRow').style.display = 'block';
@@ -312,8 +287,8 @@ function renderNetflixRow(series) {
 function renderGrid(series) {
     const grid = DOM.catalogGrid;
     if (!grid) return;
-
     grid.innerHTML = '';
+
     series.forEach(serie => {
         const card = createCard(serie, false);
         grid.appendChild(card);
@@ -333,7 +308,7 @@ function createCard(serie, isNetflix = false) {
         ${isFree ? `<div class="badge-gratis-landscape"><i class="fas fa-gift"></i> GRÁTIS</div>` : ''}
         <img src="${serie.cover_url}" alt="${serie.title}" loading="lazy">
         <div class="${isNetflix ? 'netflix-info' : 'card-info'}">
-            <div class="netflix-title">${escapeHtml(serie.title)}</div>
+            <div class="${isNetflix ? 'netflix-title' : 'card-title'}">${escapeHtml(serie.title)}</div>
         </div>
     `;
 
@@ -362,8 +337,7 @@ async function openPlayer(serieId, title) {
     DOM.playerLoading.style.display = 'flex';
     DOM.playerError.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
-
-    DOM.playerTitle.textContent = title;
+    DOM.playerTitle.textContent = title || 'Reproduzindo...';
     DOM.watermarkId.textContent = userId;
 
     if (tg?.BackButton) {
@@ -377,12 +351,12 @@ async function openPlayer(serieId, title) {
 
         const data = await fetchWithTimeout(url.toString(), {}, 15000);
 
-        if (data.error) throw new Error(data.error);
-
         if (data.url) {
             DOM.mainVideo.src = data.url;
             DOM.mainVideo.style.display = 'block';
-            DOM.mainVideo.play().catch(console.warn);
+            DOM.mainVideo.play().catch(() => {});
+        } else {
+            throw new Error('URL de vídeo não retornada');
         }
     } catch (err) {
         console.error(err);
@@ -400,16 +374,23 @@ function showPlayerError() {
 }
 
 function retryPlayer() {
-    if (playerRetryData) {
-        openPlayer(playerRetryData.id, playerRetryData.title);
-    }
+    if (playerRetryData) openPlayer(playerRetryData.id, playerRetryData.title);
+}
+
+function loadTestVideo() {
+    const video = DOM.mainVideo;
+    video.src = 'https://test-streams.mux.dev/x264_720p_1500kbps_30fps.mp4';
+    video.style.display = 'block';
+    DOM.playerError.classList.remove('active');
+    DOM.playerLoading.style.display = 'none';
+    video.play().catch(console.warn);
+    showToast('Vídeo de teste carregado', 'success');
 }
 
 function closePlayer() {
-    const video = DOM.mainVideo;
-    video.pause();
-    video.src = '';
-    video.load();
+    DOM.mainVideo.pause();
+    DOM.mainVideo.src = '';
+    DOM.mainVideo.load();
 
     DOM.playerOverlay.classList.remove('active');
     DOM.playerError.classList.remove('active');
@@ -433,22 +414,19 @@ function toggleCart(open) {
 
 function updateCartUI() {
     const container = DOM.cartItems;
-    const totalEl = DOM.cartTotal;
-    const badge = DOM.cartBadge;
-
-    badge.textContent = cart.length;
-    badge.style.display = cart.length > 0 ? 'flex' : 'none';
-
     let total = 0;
+
+    DOM.cartBadge.textContent = cart.length;
+    DOM.cartBadge.style.display = cart.length > 0 ? 'flex' : 'none';
 
     if (cart.length === 0) {
         container.innerHTML = `
-            <div style="text-align:center; padding:60px 20px; color:var(--gray);">
-                <i class="fas fa-shopping-basket" style="font-size:48px; opacity:0.3; margin-bottom:15px"></i>
+            <div style="text-align:center; padding:80px 20px; color:var(--gray);">
+                <i class="fas fa-shopping-basket" style="font-size:48px; opacity:0.3; margin-bottom:16px"></i>
                 <p>Seu carrinho está vazio</p>
-                <p style="font-size:14px; margin-top:10px">Adicione séries para começar!</p>
+                <p style="font-size:14px; margin-top:8px">Adicione séries para continuar</p>
             </div>`;
-        totalEl.textContent = 'R$ 0,00';
+        DOM.cartTotal.textContent = 'R$ 0,00';
         return;
     }
 
@@ -471,7 +449,7 @@ function updateCartUI() {
         container.appendChild(div);
     });
 
-    totalEl.textContent = formatPrice(total);
+    DOM.cartTotal.textContent = formatPrice(total);
 }
 
 function addToCart(serie) {
@@ -479,7 +457,6 @@ function addToCart(serie) {
         showToast('Esta série já está no carrinho!', 'error');
         return;
     }
-
     cart.push(serie);
     localStorage.setItem('cart_series', JSON.stringify(cart));
     updateCartUI();
@@ -510,7 +487,7 @@ function checkout() {
         updateCartUI();
         toggleCart(false);
         tg?.close();
-    }, 1200);
+    }, 1500);
 }
 
 // ====================== MODAL ======================
@@ -523,20 +500,19 @@ function openModal(serie) {
     DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
 
     const isFree = serie.price === 0;
-
     DOM.modalPrice.innerHTML = isFree 
         ? `<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>`
         : `<span>${formatPrice(serie.price)}</span>`;
 
     DOM.modalActions.innerHTML = '';
 
-    const btn1 = document.createElement('button');
-    btn1.className = isFree ? 'btn btn-free' : 'btn btn-primary';
-    btn1.innerHTML = isFree 
+    const btn = document.createElement('button');
+    btn.className = isFree ? 'btn btn-free' : 'btn btn-primary';
+    btn.innerHTML = isFree 
         ? `<i class="fas fa-play"></i> ASSISTIR AGORA`
-        : `<i class="fas fa-shopping-cart"></i> Adicionar ao Carrinho`;
-    
-    btn1.addEventListener('click', () => {
+        : `<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho`;
+
+    btn.addEventListener('click', () => {
         if (isFree) {
             closeModal();
             openPlayer(serie.id, serie.title);
@@ -546,12 +522,12 @@ function openModal(serie) {
         }
     });
 
-    DOM.modalActions.appendChild(btn1);
+    DOM.modalActions.appendChild(btn);
     DOM.modalOverlay.classList.add('active');
     document.body.classList.add('modal-open');
 
     savedFocus = document.activeElement;
-    setTimeout(() => DOM.modalOverlay.querySelector('.modal-close').focus(), 100);
+    setTimeout(() => document.querySelector('.modal-close').focus(), 150);
 }
 
 function closeModal() {
@@ -565,10 +541,7 @@ function closeModal() {
 
 // ====================== FILTERS ======================
 
-function filterCategory(category, element) {
-    document.querySelectorAll('.category-chip').forEach(el => el.classList.remove('active'));
-    element.classList.add('active');
-
+function filterCategory(category) {
     if (category === 'all') {
         renderGrid(allSeries);
     } else {
@@ -584,7 +557,6 @@ function searchSeries(term) {
         renderGrid(allSeries);
         return;
     }
-
     const filtered = allSeries.filter(s => 
         s.title.toLowerCase().includes(term.toLowerCase())
     );
@@ -595,20 +567,19 @@ function searchSeries(term) {
 
 function cleanup() {
     if (heroInterval) clearInterval(heroInterval);
-    if (tg?.BackButton) tg.BackButton.offClick(closePlayer);
+    if (tg?.BackButton) tg.BackButton.hide();
 }
 
-// Expor funções globais para compatibilidade com HTML inline (se necessário)
+window.addEventListener('beforeunload', cleanup);
+
+// Export global functions (para compatibilidade com onclick no HTML)
 window.openPlayer = openPlayer;
 window.closePlayer = closePlayer;
 window.retryPlayer = retryPlayer;
+window.loadTestVideo = loadTestVideo;
 window.toggleCart = toggleCart;
 window.openModal = openModal;
 window.closeModal = closeModal;
-window.addToCart = addToCart;
 window.checkout = checkout;
 window.filterCategory = filterCategory;
 window.searchSeries = searchSeries;
-
-// Cleanup ao sair
-window.addEventListener('beforeunload', cleanup);
