@@ -55,13 +55,13 @@
     .icon-btn:hover { background:var(--primary); transform:scale(1.05); }
     .badge { position:absolute; top:-4px; right:-4px; background:var(--primary); color:white; font-size:10px; font-weight:700; width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid var(--darker); }
 
-    /* ==================== HERO - BANNERS DESLIZANTES ==================== */
+    /* ==================== HERO - POSTER MENOR E MAIS PARA A ESQUERDA ==================== */
     .hero { position:relative; min-height:85svh; overflow:hidden; background:var(--darker); }
     .hero-slide { position:absolute; inset:0; display:flex; align-items:center; padding:90px 20px 40px; gap:30px; opacity:0; transition:all 0.8s ease; pointer-events:none; }
     .hero-slide.active { opacity:1; pointer-events:auto; }
     .hero-bg { position:absolute; inset:0; background-size:cover; background-position:center; filter:brightness(0.45); z-index:0; }
-    .hero-gradient { position:absolute; left:0; top:0; bottom:0; width:65%; background:linear-gradient(to right,var(--darker) 0%, rgba(15,15,15,0.95) 55%, transparent 100%); z-index:1; }
-    .hero-content { position:relative; z-index:2; width:55%; max-width:520px; }
+    .hero-gradient { position:absolute; left:0; top:0; bottom:0; width:72%; background:linear-gradient(to right,var(--darker) 0%, rgba(15,15,15,0.95) 58%, transparent 100%); z-index:1; }
+    .hero-content { position:relative; z-index:2; width:58%; max-width:560px; }
     .hero-badge-free { display:inline-flex; align-items:center; gap:6px; background:linear-gradient(135deg,#FFD700,#FFA500); color:#000; padding:8px 16px; border-radius:25px; font-size:11px; font-weight:900; text-transform:uppercase; box-shadow:0 4px 15px rgba(255,215,0,0.5); animation:pulseGold 2s infinite; }
     @keyframes pulseGold { 0%,100% { box-shadow:0 4px 15px rgba(255,215,0,0.5); } 50% { box-shadow:0 4px 25px rgba(255,215,0,0.8); } }
     .hero h1 { font-size:clamp(28px,5vw,46px); font-weight:900; line-height:1.05; margin-bottom:12px; }
@@ -71,8 +71,22 @@
     .btn-primary { background:white; color:var(--dark); }
     .btn-play { background:var(--primary); color:white; }
     .btn-free { background:linear-gradient(135deg,#FFD700,#FFA500); color:#000; font-weight:900; animation:pulseGold 2s infinite; }
-    .hero-poster { position:absolute; right:20px; top:50%; transform:translateY(-50%); width:42%; max-width:340px; border-radius:12px; overflow:hidden; box-shadow:0 25px 50px rgba(0,0,0,0.7); z-index:3; }
+
+    /* POSTER MENOR E MAIS PARA A ESQUERDA */
+    .hero-poster { 
+      position:absolute; 
+      right:18%; 
+      top:52%; 
+      transform:translateY(-50%); 
+      width:32%; 
+      max-width:280px; 
+      border-radius:12px; 
+      overflow:hidden; 
+      box-shadow:0 25px 50px rgba(0,0,0,0.7); 
+      z-index:3; 
+    }
     .hero-poster img { width:100%; height:100%; object-fit:cover; }
+
     .hero-indicators { position:absolute; bottom:30px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:10; }
     .indicator { width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,0.4); cursor:pointer; transition:all 0.3s; }
     .indicator.active { background:var(--primary); width:28px; border-radius:6px; }
@@ -189,7 +203,7 @@
   </div>
 </header>
 
-<!-- HERO - BANNERS DESLIZANTES -->
+<!-- HERO - POSTER MENOR E MAIS PARA A ESQUERDA -->
 <section class="hero">
   <div id="heroContainer"></div>
   <div class="hero-indicators" id="heroIndicators"></div>
@@ -255,10 +269,10 @@ async function loadSeries() {
   } catch (e) {
     console.warn("API offline - usando dados de teste");
     allSeries = [
-      {id:101, title:"O Quarterback Perdido Retorna", description:"Drama esportivo emocionante", price:0, category:"drama", cover_url:"https://picsum.photos/id/1015/400/600"},
-      {id:102, title:"Amor nas Sombras", description:"Romance intenso", price:0, category:"romance", cover_url:"https://picsum.photos/id/201/400/600"},
-      {id:103, title:"Contrato Mortal", description:"Suspense psicológico", price:9.9, category:"suspense", cover_url:"https://picsum.photos/id/301/400/600"},
-      {id:104, title:"Realeza Oculta", description:"Drama real", price:0, category:"drama", cover_url:"https://picsum.photos/id/401/400/600"}
+      {id:101, title:"A Prometida do Príncipe Vampiro", description:"Uma história sobrenatural de romance, mistério e paixão proibida.", price:0, category:"romance", cover_url:"https://picsum.photos/id/1015/800/1200"},
+      {id:102, title:"Amor nas Sombras", description:"Romance intenso", price:0, category:"romance", cover_url:"https://picsum.photos/id/201/800/1200"},
+      {id:103, title:"Contrato Mortal", description:"Suspense psicológico", price:9.9, category:"suspense", cover_url:"https://picsum.photos/id/301/800/1200"},
+      {id:104, title:"Realeza Oculta", description:"Drama real", price:0, category:"drama", cover_url:"https://picsum.photos/id/401/800/1200"}
     ];
   }
   renderGrid(allSeries);
@@ -349,8 +363,6 @@ function searchSeries(term) {
 }
 
 // ====================== PLAYER ======================
-let retryData = null;
-
 function openPlayer(id, title) {
   retryData = {id, title: decodeURIComponent(title)};
   document.getElementById('playerTitle').textContent = retryData.title;
