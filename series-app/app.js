@@ -1,14 +1,16 @@
 /**
  * Séries Curtas Express - Mini App Telegram
- * Versão COMPLETA com Debug para CORS/NetworkError
+ * Versão Final - URL Supabase Corrigida
  */
 
 'use strict';
 
-console.log('%c[DEBUG] app.js carregado com sucesso', 'color: #E50914; font-weight: bold');
+console.log('%c[DEBUG] app.js carregado', 'color: #E50914; font-weight: bold');
 
+// ==================== CONFIGURAÇÃO ====================
 const tg = window.Telegram?.WebApp;
-const API_URL = 'https://uyyeascxvnrrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
+// URL CORRETA CONFIRMADA
+const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
 const userId = tg?.initDataUnsafe?.user?.id || 'anonymous';
 
 let allSeries = [];
@@ -16,8 +18,8 @@ let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
 let currentHeroIndex = 0;
 let heroInterval = null;
 let playerRetryData = null;
-let savedFocus = null;
 
+// ==================== CACHE DOM ====================
 const DOM = {
     playerOverlay: document.getElementById('playerOverlay'),
     mainVideo: document.getElementById('mainVideo'),
@@ -49,11 +51,9 @@ const DOM = {
     themeIcon: document.getElementById('themeIcon')
 };
 
-console.log('[DEBUG] DOM elements carregados:', Object.keys(DOM).length);
-
-// ==================== FETCH COM DEBUG ====================
+// ==================== UTILITÁRIOS ====================
 async function fetchWithTimeout(url, options = {}, timeout = 15000) {
-    console.log(`%c[DEBUG] Tentando acessar: ${url}`, 'color: orange');
+    console.log(`%c[DEBUG] Fetching: ${url}`, 'color: orange');
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -62,34 +62,44 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
         const res = await fetch(url, {
             ...options,
             signal: controller.signal,
-            mode: 'cors',
             headers: { 'Content-Type': 'application/json' }
         });
 
         clearTimeout(timeoutId);
-        console.log(`%c[DEBUG] Status HTTP: ${res.status}`, 'color: cyan');
+        console.log(`%c[DEBUG] Status: ${res.status}`, 'color: cyan');
 
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
-        console.log('%c[DEBUG] Sucesso - Dados recebidos:', 'color: lime', data);
+        console.log('%c[DEBUG] Sucesso:', 'color: lime', data);
         return data;
 
     } catch (err) {
         clearTimeout(timeoutId);
-        console.error('%c[NETWORK/CORS ERROR]', 'color: red; font-weight: bold', err.message);
-        showToast('NetworkError: ' + err.message, 'error');
+        console.error('%c[ERROR]', 'color: red; font-weight: bold', err.message);
+        showToast('Erro de conexão: ' + err.message, 'error');
         throw err;
     }
 }
 
-function showToast(message, type = 'error') {
+function formatPrice(price) {
+    if (price === 0 || price === null) return 'GRÁTIS';
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showToast(message, type = 'info') {
     const container = DOM.toastContainer;
     if (!container) return;
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    toast.innerHTML = `<span>${message}</span>`;
+    toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
     container.appendChild(toast);
 
     requestAnimationFrame(() => toast.classList.add('show'));
@@ -97,42 +107,90 @@ function showToast(message, type = 'error') {
     setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => toast.remove(), 500);
-    }, 4500);
+    }, 4000);
 }
 
-// ==================== INIT ====================
+// ==================== INICIALIZAÇÃO ====================
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('%c[DEBUG] DOMContentLoaded - Iniciando aplicação', 'color: #E50914');
+    console.log('%c[DEBUG] DOMContentLoaded', 'color: #E50914');
 
     if (tg) {
         tg.ready();
         tg.expand();
-        console.log('[DEBUG] Telegram WebApp inicializado');
     }
 
     try {
         const data = await fetchWithTimeout(`${API_URL}/api/series`);
         allSeries = Array.isArray(data) ? data : [];
-        console.log(`[DEBUG] ${allSeries.length} séries carregadas com sucesso`);
+        console.log(`[DEBUG] ${allSeries.length} séries carregadas`);
 
         renderNetflixRow(allSeries);
         renderGrid(allSeries);
         initHero();
         updateCartUI();
     } catch (err) {
-        console.error('%c[DEBUG] Falha crítica no carregamento inicial', 'color: red', err);
+        console.error('[DEBUG] Falha no carregamento:', err);
         if (DOM.heroTitle) DOM.heroTitle.textContent = "Erro de Conexão";
-        if (DOM.heroDesc) DOM.heroDesc.textContent = "CORS bloqueado ou Supabase offline.";
+        if (DOM.heroDesc) DOM.heroDesc.textContent = "Não foi possível carregar o catálogo.";
     }
 
     setupEventListeners();
 });
 
 function setupEventListeners() {
+    window.addEventListener('scroll', () => {
+        DOM.header?.classList.toggle('scrolled', window.scrollY > 50);
+    });
+
     document.getElementById('themeBtn')?.addEventListener('click', toggleTheme);
     document.getElementById('cartBtn')?.addEventListener('click', () => toggleCart(true));
+    DOM.cartOverlay?.addEventListener('click', (e) => {
+        if (e.target.id === 'cartOverlay') toggleCart(false);
+    });
+
     DOM.searchInput?.addEventListener('input', (e) => searchSeries(e.target.value.trim()));
+
+    document.querySelectorAll('.category-chip').forEach((chip, index) => {
+        chip.addEventListener('click', () => {
+            document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            const category = index === 0 ? 'all' : chip.textContent.trim().toLowerCase();
+            filterCategory(category);
+        });
+    });
+
+    document.querySelectorAll('.player-back, .player-close').forEach(btn => {
+        btn.addEventListener('click', closePlayer);
+    });
+
     document.querySelector('.modal-close')?.addEventListener('click', closeModal);
+    DOM.modalOverlay?.addEventListener('click', (e) => {
+        if (e.target.id === 'modalOverlay') closeModal();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (DOM.playerOverlay?.classList.contains('active')) closePlayer();
+            else if (DOM.modalOverlay?.classList.contains('active')) closeModal();
+            else toggleCart(false);
+        }
+    });
+}
+
+// ==================== TEMA ====================
+function applyTheme() {
+    const isLight = localStorage.getItem('theme_series') === 'light';
+    document.body.classList.toggle('light-mode', isLight);
+    if (DOM.themeIcon) {
+        DOM.themeIcon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
+    }
+}
+
+function toggleTheme() {
+    const isLight = document.body.classList.toggle('light-mode');
+    localStorage.setItem('theme_series', isLight ? 'light' : 'dark');
+    applyTheme();
+    showToast(isLight ? 'Tema Claro ativado' : 'Tema Escuro ativado', 'success');
 }
 
 // ==================== HERO ====================
@@ -157,14 +215,14 @@ function updateHero(index) {
 
     const isFree = serie.price === 0;
     DOM.heroBadge.innerHTML = isFree 
-        ? `<i class="fas fa-gift"></i> GRÁTIS` 
-        : `<i class="fas fa-fire"></i> Destaque da Semana`;
+        ? '<i class="fas fa-gift"></i> GRÁTIS' 
+        : '<i class="fas fa-fire"></i> Destaque da Semana';
 
     DOM.heroPlayBtn.style.display = 'inline-flex';
     DOM.heroPlayBtn.onclick = () => isFree ? openPlayer(serie.id, serie.title) : openModal(serie);
 }
 
-// ==================== RENDER ====================
+// ==================== RENDERIZAÇÃO ====================
 function renderNetflixRow(series) {
     const container = DOM.netflixScroll;
     if (!container) return;
@@ -189,10 +247,10 @@ function createCard(serie, isNetflix = false) {
 
     const isFree = serie.price === 0;
     card.innerHTML = `
-        ${isFree ? `<div class="badge"><i class="fas fa-gift"></i></div>` : ''}
+        ${isFree ? `<div class="badge-gratis-landscape"><i class="fas fa-gift"></i> GRÁTIS</div>` : ''}
         <img src="${serie.cover_url}" alt="${serie.title}" loading="lazy">
         <div class="${isNetflix ? 'netflix-info' : 'card-info'}">
-            <div class="title">${escapeHtml(serie.title)}</div>
+            <div class="${isNetflix ? 'netflix-title' : 'card-title'}">${escapeHtml(serie.title)}</div>
         </div>
     `;
 
@@ -211,15 +269,19 @@ async function openPlayer(serieId, title) {
     DOM.playerError.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
     DOM.playerTitle.textContent = title;
+    DOM.watermarkId.textContent = userId;
 
     try {
         const url = new URL(`${API_URL}/api/stream/${serieId}`);
         url.searchParams.set('user_id', userId);
         const data = await fetchWithTimeout(url.toString());
+        
         if (data.url) {
             DOM.mainVideo.src = data.url;
             DOM.mainVideo.style.display = 'block';
             DOM.mainVideo.play().catch(console.warn);
+        } else {
+            throw new Error('URL de vídeo não retornada');
         }
     } catch (err) {
         console.error(err);
@@ -244,60 +306,153 @@ function closePlayer() {
     DOM.mainVideo.src = '';
     DOM.playerOverlay.classList.remove('active');
     DOM.playerError.classList.remove('active');
+    DOM.playerLoading.style.display = 'flex';
 }
 
-// ==================== MODAL, CART, FILTERS, THEME ====================
+// ==================== MODAL ====================
 function openModal(serie) {
     DOM.modalImg.src = serie.cover_url;
     DOM.modalTitle.textContent = serie.title;
     DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
-    DOM.modalPrice.innerHTML = serie.price === 0 
-        ? `<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>`
+    
+    const isFree = serie.price === 0;
+    DOM.modalPrice.innerHTML = isFree 
+        ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
         : `<span>${formatPrice(serie.price)}</span>`;
 
     DOM.modalActions.innerHTML = '';
     const btn = document.createElement('button');
-    btn.className = serie.price === 0 ? 'btn btn-free' : 'btn btn-primary';
-    btn.innerHTML = serie.price === 0 
-        ? `<i class="fas fa-play"></i> ASSISTIR AGORA`
-        : `<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho`;
+    btn.className = isFree ? 'btn btn-free' : 'btn btn-primary';
+    btn.innerHTML = isFree 
+        ? '<i class="fas fa-play"></i> ASSISTIR AGORA'
+        : '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
+    
     btn.onclick = () => {
-        if (serie.price === 0) { closeModal(); openPlayer(serie.id, serie.title); }
+        if (isFree) { closeModal(); openPlayer(serie.id, serie.title); }
         else { addToCart(serie); closeModal(); }
     };
+    
     DOM.modalActions.appendChild(btn);
     DOM.modalOverlay.classList.add('active');
+    document.body.classList.add('modal-open');
 }
 
 function closeModal() {
     DOM.modalOverlay.classList.remove('active');
+    document.body.classList.remove('modal-open');
 }
 
+// ==================== CARRINHO ====================
 function toggleCart(open) {
     const isOpen = typeof open === 'boolean' ? open : !DOM.cartDrawer.classList.contains('active');
     DOM.cartOverlay.classList.toggle('active', isOpen);
     DOM.cartDrawer.classList.toggle('active', isOpen);
+    document.body.classList.toggle('modal-open', isOpen);
+    if (isOpen) updateCartUI();
 }
 
-function updateCartUI() { /* Implemente conforme sua versão anterior */ }
-function addToCart(serie) { /* Implemente conforme sua versão anterior */ }
-function checkout() { /* Implemente conforme sua versão anterior */ }
-function filterCategory(cat) { /* Implemente conforme sua versão anterior */ }
-function searchSeries(term) { /* Implemente conforme sua versão anterior */ }
-function toggleTheme() { /* Implemente conforme sua versão anterior */ }
+function updateCartUI() {
+    const container = DOM.cartItems;
+    let total = 0;
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    DOM.cartBadge.textContent = cart.length;
+    DOM.cartBadge.style.display = cart.length > 0 ? 'flex' : 'none';
+
+    if (cart.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center; padding:60px 20px; color:var(--gray);">
+                <i class="fas fa-shopping-basket" style="font-size:48px; opacity:0.3; margin-bottom:16px"></i>
+                <p>Seu carrinho está vazio</p>
+            </div>`;
+        DOM.cartTotal.textContent = 'R$ 0,00';
+        return;
+    }
+
+    container.innerHTML = '';
+    cart.forEach(item => {
+        total += parseFloat(item.price) || 0;
+        const div = document.createElement('div');
+        div.className = 'cart-item';
+        div.innerHTML = `
+            <img src="${item.cover_url}" alt="${item.title}">
+            <div class="cart-item-info">
+                <div class="cart-item-title">${escapeHtml(item.title)}</div>
+                <div class="cart-item-price">${formatPrice(item.price)}</div>
+            </div>
+            <button class="cart-item-remove" aria-label="Remover">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+        div.querySelector('.cart-item-remove').addEventListener('click', () => removeFromCart(item.id));
+        container.appendChild(div);
+    });
+
+    DOM.cartTotal.textContent = formatPrice(total);
 }
 
-function formatPrice(price) {
-    if (price === 0) return 'GRÁTIS';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price);
+function addToCart(serie) {
+    if (cart.some(item => item.id === serie.id)) {
+        showToast('Já está no carrinho!', 'error');
+        return;
+    }
+    cart.push(serie);
+    localStorage.setItem('cart_series', JSON.stringify(cart));
+    updateCartUI();
+    showToast('Adicionado ao carrinho!', 'success');
 }
 
-// Export global
+function removeFromCart(id) {
+    cart = cart.filter(item => item.id !== id);
+    localStorage.setItem('cart_series', JSON.stringify(cart));
+    updateCartUI();
+}
+
+function checkout() {
+    if (!cart.length) return showToast('Carrinho vazio!', 'error');
+
+    const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+    
+    tg?.sendData(JSON.stringify({
+        action: 'checkout_cart',
+        items: cart,
+        total: total,
+        user_id: userId
+    }));
+
+    showToast('Finalizando compra...', 'success');
+    setTimeout(() => {
+        cart = [];
+        localStorage.setItem('cart_series', JSON.stringify(cart));
+        updateCartUI();
+        toggleCart(false);
+        tg?.close();
+    }, 1500);
+}
+
+// ==================== FILTROS ====================
+function filterCategory(category) {
+    if (category === 'all') {
+        renderGrid(allSeries);
+    } else {
+        const filtered = allSeries.filter(s => 
+            s.category && s.category.toLowerCase() === category
+        );
+        renderGrid(filtered);
+    }
+}
+
+function searchSeries(term) {
+    if (!term) {
+        renderGrid(allSeries);
+        return;
+    }
+    const filtered = allSeries.filter(s => 
+        s.title.toLowerCase().includes(term.toLowerCase())
+    );
+    renderGrid(filtered);
+}
+
+// ==================== EXPORT GLOBAL ====================
 window.retryPlayer = retryPlayer;
 window.toggleCart = toggleCart;
 window.openModal = openModal;
@@ -305,4 +460,4 @@ window.closeModal = closeModal;
 window.checkout = checkout;
 window.searchSeries = searchSeries;
 
-console.log('%c[DEBUG] app.js finalizado - Todas funções carregadas', 'color: lime');
+console.log('%c[DEBUG] app.js finalizado', 'color: lime');
