@@ -75,6 +75,7 @@ function showToast(message, type = 'info') {
 
   const icon = document.createElement('span');
   icon.className = 'toast-icon';
+  icon.setAttribute('aria-hidden', 'true');
   icon.innerHTML = {
     success: '<i class="fas fa-check-circle"></i>',
     error: '<i class="fas fa-times-circle"></i>',
@@ -141,8 +142,7 @@ const tg = window.Telegram?.WebApp;
 if (tg) tg.expand();
 
 // API Configuration
-const API_URL = import.meta.env?.VITE_API_URL || 
-  'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
+const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
 const userId = tg?.initDataUnsafe?.user?.id || 'anonymous';
 
 // Global state
@@ -213,7 +213,7 @@ function setupEventListeners() {
   const categoryChips = document.querySelectorAll('.category-chip');
   categoryChips.forEach((chip, index) => {
     chip.addEventListener('click', () => {
-      const category = index === 0 ? 'all' : chip.textContent.toLowerCase();
+      const category = index === 0 ? 'all' : chip.textContent.toLowerCase().trim();
       filterCategory(category, chip);
     });
   });
@@ -243,16 +243,29 @@ function setupEventListeners() {
     playerCloseBtn.addEventListener('click', closePlayer);
   }
 
+  // Player error buttons
+  const retryBtn = document.querySelector('.player-error .btn-primary');
+  const testBtn = document.querySelector('.player-error .btn-free');
+  if (retryBtn) retryBtn.addEventListener('click', retryPlayer);
+  if (testBtn) testBtn.addEventListener('click', loadTestVideo);
+
   // Cart checkout
   const checkoutBtn = document.querySelector('.btn-cart');
   if (checkoutBtn) {
     checkoutBtn.addEventListener('click', checkout);
   }
 
-  // Hero explore button
-  const exploreBtn = document.querySelector('button[onclick*="scrollToCatalog"]');
-  if (exploreBtn) {
-    exploreBtn.parentElement.replaceChild(createExploreButton(), exploreBtn);
+  // Cart close button
+  const cartCloseBtn = document.querySelector('.cart-drawer .icon-btn');
+  if (cartCloseBtn) {
+    cartCloseBtn.addEventListener('click', () => toggleCart(false));
+  }
+
+  // Hero explore button - create if not exists
+  const heroSection = document.querySelector('.hero-content > div:last-of-type');
+  if (heroSection && !heroSection.querySelector('button:first-child')) {
+    const exploreBtn = createExploreButton();
+    heroSection.insertBefore(exploreBtn, heroSection.firstChild);
   }
 
   // Prevent video context menu
@@ -339,10 +352,10 @@ function updateHero(index) {
   const badge = document.getElementById('heroBadge');
   if (serie.price == 0) {
     badge.className = 'hero-badge-free';
-    badge.innerHTML = '<i class="fas fa-gift"></i> GRÁTIS';
+    badge.innerHTML = '<i class="fas fa-gift" aria-hidden="true"></i> GRÁTIS';
   } else {
     badge.className = 'hero-badge';
-    badge.innerHTML = '<i class="fas fa-fire"></i> Destaque da Semana';
+    badge.innerHTML = '<i class="fas fa-fire" aria-hidden="true"></i> Destaque da Semana';
   }
 
   const playBtn = document.getElementById('heroPlayBtn');
@@ -363,7 +376,7 @@ function updateHero(index) {
 function createExploreButton() {
   const btn = document.createElement('button');
   btn.className = 'btn btn-primary';
-  btn.innerHTML = '<i class="fas fa-list"></i> Explorar';
+  btn.innerHTML = '<i class="fas fa-list" aria-hidden="true"></i> Explorar';
   btn.addEventListener('click', scrollToCatalog);
   return btn;
 }
@@ -397,7 +410,7 @@ function renderNetflixRow(series) {
     if (isFree) {
       const badge = document.createElement('div');
       badge.className = 'badge-gratis-landscape';
-      badge.innerHTML = '<i class="fas fa-gift"></i> GRÁTIS';
+      badge.innerHTML = '<i class="fas fa-gift" aria-hidden="true"></i> GRÁTIS';
       card.appendChild(badge);
     }
 
@@ -574,21 +587,6 @@ function closePlayer() {
   }
 }
 
-// Set up player button handlers
-document.addEventListener('DOMContentLoaded', () => {
-  const retryBtn = document.querySelector('[onclick="retryPlayer()"]');
-  if (retryBtn) {
-    retryBtn.onclick = null;
-    retryBtn.addEventListener('click', retryPlayer);
-  }
-
-  const testBtn = document.querySelector('[onclick="loadTestVideo()"]');
-  if (testBtn) {
-    testBtn.onclick = null;
-    testBtn.addEventListener('click', loadTestVideo);
-  }
-});
-
 // ============================================================================
 // CART
 // ============================================================================
@@ -659,7 +657,7 @@ function updateCartUI() {
   if (cart.length === 0) {
     container.innerHTML = `
       <div style="text-align: center; padding: 60px 20px; color: var(--gray);">
-        <i class="fas fa-shopping-basket" style="font-size: 48px; margin-bottom: 15px; opacity: 0.3;"></i>
+        <i class="fas fa-shopping-basket" style="font-size: 48px; margin-bottom: 15px; opacity: 0.3;" aria-hidden="true"></i>
         <p>Seu carrinho está vazio</p>
         <p style="font-size: 14px; margin-top: 10px;">Adicione séries para começar!</p>
       </div>
@@ -695,7 +693,7 @@ function updateCartUI() {
       const removeBtn = document.createElement('button');
       removeBtn.className = 'cart-item-remove';
       removeBtn.setAttribute('aria-label', `Remover ${item.title}`);
-      removeBtn.innerHTML = '<i class="fas fa-trash"></i>';
+      removeBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
       removeBtn.addEventListener('click', () => removeFromCart(item.id));
 
       cartItem.appendChild(img);
@@ -769,14 +767,14 @@ function openModal(serie) {
   if (serie.price == 0) {
     priceEl.className = 'modal-price free';
     priceEl.innerHTML = 
-      '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>';
+      '<span class="free-badge"><i class="fas fa-gift" aria-hidden="true"></i> GRÁTIS</span>';
 
     const watchBtn = document.createElement('button');
     watchBtn.className = 'btn btn-free';
     watchBtn.style.width = '100%';
     watchBtn.style.padding = '18px';
     watchBtn.style.fontSize = '18px';
-    watchBtn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
+    watchBtn.innerHTML = '<i class="fas fa-play" aria-hidden="true"></i> ASSISTIR AGORA';
     watchBtn.addEventListener('click', () => {
       closeModal();
       openPlayer(serie.id, serie.title);
@@ -789,7 +787,7 @@ function openModal(serie) {
     const cartBtn = document.createElement('button');
     cartBtn.className = 'btn btn-play';
     cartBtn.style.flex = '1';
-    cartBtn.innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar';
+    cartBtn.innerHTML = '<i class="fas fa-cart-plus" aria-hidden="true"></i> Adicionar';
     cartBtn.addEventListener('click', () => {
       addToCart(serie);
       closeModal();
@@ -798,7 +796,7 @@ function openModal(serie) {
     const buyBtn = document.createElement('button');
     buyBtn.className = 'btn btn-primary';
     buyBtn.style.flex = '1';
-    buyBtn.innerHTML = '<i class="fas fa-shopping-bag"></i> Comprar';
+    buyBtn.innerHTML = '<i class="fas fa-shopping-bag" aria-hidden="true"></i> Comprar';
     buyBtn.addEventListener('click', () => {
       tg?.sendData?.(JSON.stringify({
         action: 'buy',
@@ -870,7 +868,7 @@ function renderGrid(series) {
     if (isFree) {
       const badge = document.createElement('div');
       badge.className = 'badge-gratis';
-      badge.innerHTML = '<i class="fas fa-gift"></i> GRÁTIS';
+      badge.innerHTML = '<i class="fas fa-gift" aria-hidden="true"></i> GRÁTIS';
       card.appendChild(badge);
     } else {
       const priceTag = document.createElement('span');
@@ -941,7 +939,7 @@ function searchSeries(term) {
 }
 
 // ============================================================================
-// EXPORTS FOR GLOBAL SCOPE (for inline event handlers in HTML)
+// EXPORTS FOR GLOBAL SCOPE (for backwards compatibility)
 // ============================================================================
 
 window.openPlayer = openPlayer;
