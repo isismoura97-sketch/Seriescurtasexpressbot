@@ -1,9 +1,7 @@
 /* ============================================= */
 /* SÉRIES CURTAS EXPRESS - STYLES.CSS (REVISADO) */
-/* Versão: 2.2 - Totalmente alinhado com HTML    */
+/* Versão: 2.3 - Otimizado para Telegram + Debug */
 /* ============================================= */
-
-@layer base, components, utilities;
 
 :root {
     --primary: #E50914;
@@ -48,14 +46,10 @@ body {
     line-height: 1.6;
 }
 
-html {
-    scroll-behavior: smooth;
-}
+html { scroll-behavior: smooth; }
 
-/* Focus Acessibilidade */
-button:focus-visible,
-a:focus-visible,
-input:focus-visible {
+/* Focus */
+button:focus-visible, a:focus-visible, input:focus-visible {
     outline: 3px solid var(--primary);
     outline-offset: 4px;
 }
@@ -69,13 +63,10 @@ input:focus-visible {
     color: white;
     padding: 10px 16px;
     z-index: 10000;
-    text-decoration: none;
     border-radius: 0 0 6px 6px;
 }
 
-.skip-link:focus {
-    top: 0;
-}
+.skip-link:focus { top: 0; }
 
 .badge {
     position: absolute;
@@ -97,9 +88,7 @@ input:focus-visible {
 /* ====================== HEADER ====================== */
 .header {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
+    top: 0; left: 0; right: 0;
     z-index: 1000;
     padding: 15px 4%;
     display: flex;
@@ -124,11 +113,6 @@ input:focus-visible {
     text-decoration: none;
 }
 
-.header-actions {
-    display: flex;
-    gap: 12px;
-}
-
 .icon-btn {
     background: rgba(255,255,255,0.1);
     border: none;
@@ -136,9 +120,6 @@ input:focus-visible {
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     cursor: pointer;
     transition: all 0.3s;
 }
@@ -168,7 +149,7 @@ input:focus-visible {
 .hero-content {
     position: relative;
     z-index: 2;
-    max-width: 50%;
+    max-width: 55%;
 }
 
 .hero-badge {
@@ -206,7 +187,7 @@ input:focus-visible {
     font-size: 16px;
 }
 
-/* ====================== PLAYER (Melhorado) ====================== */
+/* ====================== PLAYER (Premium) ====================== */
 .video-player-overlay {
     position: fixed;
     inset: 0;
@@ -217,22 +198,13 @@ input:focus-visible {
     justify-content: center;
 }
 
-.video-player-overlay.active {
-    display: flex;
-}
+.video-player-overlay.active { display: flex; }
 
-.player-container {
-    width: 100%;
-    height: 100%;
-    position: relative;
-    background: #000;
-}
+.player-container { width: 100%; height: 100%; position: relative; background: #000; }
 
 .player-header {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
+    top: 0; left: 0; right: 0;
     padding: 20px 24px;
     background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
     display: flex;
@@ -250,10 +222,8 @@ input:focus-visible {
     white-space: nowrap;
 }
 
-.player-back,
-.player-close {
-    width: 44px;
-    height: 44px;
+.player-back, .player-close {
+    width: 44px; height: 44px;
     border-radius: 50%;
     background: rgba(255,255,255,0.15);
     border: none;
@@ -263,8 +233,7 @@ input:focus-visible {
     transition: all 0.3s;
 }
 
-.player-back:hover,
-.player-close:hover {
+.player-back:hover, .player-close:hover {
     background: var(--primary);
     transform: scale(1.1);
 }
@@ -282,8 +251,7 @@ input:focus-visible {
     font-family: monospace;
 }
 
-.loading-player,
-.player-error {
+.loading-player, .player-error {
     position: absolute;
     inset: 0;
     background: rgba(0,0,0,0.9);
@@ -291,8 +259,8 @@ input:focus-visible {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    z-index: 20;
     gap: 20px;
+    z-index: 20;
 }
 
 .spinner {
@@ -306,7 +274,7 @@ input:focus-visible {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ====================== MODAL (Melhorado) ====================== */
+/* ====================== MODAL (Premium) ====================== */
 .modal-overlay {
     position: fixed;
     inset: 0;
@@ -319,9 +287,7 @@ input:focus-visible {
     padding: 20px;
 }
 
-.modal-overlay.active {
-    display: flex;
-}
+.modal-overlay.active { display: flex; }
 
 .modal-content {
     background: var(--card-bg);
@@ -335,9 +301,7 @@ input:focus-visible {
     transition: transform 0.4s ease;
 }
 
-.modal-overlay.active .modal-content {
-    transform: scale(1);
-}
+.modal-overlay.active .modal-content { transform: scale(1); }
 
 .modal-hero {
     height: 280px;
@@ -353,10 +317,8 @@ input:focus-visible {
 
 .modal-close {
     position: absolute;
-    top: 16px;
-    right: 16px;
-    width: 46px;
-    height: 46px;
+    top: 16px; right: 16px;
+    width: 46px; height: 46px;
     background: rgba(0,0,0,0.7);
     color: white;
     border: none;
@@ -372,27 +334,18 @@ input:focus-visible {
     transform: rotate(90deg);
 }
 
-.modal-body {
-    padding: 30px;
-    padding-top: 10px;
+.modal-body { padding: 30px; padding-top: 10px; }
+
+.modal-title { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
+
+.modal-price { 
+    font-size: 24px; 
+    font-weight: 700; 
+    color: var(--success); 
+    margin-bottom: 20px; 
 }
 
-.modal-title {
-    font-size: 28px;
-    font-weight: 800;
-    margin-bottom: 10px;
-}
-
-.modal-price {
-    font-size: 24px;
-    font-weight: 700;
-    color: var(--success);
-    margin-bottom: 20px;
-}
-
-.modal-price.free {
-    color: var(--gold);
-}
+.modal-price.free { color: var(--gold); }
 
 .free-badge {
     background: linear-gradient(135deg, #ffd700, #ffaa00);
@@ -412,11 +365,7 @@ input:focus-visible {
     font-size: 15.5px;
 }
 
-.modal-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
+.modal-actions { display: flex; flex-direction: column; gap: 12px; }
 
 /* ====================== BUTTONS ====================== */
 .btn {
@@ -434,32 +383,17 @@ input:focus-visible {
     text-transform: uppercase;
 }
 
-.btn-primary {
-    background: var(--primary);
-    color: white;
-}
-
-.btn-free {
-    background: var(--gold);
-    color: #000;
-    font-weight: 800;
-}
+.btn-primary { background: var(--primary); color: white; }
+.btn-free { background: var(--gold); color: #000; font-weight: 800; }
 
 .btn:hover {
     transform: translateY(-3px);
     box-shadow: 0 15px 30px rgba(229, 9, 20, 0.4);
 }
 
-/* ====================== CATALOGO & NETFLIX ROW ====================== */
-.netflix-row {
-    padding: 20px 4% 40px;
-}
-
-.netflix-row-title {
-    font-size: 20px;
-    font-weight: 700;
-    margin-bottom: 15px;
-}
+/* ====================== CATALOGO ====================== */
+.netflix-row { padding: 20px 4% 40px; }
+.netflix-row-title { font-size: 20px; font-weight: 700; margin-bottom: 15px; }
 
 .netflix-scroll {
     display: flex;
@@ -469,43 +403,23 @@ input:focus-visible {
     scrollbar-width: none;
 }
 
-.netflix-scroll::-webkit-scrollbar {
-    display: none;
-}
+.netflix-scroll::-webkit-scrollbar { display: none; }
 
-.netflix-card,
-.card {
+.netflix-card, .card {
     border-radius: 10px;
     overflow: hidden;
     cursor: pointer;
-    transition: transform 0.3s, box-shadow 0.3s;
-    position: relative;
+    transition: all 0.3s;
 }
 
-.netflix-card {
-    flex: 0 0 300px;
-    aspect-ratio: 16 / 9;
-}
-
-.netflix-card:hover {
-    transform: scale(1.06);
-    box-shadow: 0 15px 35px rgba(0,0,0,0.7);
-}
+.netflix-card { flex: 0 0 300px; aspect-ratio: 16/9; }
+.netflix-card:hover { transform: scale(1.06); }
 
 .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 20px;
     padding: 20px 4%;
-}
-
-.card {
-    aspect-ratio: 2 / 3;
-    background: var(--card-bg);
-}
-
-.card:hover {
-    transform: scale(1.05);
 }
 
 /* ====================== TOAST ====================== */
@@ -540,7 +454,7 @@ input:focus-visible {
     opacity: 1;
 }
 
-/* ====================== RESPONSIVE ====================== */
+/* Responsive */
 @media (max-width: 968px) {
     .hero-content { max-width: 80%; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
