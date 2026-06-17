@@ -1,955 +1,614 @@
 /**
- * Séries Curtas Express - Main Application
- * Features: Player protegido, carrinho de compras, catálogo dinâmico
- * Segurança: Sem inline handlers, ARIA roles, focus management
+ * Séries Curtas Express - Mini App Telegram
+ * Versão Revisada e Otimizada
  */
 
-// ============================================================================
-// UTILITIES
-// ============================================================================
+'use strict';
 
-/**
- * Fetch with timeout and error handling
- */
+// ====================== UTILITIES ======================
+
+/** Fetch com timeout e tratamento robusto de erros */
 async function fetchWithTimeout(url, options = {}, timeout = 10000) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-  try {
-    const res = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
+    try {
+        const res = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
 
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+
+        const contentType = res.headers.get('content-type');
+        if (!contentType?.includes('application/json')) {
+            throw new Error('Resposta inválida do servidor');
+        }
+
+        return await res.json();
+    } catch (err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') throw new Error('Timeout da requisição');
+        throw err;
     }
-
-    const contentType = res.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      throw new Error('Invalid response format');
-    }
-
-    return await res.json();
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      throw new Error('Request timeout');
-    }
-    throw err;
-  }
 }
 
-/**
- * Format currency using Intl.NumberFormat
- */
+/** Formata preço em Real Brasileiro */
 function formatPrice(price) {
-  if (price === 0 || price == 0) return 'GRÁTIS';
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL'
-  }).format(Number(price) || 0);
+    if (price === 0 || price === null) return 'GRÁTIS';
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL'
+    }).format(price);
 }
 
-/**
- * Escape HTML to prevent XSS
- */
+/** Escapa HTML para prevenir XSS */
 function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
-/**
- * Show toast notification
- */
+/** Exibe Toast Notification */
 function showToast(message, type = 'info') {
-  const container = document.getElementById('toastContainer');
-  if (!container) return;
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
 
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.setAttribute('role', 'status');
-  toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
 
-  const icon = document.createElement('span');
-  icon.className = 'toast-icon';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.innerHTML = {
-    success: '<i class="fas fa-check-circle"></i>',
-    error: '<i class="fas fa-times-circle"></i>',
-    info: '<i class="fas fa-info-circle"></i>'
-  }[type] || '<i class="fas fa-info-circle"></i>';
+    toast.innerHTML = `
+        <span class="toast-icon">
+            ${type === 'success' ? '✅' : type === 'error' ? '❌' : 'ℹ️'}
+        </span>
+        <span>${escapeHtml(message)}</span>
+    `;
 
-  const text = document.createElement('span');
-  text.textContent = message;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
 
-  toast.appendChild(icon);
-  toast.appendChild(text);
-  container.appendChild(toast);
+    const timeout = setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 400);
+    }, 3000);
 
-  requestAnimationFrame(() => toast.classList.add('show'));
-
-  const timeout = setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
-
-  toast.addEventListener('mouseenter', () => clearTimeout(timeout));
-  toast.addEventListener('mouseleave', () => {
-    setTimeout(() => {
-      toast.classList.remove('show');
-      setTimeout(() => toast.remove(), 300);
-    }, 2000);
-  });
+    toast.addEventListener('mouseenter', () => clearTimeout(timeout));
+    toast.addEventListener('mouseleave', () => {
+        setTimeout(() => toast.remove(), 400);
+    });
 }
 
-/**
- * Focus trap for modals
- */
-function createFocusTrap(element) {
-  const focusableElements = element.querySelectorAll(
-    'a, button, input, textarea, [tabindex]:not([tabindex="-1"])'
-  );
+// ====================== DOM CACHE ======================
 
-  if (focusableElements.length === 0) return null;
+const DOM = {
+    // Player
+    playerOverlay: document.getElementById('playerOverlay'),
+    mainVideo: document.getElementById('mainVideo'),
+    playerTitle: document.getElementById('playerTitle'),
+    playerLoading: document.getElementById('playerLoading'),
+    playerError: document.getElementById('playerError'),
+    playerWatermark: document.getElementById('playerWatermark'),
+    watermarkId: document.getElementById('watermarkId'),
 
-  const first = focusableElements[0];
-  const last = focusableElements[focusableElements.length - 1];
+    // Cart
+    cartOverlay: document.getElementById('cartOverlay'),
+    cartDrawer: document.getElementById('cartDrawer'),
+    cartItems: document.getElementById('cartItems'),
+    cartTotal: document.getElementById('cartTotal'),
+    cartBadge: document.getElementById('cartBadge'),
 
-  const handler = (e) => {
-    if (e.key !== 'Tab') return;
+    // Modal
+    modalOverlay: document.getElementById('modalOverlay'),
+    modalImg: document.getElementById('modalImg'),
+    modalTitle: document.getElementById('modalTitle'),
+    modalPrice: document.getElementById('modalPrice'),
+    modalDesc: document.getElementById('modalDesc'),
+    modalActions: document.getElementById('modalActions'),
 
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
+    // Hero
+    heroImg: document.getElementById('heroImg'),
+    heroTitle: document.getElementById('heroTitle'),
+    heroDesc: document.getElementById('heroDesc'),
+    heroBadge: document.getElementById('heroBadge'),
+    heroPlayBtn: null, // será criado dinamicamente
 
-  element.addEventListener('keydown', handler);
-  return () => element.removeEventListener('keydown', handler);
-}
+    // Catalog
+    catalogGrid: document.getElementById('catalogGrid'),
+    netflixScroll: document.getElementById('netflixScroll'),
+    searchInput: document.getElementById('searchInput'),
+    toastContainer: document.getElementById('toastContainer'),
+    header: document.getElementById('header'),
+};
 
-// ============================================================================
-// CONFIGURATION & STATE
-// ============================================================================
+// ====================== STATE & CONFIG ======================
 
-const tg = window.Telegram?.WebApp;
-if (tg) tg.expand();
-
-// API Configuration
-const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
-const userId = tg?.initDataUnsafe?.user?.id || 'anonymous';
-
-// Global state
 let allSeries = [];
 let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
-let currentHero = 0;
-let currentModalSeries = null;
+let currentHeroIndex = 0;
 let heroInterval = null;
+let currentModalSeries = null;
 let playerRetryData = null;
-let currentFocusTrap = null;
 let savedFocus = null;
+let currentFocusTrap = null;
 
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
+const tg = window.Telegram?.WebApp;
+const API_URL = 'https://uyyeascxvnrrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
+const userId = tg?.initDataUnsafe?.user?.id || 'anonymous';
+
+// ====================== INITIALIZATION ======================
 
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-  applyTheme();
-  await loadSeries();
-  updateCartUI();
-  setupEventListeners();
+    if (tg) {
+        tg.ready();
+        tg.expand();
+        tg.setHeaderColor('#0f0f0f');
+
+        // Suporte ao tema do Telegram
+        tg.onEvent('themeChanged', applyTheme);
+    }
+
+    applyTheme();
+    await loadSeries();
+    updateCartUI();
+    setupEventListeners();
+    setupKeyboardShortcuts();
 }
+
+// ====================== EVENT LISTENERS ======================
 
 function setupEventListeners() {
-  // Header scroll effect
-  window.addEventListener('scroll', () => {
-    document.getElementById('header').classList.toggle('scrolled', window.scrollY > 50);
-  });
-
-  // Global keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closePlayer();
-      closeModal();
-      toggleCart(false);
-    }
-  });
-
-  // Theme toggle
-  const themeBtn = document.getElementById('themeBtn');
-  if (themeBtn) {
-    themeBtn.addEventListener('click', toggleTheme);
-  }
-
-  // Cart toggle
-  const cartBtn = document.getElementById('cartBtn');
-  if (cartBtn) {
-    cartBtn.addEventListener('click', () => toggleCart(true));
-  }
-
-  // Cart overlay close
-  const cartOverlay = document.getElementById('cartOverlay');
-  if (cartOverlay) {
-    cartOverlay.addEventListener('click', () => toggleCart(false));
-  }
-
-  // Search
-  const searchInput = document.getElementById('searchInput');
-  if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      searchSeries(e.target.value);
+    // Scroll header
+    window.addEventListener('scroll', () => {
+        DOM.header.classList.toggle('scrolled', window.scrollY > 50);
     });
-  }
 
-  // Category filters
-  const categoryChips = document.querySelectorAll('.category-chip');
-  categoryChips.forEach((chip, index) => {
-    chip.addEventListener('click', () => {
-      const category = index === 0 ? 'all' : chip.textContent.toLowerCase().trim();
-      filterCategory(category, chip);
+    // Search
+    DOM.searchInput?.addEventListener('input', (e) => {
+        searchSeries(e.target.value.trim());
     });
-  });
 
-  // Modal overlay close
-  const modalOverlay = document.getElementById('modalOverlay');
-  if (modalOverlay) {
-    modalOverlay.addEventListener('click', (e) => {
-      if (e.target.id === 'modalOverlay') closeModal();
+    // Category chips
+    document.querySelectorAll('.category-chip').forEach((chip, index) => {
+        chip.addEventListener('click', () => {
+            const category = index === 0 ? 'all' : chip.textContent.trim().toLowerCase();
+            filterCategory(category, chip);
+        });
     });
-  }
 
-  // Modal close button
-  const modalCloseBtn = document.querySelector('.modal-close');
-  if (modalCloseBtn) {
-    modalCloseBtn.addEventListener('click', closeModal);
-  }
-
-  // Player controls
-  const playerBackBtn = document.querySelector('.player-back');
-  if (playerBackBtn) {
-    playerBackBtn.addEventListener('click', closePlayer);
-  }
-
-  const playerCloseBtn = document.querySelector('.player-close');
-  if (playerCloseBtn) {
-    playerCloseBtn.addEventListener('click', closePlayer);
-  }
-
-  // Player error buttons
-  const retryBtn = document.querySelector('.player-error .btn-primary');
-  const testBtn = document.querySelector('.player-error .btn-free');
-  if (retryBtn) retryBtn.addEventListener('click', retryPlayer);
-  if (testBtn) testBtn.addEventListener('click', loadTestVideo);
-
-  // Cart checkout
-  const checkoutBtn = document.querySelector('.btn-cart');
-  if (checkoutBtn) {
-    checkoutBtn.addEventListener('click', checkout);
-  }
-
-  // Cart close button
-  const cartCloseBtn = document.querySelector('.cart-drawer .icon-btn');
-  if (cartCloseBtn) {
-    cartCloseBtn.addEventListener('click', () => toggleCart(false));
-  }
-
-  // Hero explore button - create if not exists
-  const heroSection = document.querySelector('.hero-content > div:last-of-type');
-  if (heroSection && !heroSection.querySelector('button:first-child')) {
-    const exploreBtn = createExploreButton();
-    heroSection.insertBefore(exploreBtn, heroSection.firstChild);
-  }
-
-  // Prevent video context menu
-  const video = document.getElementById('mainVideo');
-  if (video) {
-    video.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      return false;
+    // Cart
+    document.getElementById('cartBtn')?.addEventListener('click', () => toggleCart(true));
+    DOM.cartOverlay?.addEventListener('click', (e) => {
+        if (e.target.id === 'cartOverlay') toggleCart(false);
     });
-  }
+
+    // Player
+    document.querySelectorAll('.player-back, .player-close').forEach(btn => {
+        btn.addEventListener('click', closePlayer);
+    });
+
+    // Modal
+    DOM.modalOverlay?.addEventListener('click', (e) => {
+        if (e.target.id === 'modalOverlay') closeModal();
+    });
+    document.querySelector('.modal-close')?.addEventListener('click', closeModal);
+
+    // Theme
+    document.getElementById('themeBtn')?.addEventListener('click', toggleTheme);
 }
 
-// ============================================================================
-// THEME
-// ============================================================================
+// ====================== KEYBOARD & ACCESSIBILITY ======================
+
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (DOM.playerOverlay?.classList.contains('active')) closePlayer();
+            else if (DOM.modalOverlay?.classList.contains('active')) closeModal();
+            else toggleCart(false);
+        }
+    });
+}
+
+// ====================== THEME ======================
 
 function applyTheme() {
-  if (localStorage.getItem('theme_series') === 'light') {
-    document.body.classList.add('light-mode');
-    const themeIcon = document.getElementById('themeIcon');
-    if (themeIcon) themeIcon.className = 'fas fa-sun';
-  }
+    const isLight = localStorage.getItem('theme_series') === 'light';
+    document.body.classList.toggle('light-mode', isLight);
+    
+    const icon = document.getElementById('themeIcon');
+    if (icon) icon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
 }
 
 function toggleTheme() {
-  const isLight = document.body.classList.toggle('light-mode');
-  const themeIcon = document.getElementById('themeIcon');
-  if (themeIcon) {
-    themeIcon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
-  }
-  localStorage.setItem('theme_series', isLight ? 'light' : 'dark');
-  showToast(isLight ? 'Tema claro ativado' : 'Tema escuro ativado', 'success');
+    const isLight = document.body.classList.toggle('light-mode');
+    localStorage.setItem('theme_series', isLight ? 'light' : 'dark');
+    applyTheme();
+    showToast(isLight ? 'Tema claro ativado' : 'Tema escuro ativado', 'success');
 }
 
-// ============================================================================
-// DATA LOADING
-// ============================================================================
+// ====================== DATA LOADING ======================
 
 async function loadSeries() {
-  try {
-    const data = await fetchWithTimeout(`${API_URL}/api/series`, {}, 15000);
-    
-    if (!Array.isArray(data)) {
-      throw new Error('Invalid data format');
-    }
+    try {
+        const data = await fetchWithTimeout(`${API_URL}/api/series`, {}, 12000);
+        
+        if (!Array.isArray(data)) throw new Error('Formato de dados inválido');
 
-    allSeries = data;
-    renderGrid(allSeries);
-    initHero();
-    renderNetflixRow(allSeries);
-  } catch (err) {
-    console.error('Error loading series:', err);
-    showToast('Erro ao carregar catálogo: ' + err.message, 'error');
-  }
+        allSeries = data;
+        renderNetflixRow(allSeries);
+        renderGrid(allSeries);
+        initHero();
+
+    } catch (err) {
+        console.error('Erro ao carregar catálogo:', err);
+        showToast('Erro ao carregar catálogo: ' + err.message, 'error');
+    }
 }
 
-// ============================================================================
-// HERO SLIDESHOW
-// ============================================================================
+// ====================== HERO SLIDESHOW ======================
 
 function initHero() {
-  if (!allSeries.length) return;
-
-  updateHero(0);
-  clearInterval(heroInterval);
-  heroInterval = setInterval(() => {
-    currentHero = (currentHero + 1) % allSeries.length;
-    updateHero(currentHero);
-  }, 6000);
+    if (!allSeries.length) return;
+    updateHero(0);
+    clearInterval(heroInterval);
+    heroInterval = setInterval(() => {
+        currentHeroIndex = (currentHeroIndex + 1) % allSeries.length;
+        updateHero(currentHeroIndex);
+    }, 6000);
 }
 
 function updateHero(index) {
-  const serie = allSeries[index];
-  if (!serie) return;
+    const serie = allSeries[index];
+    if (!serie) return;
 
-  document.getElementById('heroTitle').textContent = serie.title || 'Carregando...';
-  document.getElementById('heroDesc').textContent = 
-    serie.description || 'Uma história emocionante...';
+    DOM.heroTitle.textContent = serie.title;
+    DOM.heroDesc.textContent = serie.description || 'Uma história emocionante...';
+    DOM.heroImg.src = serie.cover_url;
+    DOM.heroImg.alt = serie.title;
 
-  const img = document.getElementById('heroImg');
-  img.src = serie.cover_url;
-  img.alt = serie.title || 'Poster';
+    const isFree = serie.price === 0;
 
-  const badge = document.getElementById('heroBadge');
-  if (serie.price == 0) {
-    badge.className = 'hero-badge-free';
-    badge.innerHTML = '<i class="fas fa-gift" aria-hidden="true"></i> GRÁTIS';
-  } else {
-    badge.className = 'hero-badge';
-    badge.innerHTML = '<i class="fas fa-fire" aria-hidden="true"></i> Destaque da Semana';
-  }
+    DOM.heroBadge.className = isFree ? 'hero-badge-free' : 'hero-badge';
+    DOM.heroBadge.innerHTML = isFree 
+        ? `<i class="fas fa-gift"></i> GRÁTIS`
+        : `<i class="fas fa-fire"></i> Destaque da Semana`;
 
-  const playBtn = document.getElementById('heroPlayBtn');
-  if (playBtn) {
-    playBtn.style.display = 'inline-flex';
-    playBtn.onclick = null;
-    playBtn.removeEventListener('click', playHero);
-    playBtn.addEventListener('click', () => {
-      if (serie.price == 0) {
-        openPlayer(serie.id, serie.title);
-      } else {
-        openModal(serie);
-      }
-    });
-  }
+    // Botão dinâmico (evita listeners duplicados)
+    let playBtn = DOM.heroPlayBtn || document.querySelector('.hero-content .btn');
+    
+    if (!playBtn) {
+        playBtn = document.createElement('button');
+        playBtn.className = 'btn btn-play';
+        playBtn.innerHTML = `<i class="fas fa-play"></i> Assistir`;
+        document.querySelector('.hero-content').appendChild(playBtn);
+        DOM.heroPlayBtn = playBtn;
+    }
+
+    playBtn.onclick = () => {
+        if (isFree) openPlayer(serie.id, serie.title);
+        else openModal(serie);
+    };
 }
 
-function createExploreButton() {
-  const btn = document.createElement('button');
-  btn.className = 'btn btn-primary';
-  btn.innerHTML = '<i class="fas fa-list" aria-hidden="true"></i> Explorar';
-  btn.addEventListener('click', scrollToCatalog);
-  return btn;
-}
-
-function scrollToCatalog() {
-  document.getElementById('catalogSection')?.scrollIntoView({ 
-    behavior: 'smooth' 
-  });
-}
-
-// ============================================================================
-// NETFLIX ROW (HORIZONTAL SCROLL)
-// ============================================================================
+// ====================== RENDER FUNCTIONS ======================
 
 function renderNetflixRow(series) {
-  const container = document.getElementById('netflixScroll');
-  const section = document.getElementById('netflixRow');
-  
-  if (!series.length || !container) return;
+    const container = DOM.netflixScroll;
+    if (!container) return;
 
-  section.style.display = 'block';
-  container.innerHTML = '';
-
-  series.slice(0, 10).forEach((s) => {
-    const isFree = s.price == 0;
-    const card = document.createElement('div');
-    card.className = 'netflix-card';
-    card.tabIndex = 0;
-
-    // Badge
-    if (isFree) {
-      const badge = document.createElement('div');
-      badge.className = 'badge-gratis-landscape';
-      badge.innerHTML = '<i class="fas fa-gift" aria-hidden="true"></i> GRÁTIS';
-      card.appendChild(badge);
-    }
-
-    // Image
-    const img = document.createElement('img');
-    img.src = s.cover_url;
-    img.alt = s.title;
-    img.loading = 'lazy';
-    img.onerror = () => (img.style.opacity = '0.5');
-    card.appendChild(img);
-
-    // Info
-    const info = document.createElement('div');
-    info.className = 'netflix-info';
-    const title = document.createElement('div');
-    title.className = 'netflix-title';
-    title.textContent = s.title;
-    info.appendChild(title);
-    card.appendChild(info);
-
-    // Click handler
-    card.addEventListener('click', () => {
-      if (isFree) {
-        openPlayer(s.id, s.title);
-      } else {
-        openModal(s);
-      }
-    });
-
-    card.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        card.click();
-      }
-    });
-
-    container.appendChild(card);
-  });
-}
-
-// ============================================================================
-// VIDEO PLAYER
-// ============================================================================
-
-async function openPlayer(serieId, title) {
-  playerRetryData = { id: serieId, title };
-
-  const overlay = document.getElementById('playerOverlay');
-  const loading = document.getElementById('playerLoading');
-  const video = document.getElementById('mainVideo');
-  const errorState = document.getElementById('playerError');
-  const playerTitle = document.getElementById('playerTitle');
-
-  overlay.classList.add('active');
-  loading.style.display = 'flex';
-  errorState.classList.remove('active');
-  video.style.display = 'none';
-  playerTitle.textContent = title || 'Carregando...';
-  document.getElementById('watermarkId').textContent = userId;
-
-  // Save focus for restoration
-  savedFocus = document.activeElement;
-
-  // Set focus to player close button
-  setTimeout(() => document.querySelector('.player-close')?.focus(), 100);
-
-  try {
-    const url = new URL(`${API_URL}/api/stream/${serieId}`);
-    url.searchParams.set('user_id', userId);
-
-    const data = await fetchWithTimeout(url.toString(), {}, 15000);
-
-    if (data.error) {
-      showToast(data.error, 'error');
-      showPlayerError();
-      return;
-    }
-
-    if (data.type === 'telegram') {
-      showToast('Abrindo no Telegram...', 'info');
-      tg?.sendData?.(JSON.stringify({ 
-        action: 'request_video', 
-        series_id: serieId 
-      }));
-      setTimeout(() => {
-        closePlayer();
-        tg?.close?.();
-      }, 1500);
-      return;
-    }
-
-    // Set video source
-    if (data.url && typeof data.url === 'string') {
-      video.src = data.url;
-
-      video.oncanplay = () => {
-        loading.style.display = 'none';
-        video.style.display = 'block';
-        video.play().catch((e) => {
-          console.log('Autoplay blocked:', e);
-        });
-      };
-
-      video.onerror = () => {
-        showToast('Erro ao carregar vídeo', 'error');
-        showPlayerError();
-      };
-    } else {
-      throw new Error('Invalid stream URL');
-    }
-
-    // Session timeout warning
-    setTimeout(() => {
-      if (overlay.classList.contains('active') && 
-          loading.style.display !== 'none') {
-        showToast('Sessão expirando em breve', 'info');
-      }
-    }, 1740000);
-  } catch (err) {
-    console.error('Player error:', err);
-    showToast('Erro de conexão: ' + err.message, 'error');
-    showPlayerError();
-  }
-}
-
-function showPlayerError() {
-  document.getElementById('playerLoading').style.display = 'none';
-  document.getElementById('playerError').classList.add('active');
-  document.getElementById('mainVideo').style.display = 'none';
-}
-
-function retryPlayer() {
-  if (playerRetryData) {
-    document.getElementById('playerError').classList.remove('active');
-    openPlayer(playerRetryData.id, playerRetryData.title);
-  }
-}
-
-function loadTestVideo() {
-  const video = document.getElementById('mainVideo');
-  const loading = document.getElementById('playerLoading');
-  const errorState = document.getElementById('playerError');
-
-  video.src = 'https://test-streams.mux.dev/x264_720p_1500kbps_30fps.mp4';
-  loading.style.display = 'none';
-  errorState.classList.remove('active');
-  video.style.display = 'block';
-
-  video.oncanplay = () => {
-    video.play().catch((e) => console.log('Autoplay:', e));
-  };
-
-  showToast('Vídeo de teste carregado', 'success');
-}
-
-function closePlayer() {
-  const overlay = document.getElementById('playerOverlay');
-  const video = document.getElementById('mainVideo');
-  const loading = document.getElementById('playerLoading');
-  const errorState = document.getElementById('playerError');
-
-  video.pause();
-  video.src = '';
-  video.load();
-  video.style.display = 'none';
-  loading.style.display = 'flex';
-  errorState.classList.remove('active');
-  overlay.classList.remove('active');
-
-  // Restore focus
-  if (savedFocus) {
-    savedFocus.focus();
-    savedFocus = null;
-  }
-}
-
-// ============================================================================
-// CART
-// ============================================================================
-
-function toggleCart(open) {
-  const overlay = document.getElementById('cartOverlay');
-  const drawer = document.getElementById('cartDrawer');
-
-  if (open === undefined) {
-    open = !drawer?.classList.contains('active');
-  }
-
-  if (open) {
-    overlay?.classList.add('active');
-    drawer?.classList.add('active');
-    document.body.classList.add('modal-open');
-    savedFocus = document.activeElement;
-    setTimeout(() => {
-      const closeBtn = drawer?.querySelector('.icon-btn');
-      closeBtn?.focus();
-    }, 100);
-  } else {
-    overlay?.classList.remove('active');
-    drawer?.classList.remove('active');
-    document.body.classList.remove('modal-open');
-    if (savedFocus) {
-      savedFocus.focus();
-      savedFocus = null;
-    }
-  }
-}
-
-function addToCart(serie) {
-  if (!serie || !serie.id) {
-    showToast('Dados inválidos', 'error');
-    return;
-  }
-
-  if (cart.some((item) => item.id === serie.id)) {
-    showToast('Já está no carrinho!', 'error');
-    return;
-  }
-
-  cart.push(serie);
-  localStorage.setItem('cart_series', JSON.stringify(cart));
-  updateCartUI();
-  showToast('Adicionado ao carrinho!', 'success');
-}
-
-function removeFromCart(id) {
-  cart = cart.filter((item) => item.id !== id);
-  localStorage.setItem('cart_series', JSON.stringify(cart));
-  updateCartUI();
-}
-
-function updateCartUI() {
-  const container = document.getElementById('cartItems');
-  const badge = document.getElementById('cartBadge');
-  const totalEl = document.getElementById('cartTotal');
-
-  if (!container || !badge || !totalEl) return;
-
-  badge.textContent = cart.length;
-  badge.style.display = cart.length > 0 ? 'flex' : 'none';
-
-  let total = 0;
-
-  if (cart.length === 0) {
-    container.innerHTML = `
-      <div style="text-align: center; padding: 60px 20px; color: var(--gray);">
-        <i class="fas fa-shopping-basket" style="font-size: 48px; margin-bottom: 15px; opacity: 0.3;" aria-hidden="true"></i>
-        <p>Seu carrinho está vazio</p>
-        <p style="font-size: 14px; margin-top: 10px;">Adicione séries para começar!</p>
-      </div>
-    `;
-  } else {
     container.innerHTML = '';
-    cart.forEach((item) => {
-      total += parseFloat(item.price) || 0;
-
-      const cartItem = document.createElement('div');
-      cartItem.className = 'cart-item';
-
-      const img = document.createElement('img');
-      img.src = item.cover_url;
-      img.alt = item.title;
-      img.onerror = () => 
-        (img.src = 'https://placehold.co/60x90?text=Sem+Capa');
-
-      const info = document.createElement('div');
-      info.className = 'cart-item-info';
-
-      const titleEl = document.createElement('div');
-      titleEl.className = 'cart-item-title';
-      titleEl.textContent = item.title;
-
-      const priceEl = document.createElement('div');
-      priceEl.className = 'cart-item-price';
-      priceEl.textContent = formatPrice(item.price);
-
-      info.appendChild(titleEl);
-      info.appendChild(priceEl);
-
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'cart-item-remove';
-      removeBtn.setAttribute('aria-label', `Remover ${item.title}`);
-      removeBtn.innerHTML = '<i class="fas fa-trash" aria-hidden="true"></i>';
-      removeBtn.addEventListener('click', () => removeFromCart(item.id));
-
-      cartItem.appendChild(img);
-      cartItem.appendChild(info);
-      cartItem.appendChild(removeBtn);
-      container.appendChild(cartItem);
+    series.slice(0, 10).forEach(serie => {
+        const card = createCard(serie, true); // true = netflix style
+        container.appendChild(card);
     });
-  }
-
-  totalEl.textContent = total === 0 ? 'Grátis' : formatPrice(total);
+    document.getElementById('netflixRow').style.display = 'block';
 }
-
-function checkout() {
-  if (cart.length === 0) {
-    showToast('Carrinho vazio!', 'error');
-    return;
-  }
-
-  const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
-
-  tg?.sendData?.(JSON.stringify({
-    action: 'checkout_cart',
-    items: cart.map((item) => ({
-      id: item.id,
-      title: item.title,
-      price: item.price
-    })),
-    total: total,
-    user_id: userId
-  }));
-
-  showToast('Finalizando compra...', 'success');
-
-  setTimeout(() => {
-    cart = [];
-    localStorage.setItem('cart_series', JSON.stringify(cart));
-    updateCartUI();
-    toggleCart(false);
-    tg?.close?.();
-  }, 1000);
-}
-
-// ============================================================================
-// MODAL
-// ============================================================================
-
-function openModal(serie) {
-  if (!serie || !serie.id) {
-    showToast('Série não encontrada', 'error');
-    return;
-  }
-
-  currentModalSeries = serie;
-
-  const modal = document.getElementById('modalOverlay');
-  const img = document.getElementById('modalImg');
-  const title = document.getElementById('modalTitle');
-  const desc = document.getElementById('modalDesc');
-  const priceEl = document.getElementById('modalPrice');
-  const actionsDiv = document.getElementById('modalActions');
-
-  if (!modal || !img || !title || !desc || !priceEl || !actionsDiv) return;
-
-  img.src = serie.cover_url;
-  img.alt = serie.title;
-  title.textContent = serie.title;
-  desc.textContent = serie.description || 'Sem descrição disponível.';
-
-  actionsDiv.innerHTML = '';
-
-  if (serie.price == 0) {
-    priceEl.className = 'modal-price free';
-    priceEl.innerHTML = 
-      '<span class="free-badge"><i class="fas fa-gift" aria-hidden="true"></i> GRÁTIS</span>';
-
-    const watchBtn = document.createElement('button');
-    watchBtn.className = 'btn btn-free';
-    watchBtn.style.width = '100%';
-    watchBtn.style.padding = '18px';
-    watchBtn.style.fontSize = '18px';
-    watchBtn.innerHTML = '<i class="fas fa-play" aria-hidden="true"></i> ASSISTIR AGORA';
-    watchBtn.addEventListener('click', () => {
-      closeModal();
-      openPlayer(serie.id, serie.title);
-    });
-    actionsDiv.appendChild(watchBtn);
-  } else {
-    priceEl.className = 'modal-price';
-    priceEl.innerHTML = `<span>${formatPrice(serie.price)}</span>`;
-
-    const cartBtn = document.createElement('button');
-    cartBtn.className = 'btn btn-play';
-    cartBtn.style.flex = '1';
-    cartBtn.innerHTML = '<i class="fas fa-cart-plus" aria-hidden="true"></i> Adicionar';
-    cartBtn.addEventListener('click', () => {
-      addToCart(serie);
-      closeModal();
-    });
-
-    const buyBtn = document.createElement('button');
-    buyBtn.className = 'btn btn-primary';
-    buyBtn.style.flex = '1';
-    buyBtn.innerHTML = '<i class="fas fa-shopping-bag" aria-hidden="true"></i> Comprar';
-    buyBtn.addEventListener('click', () => {
-      tg?.sendData?.(JSON.stringify({
-        action: 'buy',
-        series_id: serie.id,
-        title: serie.title,
-        price: serie.price
-      }));
-      tg?.close?.();
-    });
-
-    const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.gap = '12px';
-    row.appendChild(cartBtn);
-    row.appendChild(buyBtn);
-    actionsDiv.appendChild(row);
-  }
-
-  modal.classList.add('active');
-  document.body.classList.add('modal-open');
-
-  // Focus management
-  savedFocus = document.activeElement;
-  setTimeout(() => {
-    document.querySelector('.modal-close')?.focus();
-  }, 100);
-
-  // Create focus trap
-  if (currentFocusTrap) currentFocusTrap();
-  currentFocusTrap = createFocusTrap(modal);
-}
-
-function closeModal(e) {
-  if (e && e.target?.id !== 'modalOverlay') return;
-
-  const modal = document.getElementById('modalOverlay');
-  modal?.classList.remove('active');
-  document.body.classList.remove('modal-open');
-
-  if (currentFocusTrap) {
-    currentFocusTrap();
-    currentFocusTrap = null;
-  }
-
-  if (savedFocus) {
-    savedFocus.focus();
-    savedFocus = null;
-  }
-}
-
-// ============================================================================
-// CATALOG GRID
-// ============================================================================
 
 function renderGrid(series) {
-  const grid = document.getElementById('catalogGrid');
-  if (!grid) return;
+    const grid = DOM.catalogGrid;
+    if (!grid) return;
 
-  grid.innerHTML = '';
+    grid.innerHTML = '';
+    series.forEach(serie => {
+        const card = createCard(serie, false);
+        grid.appendChild(card);
+    });
+}
 
-  series.forEach((s) => {
-    const isFree = s.price == 0;
+function createCard(serie, isNetflix = false) {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = isNetflix ? 'netflix-card' : 'card';
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `Abrir ${serie.title}`);
 
-    // Badge
-    if (isFree) {
-      const badge = document.createElement('div');
-      badge.className = 'badge-gratis';
-      badge.innerHTML = '<i class="fas fa-gift" aria-hidden="true"></i> GRÁTIS';
-      card.appendChild(badge);
-    } else {
-      const priceTag = document.createElement('span');
-      priceTag.className = `price-tag ${isFree ? 'free' : ''}`;
-      priceTag.textContent = formatPrice(s.price);
-      card.appendChild(priceTag);
-    }
+    const isFree = serie.price === 0;
 
-    // Image
-    const img = document.createElement('img');
-    img.src = s.cover_url;
-    img.alt = s.title;
-    img.loading = 'lazy';
-    img.onerror = () => (img.style.opacity = '0.5');
-    card.appendChild(img);
+    card.innerHTML = `
+        ${isFree ? `<div class="badge-gratis-landscape"><i class="fas fa-gift"></i> GRÁTIS</div>` : ''}
+        <img src="${serie.cover_url}" alt="${serie.title}" loading="lazy">
+        <div class="${isNetflix ? 'netflix-info' : 'card-info'}">
+            <div class="netflix-title">${escapeHtml(serie.title)}</div>
+        </div>
+    `;
 
-    // Info
-    const info = document.createElement('div');
-    info.className = 'card-info';
-    const titleEl = document.createElement('div');
-    titleEl.className = 'card-title';
-    titleEl.textContent = s.title;
-    info.appendChild(titleEl);
-    card.appendChild(info);
-
-    // Click handler
     const handleClick = () => {
-      if (isFree) {
-        openPlayer(s.id, s.title);
-      } else {
-        openModal(s);
-      }
+        if (isFree) openPlayer(serie.id, serie.title);
+        else openModal(serie);
     };
 
     card.addEventListener('click', handleClick);
     card.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        handleClick();
-      }
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleClick();
+        }
     });
 
-    grid.appendChild(card);
-  });
+    return card;
 }
 
-function filterCategory(cat, el) {
-  document.querySelectorAll('.category-chip').forEach((c) => {
-    c.classList.remove('active');
-  });
-  el?.classList.add('active');
+// ====================== PLAYER ======================
 
-  const filtered = cat === 'all' 
-    ? allSeries 
-    : allSeries.filter((s) => 
-        s.category && s.category.toLowerCase() === cat.toLowerCase()
-      );
-  renderGrid(filtered);
+async function openPlayer(serieId, title) {
+    playerRetryData = { id: serieId, title };
+
+    DOM.playerOverlay.classList.add('active');
+    DOM.playerLoading.style.display = 'flex';
+    DOM.playerError.classList.remove('active');
+    DOM.mainVideo.style.display = 'none';
+
+    DOM.playerTitle.textContent = title;
+    DOM.watermarkId.textContent = userId;
+
+    if (tg?.BackButton) {
+        tg.BackButton.show();
+        tg.BackButton.onClick(closePlayer);
+    }
+
+    try {
+        const url = new URL(`${API_URL}/api/stream/${serieId}`);
+        url.searchParams.set('user_id', userId);
+
+        const data = await fetchWithTimeout(url.toString(), {}, 15000);
+
+        if (data.error) throw new Error(data.error);
+
+        if (data.url) {
+            DOM.mainVideo.src = data.url;
+            DOM.mainVideo.style.display = 'block';
+            DOM.mainVideo.play().catch(console.warn);
+        }
+    } catch (err) {
+        console.error(err);
+        showToast('Erro ao carregar vídeo', 'error');
+        showPlayerError();
+    } finally {
+        DOM.playerLoading.style.display = 'none';
+    }
+}
+
+function showPlayerError() {
+    DOM.playerLoading.style.display = 'none';
+    DOM.mainVideo.style.display = 'none';
+    DOM.playerError.classList.add('active');
+}
+
+function retryPlayer() {
+    if (playerRetryData) {
+        openPlayer(playerRetryData.id, playerRetryData.title);
+    }
+}
+
+function closePlayer() {
+    const video = DOM.mainVideo;
+    video.pause();
+    video.src = '';
+    video.load();
+
+    DOM.playerOverlay.classList.remove('active');
+    DOM.playerError.classList.remove('active');
+    DOM.playerLoading.style.display = 'flex';
+
+    if (tg?.BackButton) tg.BackButton.hide();
+    savedFocus?.focus();
+}
+
+// ====================== CART ======================
+
+function toggleCart(open) {
+    const isOpen = typeof open === 'boolean' ? open : !DOM.cartDrawer.classList.contains('active');
+    
+    DOM.cartOverlay.classList.toggle('active', isOpen);
+    DOM.cartDrawer.classList.toggle('active', isOpen);
+    document.body.classList.toggle('modal-open', isOpen);
+
+    if (isOpen) updateCartUI();
+}
+
+function updateCartUI() {
+    const container = DOM.cartItems;
+    const totalEl = DOM.cartTotal;
+    const badge = DOM.cartBadge;
+
+    badge.textContent = cart.length;
+    badge.style.display = cart.length > 0 ? 'flex' : 'none';
+
+    let total = 0;
+
+    if (cart.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center; padding:60px 20px; color:var(--gray);">
+                <i class="fas fa-shopping-basket" style="font-size:48px; opacity:0.3; margin-bottom:15px"></i>
+                <p>Seu carrinho está vazio</p>
+                <p style="font-size:14px; margin-top:10px">Adicione séries para começar!</p>
+            </div>`;
+        totalEl.textContent = 'R$ 0,00';
+        return;
+    }
+
+    container.innerHTML = '';
+    cart.forEach(item => {
+        total += parseFloat(item.price) || 0;
+        const div = document.createElement('div');
+        div.className = 'cart-item';
+        div.innerHTML = `
+            <img src="${item.cover_url}" alt="${item.title}">
+            <div class="cart-item-info">
+                <div class="cart-item-title">${escapeHtml(item.title)}</div>
+                <div class="cart-item-price">${formatPrice(item.price)}</div>
+            </div>
+            <button class="cart-item-remove" aria-label="Remover ${item.title}">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+        div.querySelector('.cart-item-remove').addEventListener('click', () => removeFromCart(item.id));
+        container.appendChild(div);
+    });
+
+    totalEl.textContent = formatPrice(total);
+}
+
+function addToCart(serie) {
+    if (cart.some(item => item.id === serie.id)) {
+        showToast('Esta série já está no carrinho!', 'error');
+        return;
+    }
+
+    cart.push(serie);
+    localStorage.setItem('cart_series', JSON.stringify(cart));
+    updateCartUI();
+    showToast('Adicionado ao carrinho!', 'success');
+}
+
+function removeFromCart(id) {
+    cart = cart.filter(item => item.id !== id);
+    localStorage.setItem('cart_series', JSON.stringify(cart));
+    updateCartUI();
+}
+
+function checkout() {
+    if (!cart.length) return showToast('Carrinho vazio!', 'error');
+
+    tg?.sendData(JSON.stringify({
+        action: 'checkout_cart',
+        items: cart,
+        total: cart.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0),
+        user_id: userId
+    }));
+
+    showToast('Finalizando compra...', 'success');
+
+    setTimeout(() => {
+        cart = [];
+        localStorage.setItem('cart_series', JSON.stringify(cart));
+        updateCartUI();
+        toggleCart(false);
+        tg?.close();
+    }, 1200);
+}
+
+// ====================== MODAL ======================
+
+function openModal(serie) {
+    currentModalSeries = serie;
+
+    DOM.modalImg.src = serie.cover_url;
+    DOM.modalTitle.textContent = serie.title;
+    DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
+
+    const isFree = serie.price === 0;
+
+    DOM.modalPrice.innerHTML = isFree 
+        ? `<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>`
+        : `<span>${formatPrice(serie.price)}</span>`;
+
+    DOM.modalActions.innerHTML = '';
+
+    const btn1 = document.createElement('button');
+    btn1.className = isFree ? 'btn btn-free' : 'btn btn-primary';
+    btn1.innerHTML = isFree 
+        ? `<i class="fas fa-play"></i> ASSISTIR AGORA`
+        : `<i class="fas fa-shopping-cart"></i> Adicionar ao Carrinho`;
+    
+    btn1.addEventListener('click', () => {
+        if (isFree) {
+            closeModal();
+            openPlayer(serie.id, serie.title);
+        } else {
+            addToCart(serie);
+            closeModal();
+        }
+    });
+
+    DOM.modalActions.appendChild(btn1);
+    DOM.modalOverlay.classList.add('active');
+    document.body.classList.add('modal-open');
+
+    savedFocus = document.activeElement;
+    setTimeout(() => DOM.modalOverlay.querySelector('.modal-close').focus(), 100);
+}
+
+function closeModal() {
+    DOM.modalOverlay.classList.remove('active');
+    document.body.classList.remove('modal-open');
+    if (savedFocus) {
+        savedFocus.focus();
+        savedFocus = null;
+    }
+}
+
+// ====================== FILTERS ======================
+
+function filterCategory(category, element) {
+    document.querySelectorAll('.category-chip').forEach(el => el.classList.remove('active'));
+    element.classList.add('active');
+
+    if (category === 'all') {
+        renderGrid(allSeries);
+    } else {
+        const filtered = allSeries.filter(s => 
+            s.category && s.category.toLowerCase() === category
+        );
+        renderGrid(filtered);
+    }
 }
 
 function searchSeries(term) {
-  const filtered = term
-    ? allSeries.filter((s) =>
-        (s.title || '').toLowerCase().includes(term.toLowerCase())
-      )
-    : allSeries;
-  renderGrid(filtered);
+    if (!term) {
+        renderGrid(allSeries);
+        return;
+    }
+
+    const filtered = allSeries.filter(s => 
+        s.title.toLowerCase().includes(term.toLowerCase())
+    );
+    renderGrid(filtered);
 }
 
-// ============================================================================
-// EXPORTS FOR GLOBAL SCOPE (for backwards compatibility)
-// ============================================================================
+// ====================== CLEANUP ======================
 
+function cleanup() {
+    if (heroInterval) clearInterval(heroInterval);
+    if (tg?.BackButton) tg.BackButton.offClick(closePlayer);
+}
+
+// Expor funções globais para compatibilidade com HTML inline (se necessário)
 window.openPlayer = openPlayer;
 window.closePlayer = closePlayer;
 window.retryPlayer = retryPlayer;
-window.loadTestVideo = loadTestVideo;
 window.toggleCart = toggleCart;
 window.openModal = openModal;
 window.closeModal = closeModal;
-window.scrollToCatalog = scrollToCatalog;
-window.toggleTheme = toggleTheme;
-window.searchSeries = searchSeries;
+window.addToCart = addToCart;
+window.checkout = checkout;
 window.filterCategory = filterCategory;
+window.searchSeries = searchSeries;
+
+// Cleanup ao sair
+window.addEventListener('beforeunload', cleanup);
