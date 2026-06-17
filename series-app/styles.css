@@ -1,6 +1,6 @@
 /* ============================================= */
 /* SÉRIES CURTAS EXPRESS - STYLES.CSS (REVISADO) */
-/* Versão: 2.3 - Otimizado para Telegram + Debug */
+/* Versão: 2.3 - Alinhado com HTML + Telegram    */
 /* ============================================= */
 
 :root {
@@ -31,34 +31,20 @@ body.light-mode {
     --skeleton: #E0E0E0;
 }
 
-/* ====================== BASE ====================== */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
     background: var(--bg-body);
     color: var(--text-main);
     font-family: 'Inter', system-ui, sans-serif;
     overflow-x: hidden;
-    line-height: 1.6;
 }
 
 html { scroll-behavior: smooth; }
 
-/* Focus */
-button:focus-visible, a:focus-visible, input:focus-visible {
-    outline: 3px solid var(--primary);
-    outline-offset: 4px;
-}
-
-/* ====================== UTILITIES ====================== */
 .skip-link {
     position: absolute;
-    top: -50px;
-    left: 10px;
+    top: -50px; left: 10px;
     background: var(--primary);
     color: white;
     padding: 10px 16px;
@@ -68,24 +54,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 .skip-link:focus { top: 0; }
 
-.badge {
-    position: absolute;
-    top: -6px;
-    right: -6px;
-    background: var(--primary);
-    color: white;
-    font-size: 11px;
-    font-weight: 700;
-    min-width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 2px solid var(--darker);
-}
-
-/* ====================== HEADER ====================== */
+/* Header */
 .header {
     position: fixed;
     top: 0; left: 0; right: 0;
@@ -116,20 +85,16 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 .icon-btn {
     background: rgba(255,255,255,0.1);
     border: none;
-    color: var(--text-main);
-    width: 44px;
-    height: 44px;
+    color: white;
+    width: 44px; height: 44px;
     border-radius: 50%;
     cursor: pointer;
     transition: all 0.3s;
 }
 
-.icon-btn:hover {
-    background: var(--primary);
-    transform: scale(1.1);
-}
+.icon-btn:hover { background: var(--primary); transform: scale(1.1); }
 
-/* ====================== HERO ====================== */
+/* Hero */
 .hero {
     position: relative;
     min-height: 75vh;
@@ -146,11 +111,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
     z-index: 1;
 }
 
-.hero-content {
-    position: relative;
-    z-index: 2;
-    max-width: 55%;
-}
+.hero-content { position: relative; z-index: 2; max-width: 55%; }
 
 .hero-badge {
     display: inline-flex;
@@ -172,100 +133,39 @@ button:focus-visible, a:focus-visible, input:focus-visible {
     margin-bottom: 16px;
 }
 
-.hero p {
-    font-size: 1.1rem;
-    color: var(--text-dim);
-    margin-bottom: 24px;
-}
+.hero p { color: var(--text-dim); margin-bottom: 24px; }
 
-.btn-play {
-    background: white;
-    color: black;
-    padding: 14px 32px;
-    border-radius: 8px;
-    font-weight: 700;
-    font-size: 16px;
-}
-
-/* ====================== PLAYER (Premium) ====================== */
+/* Player */
 .video-player-overlay {
-    position: fixed;
-    inset: 0;
-    background: #000;
-    z-index: 10000;
-    display: none;
-    align-items: center;
-    justify-content: center;
+    position: fixed; inset: 0; background: #000; z-index: 10000;
+    display: none; align-items: center; justify-content: center;
 }
 
 .video-player-overlay.active { display: flex; }
 
-.player-container { width: 100%; height: 100%; position: relative; background: #000; }
-
 .player-header {
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    padding: 20px 24px;
+    position: absolute; top: 0; left: 0; right: 0; padding: 20px 24px;
     background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    z-index: 30;
+    display: flex; justify-content: space-between; align-items: center; z-index: 30;
 }
 
-.player-title {
-    font-size: 17px;
-    font-weight: 600;
-    max-width: 60%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
+.player-title { font-size: 17px; font-weight: 600; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .player-back, .player-close {
-    width: 44px; height: 44px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.15);
-    border: none;
-    color: white;
-    font-size: 20px;
-    cursor: pointer;
-    transition: all 0.3s;
+    width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.15);
+    border: none; color: white; font-size: 20px; cursor: pointer;
 }
 
-.player-back:hover, .player-close:hover {
-    background: var(--primary);
-    transform: scale(1.1);
-}
+.player-back:hover, .player-close:hover { background: var(--primary); transform: scale(1.1); }
 
 .player-watermark {
-    position: absolute;
-    bottom: 70px;
-    right: 20px;
-    background: rgba(0,0,0,0.7);
-    color: rgba(255,255,255,0.8);
-    font-size: 13px;
-    padding: 4px 12px;
-    border-radius: 4px;
-    z-index: 10;
-    font-family: monospace;
-}
-
-.loading-player, .player-error {
-    position: absolute;
-    inset: 0;
-    background: rgba(0,0,0,0.9);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-    z-index: 20;
+    position: absolute; bottom: 70px; right: 20px; background: rgba(0,0,0,0.7);
+    color: rgba(255,255,255,0.8); font-size: 13px; padding: 4px 12px; border-radius: 4px;
+    z-index: 10; font-family: monospace;
 }
 
 .spinner {
-    width: 60px;
-    height: 60px;
+    width: 60px; height: 60px;
     border: 5px solid rgba(229,9,20,0.2);
     border-top-color: var(--primary);
     border-radius: 50%;
@@ -274,100 +174,49 @@ button:focus-visible, a:focus-visible, input:focus-visible {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ====================== MODAL (Premium) ====================== */
+/* Modal */
 .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.94);
-    backdrop-filter: blur(10px);
-    z-index: 9999;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.94);
+    backdrop-filter: blur(10px); z-index: 9999;
+    display: none; align-items: center; justify-content: center; padding: 20px;
 }
 
 .modal-overlay.active { display: flex; }
 
 .modal-content {
-    background: var(--card-bg);
-    border-radius: 20px;
-    width: 100%;
-    max-width: 540px;
-    max-height: 92vh;
-    overflow: hidden;
-    box-shadow: 0 30px 70px rgba(0,0,0,0.8);
-    transform: scale(0.9);
-    transition: transform 0.4s ease;
+    background: var(--card-bg); border-radius: 20px; width: 100%; max-width: 540px;
+    box-shadow: 0 30px 70px rgba(0,0,0,0.8); transform: scale(0.9); transition: transform 0.4s ease;
 }
 
 .modal-overlay.active .modal-content { transform: scale(1); }
 
-.modal-hero {
-    height: 280px;
-    position: relative;
-    overflow: hidden;
-}
-
-.modal-hero img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
+.modal-hero { height: 280px; position: relative; overflow: hidden; }
+.modal-hero img { width: 100%; height: 100%; object-fit: cover; }
 
 .modal-close {
-    position: absolute;
-    top: 16px; right: 16px;
-    width: 46px; height: 46px;
-    background: rgba(0,0,0,0.7);
-    color: white;
-    border: none;
-    border-radius: 50%;
-    font-size: 24px;
-    cursor: pointer;
-    z-index: 10;
-    transition: all 0.3s;
+    position: absolute; top: 16px; right: 16px; width: 46px; height: 46px;
+    background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 50%;
+    font-size: 24px; cursor: pointer;
 }
 
-.modal-close:hover {
-    background: var(--primary);
-    transform: rotate(90deg);
-}
+.modal-close:hover { background: var(--primary); transform: rotate(90deg); }
 
 .modal-body { padding: 30px; padding-top: 10px; }
-
 .modal-title { font-size: 28px; font-weight: 800; margin-bottom: 10px; }
-
-.modal-price { 
-    font-size: 24px; 
-    font-weight: 700; 
-    color: var(--success); 
-    margin-bottom: 20px; 
-}
-
+.modal-price { font-size: 24px; font-weight: 700; color: var(--success); margin-bottom: 20px; }
 .modal-price.free { color: var(--gold); }
 
 .free-badge {
     background: linear-gradient(135deg, #ffd700, #ffaa00);
-    color: #000;
-    padding: 8px 16px;
-    border-radius: 30px;
-    font-weight: 800;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+    color: #000; padding: 8px 16px; border-radius: 30px; font-weight: 800;
+    display: inline-flex; align-items: center; gap: 8px;
 }
 
-.modal-desc {
-    color: var(--text-dim);
-    line-height: 1.7;
-    margin-bottom: 30px;
-    font-size: 15.5px;
-}
+.modal-desc { color: var(--text-dim); line-height: 1.7; margin-bottom: 30px; font-size: 15.5px; }
 
 .modal-actions { display: flex; flex-direction: column; gap: 12px; }
 
-/* ====================== BUTTONS ====================== */
+/* Buttons */
 .btn {
     padding: 16px 24px;
     font-size: 16px;
@@ -380,40 +229,22 @@ button:focus-visible, a:focus-visible, input:focus-visible {
     justify-content: center;
     gap: 10px;
     transition: all 0.3s;
-    text-transform: uppercase;
 }
 
 .btn-primary { background: var(--primary); color: white; }
 .btn-free { background: var(--gold); color: #000; font-weight: 800; }
 
-.btn:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 15px 30px rgba(229, 9, 20, 0.4);
-}
+.btn:hover { transform: translateY(-3px); box-shadow: 0 15px 30px rgba(229,9,20,0.4); }
 
-/* ====================== CATALOGO ====================== */
-.netflix-row { padding: 20px 4% 40px; }
-.netflix-row-title { font-size: 20px; font-weight: 700; margin-bottom: 15px; }
-
+/* Catalog */
 .netflix-scroll {
-    display: flex;
-    gap: 16px;
-    overflow-x: auto;
-    padding-bottom: 15px;
+    display: flex; gap: 16px; overflow-x: auto; padding-bottom: 15px;
     scrollbar-width: none;
 }
 
 .netflix-scroll::-webkit-scrollbar { display: none; }
 
-.netflix-card, .card {
-    border-radius: 10px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 0.3s;
-}
-
-.netflix-card { flex: 0 0 300px; aspect-ratio: 16/9; }
-.netflix-card:hover { transform: scale(1.06); }
+.netflix-card { flex: 0 0 300px; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden; }
 
 .grid {
     display: grid;
@@ -422,45 +253,21 @@ button:focus-visible, a:focus-visible, input:focus-visible {
     padding: 20px 4%;
 }
 
-/* ====================== TOAST ====================== */
+/* Toast */
 .toast-container {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 11000;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    z-index: 11000; display: flex; flex-direction: column; gap: 10px;
 }
 
 .toast {
-    background: rgba(30,30,30,0.95);
-    color: white;
-    padding: 14px 20px;
-    border-radius: 10px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 280px;
-    transform: translateY(30px);
-    opacity: 0;
-    transition: all 0.4s ease;
+    background: rgba(30,30,30,0.95); color: white; padding: 14px 20px;
+    border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    transform: translateY(30px); opacity: 0; transition: all 0.4s ease;
 }
 
-.toast.show {
-    transform: translateY(0);
-    opacity: 1;
-}
+.toast.show { transform: translateY(0); opacity: 1; }
 
 /* Responsive */
 @media (max-width: 968px) {
     .hero-content { max-width: 80%; }
-    .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
-}
-
-@media (max-width: 640px) {
-    .modal-content { max-height: 95vh; margin: 10px; }
-    .netflix-card { flex: 0 0 240px; }
 }
