@@ -28,7 +28,7 @@
     * { margin:0; padding:0; box-sizing:border-box; font-family:'Inter',sans-serif; }
     html, body { width:100%; height:100%; background:var(--bg-body); color:var(--text-main); overflow-x:hidden; }
 
-    /* PLAYER */
+    /* ==================== PLAYER ==================== */
     .player-overlay { position:fixed; inset:0; background:#000; z-index:10000; display:none; flex-direction:column; }
     .player-overlay.active { display:flex; }
     .player-header { position:absolute; top:0; left:0; right:0; z-index:20; padding:12px 16px; background:linear-gradient(180deg,#000 0%,transparent 100%); display:flex; align-items:center; justify-content:space-between; }
@@ -47,7 +47,7 @@
     .btn-retry { background:var(--primary); color:white; border:none; }
     .btn-test { background:#4CAF50; color:white; border:none; }
 
-    /* HEADER */
+    /* ==================== HEADER ==================== */
     .header { position:fixed; top:0; left:0; right:0; z-index:1000; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; background:linear-gradient(to bottom,rgba(0,0,0,0.95),transparent); transition:all 0.3s; }
     .header.scrolled { background:var(--darker); box-shadow:0 2px 20px rgba(0,0,0,0.8); }
     .logo { font-size:19px; font-weight:800; color:var(--primary); text-decoration:none; display:flex; align-items:center; gap:8px; }
@@ -55,7 +55,7 @@
     .icon-btn:hover { background:var(--primary); transform:scale(1.05); }
     .badge { position:absolute; top:-4px; right:-4px; background:var(--primary); color:white; font-size:10px; font-weight:700; width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:2px solid var(--darker); }
 
-    /* HERO - BANNERS DESLIZANTES */
+    /* ==================== HERO - BANNERS DESLIZANTES ==================== */
     .hero { position:relative; min-height:85svh; overflow:hidden; background:var(--darker); }
     .hero-slide { position:absolute; inset:0; display:flex; align-items:center; padding:90px 20px 40px; gap:30px; opacity:0; transition:all 0.8s ease; pointer-events:none; }
     .hero-slide.active { opacity:1; pointer-events:auto; }
@@ -77,7 +77,7 @@
     .indicator { width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,0.4); cursor:pointer; transition:all 0.3s; }
     .indicator.active { background:var(--primary); width:28px; border-radius:6px; }
 
-    /* CATÁLOGO */
+    /* ==================== CATÁLOGO ==================== */
     .section { padding:32px 16px 80px; }
     .search-box { position:relative; margin-bottom:20px; }
     .search-box input { width:100%; padding:14px 20px 14px 46px; background:rgba(128,128,128,0.15); border:1px solid rgba(128,128,128,0.2); border-radius:12px; color:var(--text-main); font-size:15px; }
@@ -98,7 +98,7 @@
     .card:hover .card-info { opacity:1; }
     .card-title { font-size:13px; font-weight:700; color:white; line-height:1.3; }
 
-    /* MODAL, CARRINHO, TOAST (mantidos) */
+    /* ==================== MODAL, CARRINHO, TOAST ==================== */
     .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:9997; display:none; align-items:center; justify-content:center; }
     .modal-overlay.active { display:flex; }
     .modal-content { background:var(--card-bg); border-radius:20px; width:92%; max-width:480px; max-height:90vh; overflow:auto; position:relative; }
@@ -107,7 +107,7 @@
     .modal-hero img { width:100%; height:100%; object-fit:cover; }
     .modal-body { padding:24px; }
     .modal-title { font-size:24px; font-weight:800; margin-bottom:8px; }
-    .free-badge-big { background:linear-gradient(135deg,#FFD700,#FFA500); color:#000; font-weight:900; padding:10px 18px; border-radius:30px; display:inline-flex; align-items:center; gap:8px; animation:pulseGold 2s infinite; }
+    .free-badge-big { background:linear-gradient(135deg,#FFD700,#FFA500); color:#000; font-weight:900; padding:10px 20px; border-radius:30px; display:inline-flex; align-items:center; gap:8px; animation:pulseGold 2s infinite; }
     .modal-actions { display:flex; flex-direction:column; gap:12px; margin-top:16px; }
 
     .cart-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:9998; opacity:0; visibility:hidden; transition:0.3s; }
@@ -223,6 +223,7 @@ let allSeries = [];
 let cart = JSON.parse(localStorage.getItem('cart_series') || '[]');
 let currentHero = 0;
 let heroInterval = null;
+let retryData = null;
 
 // ====================== INIT ======================
 async function init() {
@@ -254,7 +255,7 @@ async function loadSeries() {
   } catch (e) {
     console.warn("API offline - usando dados de teste");
     allSeries = [
-      {id:101, title:"O Quarterback Perdido Retorna", description:"Drama esportivo", price:0, category:"drama", cover_url:"https://picsum.photos/id/1015/400/600"},
+      {id:101, title:"O Quarterback Perdido Retorna", description:"Drama esportivo emocionante", price:0, category:"drama", cover_url:"https://picsum.photos/id/1015/400/600"},
       {id:102, title:"Amor nas Sombras", description:"Romance intenso", price:0, category:"romance", cover_url:"https://picsum.photos/id/201/400/600"},
       {id:103, title:"Contrato Mortal", description:"Suspense psicológico", price:9.9, category:"suspense", cover_url:"https://picsum.photos/id/301/400/600"},
       {id:104, title:"Realeza Oculta", description:"Drama real", price:0, category:"drama", cover_url:"https://picsum.photos/id/401/400/600"}
@@ -264,7 +265,7 @@ async function loadSeries() {
   initHeroSlider();
 }
 
-// ====================== HERO SLIDER (BANNERS) ======================
+// ====================== HERO SLIDER ======================
 function initHeroSlider() {
   const container = document.getElementById('heroContainer');
   const indicators = document.getElementById('heroIndicators');
@@ -282,7 +283,7 @@ function initHeroSlider() {
         ${isFree ? `<div class="hero-badge-free"><i class="fas fa-gift"></i> GRÁTIS</div>` : `<div class="hero-badge"><i class="fas fa-fire"></i> DESTAQUE</div>`}
         <h1>${serie.title}</h1>
         <p class="hero-desc">${serie.description}</p>
-        <div class="hero-btn-group">
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
           <button class="btn btn-primary" onclick="scrollToCatalog()">Explorar</button>
           ${isFree ? 
             `<button class="btn btn-free" onclick="openPlayer(${serie.id}, '${encodeURIComponent(serie.title)}')">Assistir Grátis</button>` : 
@@ -357,7 +358,6 @@ function openPlayer(id, title) {
   document.getElementById('loadingState').classList.add('active');
   document.getElementById('errorState').classList.remove('active');
   document.getElementById('mainVideo').style.display = 'none';
-
   attemptLoad();
 }
 
@@ -404,11 +404,9 @@ function closePlayer() {
   video.pause();
   video.src = '';
   document.getElementById('playerOverlay').classList.remove('active');
-  document.getElementById('errorState').classList.remove('active');
-  document.getElementById('loadingState').classList.remove('active');
 }
 
-// ====================== MODAL, CARRINHO, TOAST ======================
+// ====================== MODAL ======================
 function openModal(serie) {
   document.getElementById('modalImg').src = serie.cover_url || '';
   document.getElementById('modalTitle').textContent = serie.title;
@@ -429,7 +427,6 @@ function openModal(serie) {
     actions.appendChild(btn);
   } else {
     priceDiv.innerHTML = `R$ ${price.toFixed(2)}`;
-    // Botões de compra e carrinho (mantidos como antes)
     const row = document.createElement('div');
     row.style.display = 'flex'; row.style.gap = '10px';
     row.innerHTML = `
@@ -438,7 +435,6 @@ function openModal(serie) {
     `;
     actions.appendChild(row);
   }
-
   document.getElementById('modalOverlay').classList.add('active');
 }
 
@@ -454,6 +450,15 @@ function buyNow(id, title, price) {
 
 function closeModal(e) {
   if (!e || e.target.id === 'modalOverlay') document.getElementById('modalOverlay').classList.remove('active');
+}
+
+// ====================== CARRINHO ======================
+function toggleCart() {
+  const drawer = document.getElementById('cartDrawer');
+  const overlay = document.getElementById('cartOverlay');
+  const active = drawer.classList.toggle('active');
+  overlay.classList.toggle('active', active);
+  document.body.style.overflow = active ? 'hidden' : '';
 }
 
 function addToCart(serie) {
@@ -502,14 +507,7 @@ function checkout() {
   setTimeout(() => { cart = []; localStorage.setItem('cart_series','[]'); updateCartUI(); toggleCart(); tg.close(); }, 1200);
 }
 
-function toggleCart() {
-  const drawer = document.getElementById('cartDrawer');
-  const overlay = document.getElementById('cartOverlay');
-  const active = drawer.classList.toggle('active');
-  overlay.classList.toggle('active', active);
-  document.body.style.overflow = active ? 'hidden' : '';
-}
-
+// ====================== TOAST ======================
 function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
@@ -519,8 +517,6 @@ function showToast(message, type = 'info') {
   setTimeout(() => toast.classList.add('show'), 10);
   setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 3000);
 }
-
-// ====================== FINAL ======================
 </script>
 </body>
 </html>
