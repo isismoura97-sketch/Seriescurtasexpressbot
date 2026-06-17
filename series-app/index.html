@@ -39,7 +39,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
     body { background: var(--bg-body); color: var(--text-main); overflow-x: hidden; }
 
-    /* ================= PLAYER PROTEGIDO (NOVO) ================= */
+    /* PLAYER PROTEGIDO */
     .video-player-overlay {
       position: fixed; inset: 0; background: #000; z-index: 10000;
       display: none; justify-content: center; align-items: center;
@@ -66,7 +66,6 @@
     }
     .player-title { font-size: 16px; font-weight: 600; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     
-    /* Botão Voltar (novo) */
     .player-back {
       background: rgba(255,255,255,0.1); border: none; color: white;
       padding: 10px 18px; border-radius: 20px; cursor: pointer;
@@ -100,7 +99,6 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Estado de erro do player (novo) */
     .player-error {
       position: absolute; inset: 0; display: none; flex-direction: column;
       justify-content: center; align-items: center; background: #000; z-index: 25;
@@ -108,7 +106,7 @@
     }
     .player-error.active { display: flex; }
 
-    /* ================= CARRINHO (ORIGINAL) ================= */
+    /* CARRINHO */
     .cart-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.8);
       z-index: 9998; opacity: 0; visibility: hidden; transition: 0.3s;
@@ -137,7 +135,7 @@
     .cart-total { display: flex; justify-content: space-between; font-size: 18px; margin-bottom: 20px; font-weight: 700; }
     .cart-total span:last-child { color: var(--success); font-size: 24px; }
 
-    /* ================= HEADER (ORIGINAL) ================= */
+    /* HEADER */
     .header {
       position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
       padding: 15px 4%; display: flex; justify-content: space-between; align-items: center;
@@ -164,7 +162,7 @@
     }
     @keyframes bounce { 50% { transform: scale(1.2); } }
 
-    /* ================= HERO (ORIGINAL) ================= */
+    /* HERO */
     .hero { position: relative; min-height: 85vh; display: flex; align-items: center; padding: 100px 0 60px 4%; overflow: hidden; }
     .hero-content { width: 45%; max-width: 600px; z-index: 10; position: relative; padding-right: 40px; }
     .hero-image-container {
@@ -185,7 +183,6 @@
 
     .hero-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--primary); color: white; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 20px; }
     
-    /* Badge GRÁTIS no hero (novo) */
     .hero-badge-free { 
       display: inline-flex; align-items: center; gap: 6px; 
       background: linear-gradient(135deg, #FFD700, #FFA500); 
@@ -205,7 +202,89 @@
     .btn-cart { background: var(--success); color: white; width: 100%; justify-content: center; }
     .btn-outline { background: transparent; border: 2px solid var(--text-main); color: var(--text-main); }
 
-    /* ================= MODAL (ORIGINAL) ================= */
+    /* MURAL DESLIZANTE ESTILO NETFLIX */
+    .netflix-row {
+      padding: 20px 4% 40px;
+      position: relative;
+    }
+    .netflix-row-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--text-main);
+    }
+    .netflix-scroll {
+      display: flex;
+      gap: 16px;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      padding-bottom: 10px;
+      scrollbar-width: none;
+    }
+    .netflix-scroll::-webkit-scrollbar {
+      display: none;
+    }
+    .netflix-card {
+      flex: 0 0 auto;
+      width: 300px;
+      aspect-ratio: 16/9;
+      border-radius: 8px;
+      overflow: hidden;
+      position: relative;
+      cursor: pointer;
+      transition: transform 0.3s, box-shadow 0.3s;
+      scroll-snap-align: start;
+      background: var(--card-bg);
+    }
+    .netflix-card:hover {
+      transform: scale(1.05);
+      z-index: 10;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+    }
+    .netflix-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+    .netflix-card img.loaded {
+      opacity: 1;
+    }
+    .netflix-info {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 40px 12px 12px;
+      background: linear-gradient(to top, rgba(0,0,0,0.95), transparent);
+    }
+    .netflix-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: white;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .badge-gratis-landscape {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 5;
+      background: linear-gradient(135deg, #FFD700, #FFA500);
+      color: #000;
+      font-weight: 900;
+      font-size: 10px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 2px 10px rgba(255,215,0,0.5);
+    }
+
+    /* MODAL */
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 9997;
       display: none; justify-content: center; align-items: center; padding: 20px;
@@ -230,7 +309,7 @@
     .modal-actions { display: flex; gap: 12px; flex-direction: column; }
     .free-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,215,0,0.2); padding: 4px 12px; border-radius: 20px; font-size: 14px; }
 
-    /* ================= TOAST (ORIGINAL) ================= */
+    /* TOAST */
     .toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10001; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
     .toast {
       background: rgba(30,30,30,0.95); color: white; padding: 16px 24px;
@@ -245,7 +324,7 @@
     .toast-success .toast-icon { color: var(--success); }
     .toast-error .toast-icon { color: #ff4444; }
 
-    /* ================= CATÁLOGO (ORIGINAL) ================= */
+    /* CATÁLOGO */
     .section { padding: 40px 4%; }
     .search-box { position: relative; max-width: 600px; margin: 0 auto 30px; }
     .search-box input { width: 100%; padding: 16px 24px 16px 50px; background: rgba(128,128,128,0.1); border: 1px solid rgba(128,128,128,0.2); border-radius: 12px; color: var(--text-main); font-size: 16px; outline: none; }
@@ -270,20 +349,27 @@
     .card:hover .card-info { opacity: 1; }
     .card-title { font-size: 14px; font-weight: 600; color: white; }
     
-    /* Badge GRÁTIS no card (novo) */
     .badge-gratis {
-      position: absolute; top: 10px; left: 10px; z-index: 5;
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 5;
       background: linear-gradient(135deg, #FFD700, #FFA500);
-      color: #000; font-weight: 900; font-size: 10px;
-      padding: 5px 10px; border-radius: 6px;
-      display: inline-flex; align-items: center; gap: 4px;
+      color: #000;
+      font-weight: 900;
+      font-size: 10px;
+      padding: 5px 10px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       box-shadow: 0 2px 10px rgba(255,215,0,0.5);
     }
     
     .price-tag { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); color: var(--success); padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; z-index: 5; }
     .price-tag.free { color: #000; background: var(--gold); }
 
-    /* ================= SKELETON (ORIGINAL) ================= */
+    /* SKELETON */
     .skeleton { background: linear-gradient(90deg, var(--skeleton) 25%, var(--hover) 50%, var(--skeleton) 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; }
     @keyframes skeleton-loading { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
@@ -295,12 +381,13 @@
       .hero h1 { font-size: 32px; }
       .btn-play { margin-left: 0; margin-top: 10px; }
       .cart-drawer { max-width: 100%; }
+      .netflix-card { width: 260px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- ================= PLAYER PROTEGIDO (NOVO) ================= -->
+  <!-- PLAYER PROTEGIDO -->
   <div class="video-player-overlay" id="playerOverlay">
     <div class="player-container">
       <div class="player-header">
@@ -318,7 +405,6 @@
         <div>Gerando acesso seguro...</div>
       </div>
 
-      <!-- Estado de erro do player (novo) -->
       <div class="player-error" id="playerError">
         <div style="font-size: 48px; margin-bottom: 10px;">⚠️</div>
         <div style="color: #ccc; font-size: 15px; margin-bottom: 20px;">
@@ -351,7 +437,7 @@
     </div>
   </div>
 
-  <!-- ================= CARRINHO (ORIGINAL) ================= -->
+  <!-- CARRINHO -->
   <div class="cart-overlay" id="cartOverlay" onclick="toggleCart()"></div>
   <div class="cart-drawer" id="cartDrawer">
     <div class="cart-header">
@@ -372,7 +458,7 @@
     </div>
   </div>
 
-  <!-- ================= MODAL DETALHES (ORIGINAL) ================= -->
+  <!-- MODAL DETALHES -->
   <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
     <div class="modal-content" onclick="event.stopPropagation()">
       <button class="modal-close" onclick="closeModal()">
@@ -394,10 +480,10 @@
     </div>
   </div>
 
-  <!-- ================= TOASTS (ORIGINAL) ================= -->
+  <!-- TOASTS -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <!-- ================= HEADER (ORIGINAL) ================= -->
+  <!-- HEADER -->
   <header class="header" id="header">
     <a href="#" class="logo">
       <i class="fas fa-play-circle"></i> SÉRIES EXPRESS
@@ -413,7 +499,7 @@
     </div>
   </header>
 
-  <!-- ================= HERO SLIDESHOW (ORIGINAL) ================= -->
+  <!-- HERO SLIDESHOW -->
   <section class="hero">
     <div class="hero-gradient"></div>
     <div class="hero-content">
@@ -436,7 +522,13 @@
     </div>
   </section>
 
-  <!-- ================= CATÁLOGO (ORIGINAL) ================= -->
+  <!-- MURAL DESLIZANTE ESTILO NETFLIX -->
+  <section class="netflix-row" id="netflixRow" style="display: none;">
+    <div class="netflix-row-title"><i class="fas fa-fire" style="color: var(--primary); margin-right: 8px;"></i>Em Alta</div>
+    <div class="netflix-scroll" id="netflixScroll"></div>
+  </section>
+
+  <!-- CATÁLOGO -->
   <section class="section" id="catalogSection">
     <div class="search-box">
       <i class="fas fa-search"></i>
@@ -460,24 +552,22 @@
   </section>
 
   <script>
-    // ================= CONFIGURAÇÃO (ORIGINAL) =================
+    // CONFIGURAÇÃO
     const tg = window.Telegram.WebApp;
     tg.expand();
 
     const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
     const userId = tg.initDataUnsafe?.user?.id || 'anonymous';
 
-    // ESTADO GLOBAL (ORIGINAL)
+    // ESTADO GLOBAL
     let allSeries = [];
     let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
     let currentHero = 0;
     let currentModalSeries = null;
     let heroInterval = null;
-    
-    // Variáveis do player (novo)
     let playerRetryData = null;
 
-    // ================= INICIALIZAÇÃO (ORIGINAL) =================
+    // INICIALIZAÇÃO
     async function init() {
       applyTheme();
       await loadSeries();
@@ -495,7 +585,7 @@
       });
     }
 
-    // ================= TEMA (ORIGINAL) =================
+    // TEMA CLARO/ESCURO
     function applyTheme() {
       if (localStorage.getItem('theme_series') === 'light') {
         document.body.classList.add('light-mode');
@@ -510,20 +600,21 @@
       showToast(isLight ? 'Tema claro ativado' : 'Tema escuro ativado', 'success');
     }
 
-    // ================= CARREGAR DADOS (ORIGINAL) =================
+    // CARREGAR DADOS DA API
     async function loadSeries() {
       try {
         const res = await fetch(`${API_URL}/api/series`);
         allSeries = await res.json();
         renderGrid(allSeries);
         initHero();
+        renderNetflixRow(allSeries);
       } catch (e) {
         showToast('Erro ao carregar catálogo', 'error');
         console.error(e);
       }
     }
 
-    // ================= HERO SLIDESHOW (ORIGINAL) =================
+    // HERO SLIDESHOW
     function initHero() {
       if (!allSeries.length) return;
       updateHero(0);
@@ -556,7 +647,6 @@
         }
       };
       
-      // Atualiza badge do hero (novo)
       const badge = document.getElementById('heroBadge');
       if (serie.price == 0) {
         badge.className = 'hero-badge-free';
@@ -576,7 +666,36 @@
       }
     }
 
-    // ================= PLAYER PROTEGIDO (NOVO) =================
+    // MURAL DESLIZANTE ESTILO NETFLIX
+    function renderNetflixRow(series) {
+      const container = document.getElementById('netflixScroll');
+      const section = document.getElementById('netflixRow');
+      if (!series.length) return;
+      
+      section.style.display = 'block';
+      container.innerHTML = '';
+      
+      series.slice(0, 10).forEach(s => {
+        const isFree = s.price == 0;
+        const card = document.createElement('div');
+        card.className = 'netflix-card';
+        card.onclick = () => {
+          if (isFree) openPlayer(s.id, s.title);
+          else openModal(s);
+        };
+        
+        card.innerHTML = `
+          ${isFree ? `<div class="badge-gratis-landscape"><i class="fas fa-gift"></i> GRÁTIS</div>` : ''}
+          <img src="${s.cover_url}" alt="${s.title}" loading="lazy" onload="this.classList.add('loaded')" onerror="this.style.opacity=1">
+          <div class="netflix-info">
+            <div class="netflix-title">${s.title}</div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // PLAYER PROTEGIDO - ACESSO VITALÍCIO COM URL TEMPORÁRIA
     async function openPlayer(serieId, title) {
       playerRetryData = { id: serieId, title: title };
       
@@ -694,7 +813,7 @@
       }
     });
 
-    // ================= CARRINHO (ORIGINAL) =================
+    // CARRINHO DE COMPRAS
     function toggleCart() {
       document.getElementById('cartOverlay').classList.toggle('active');
       document.getElementById('cartDrawer').classList.toggle('active');
@@ -783,7 +902,7 @@
       }, 1000);
     }
 
-    // ================= MODAL DETALHES (ORIGINAL) =================
+    // MODAL DE DETALHES
     function openModal(serie) {
       currentModalSeries = serie;
       document.getElementById('modalImg').src = serie.cover_url;
@@ -858,13 +977,18 @@
       }
     }
 
-    // ================= GRID DO CATÁLOGO (ORIGINAL) =================
+    // GRID DO CATÁLOGO
     function renderGrid(series) {
       const grid = document.getElementById('catalogGrid');
       grid.innerHTML = series.map(s => {
         const isFree = s.price == 0;
+        // Se for grátis, vai direto pro player. Se for pago, abre modal.
+        const clickAction = isFree 
+          ? `openPlayer(${s.id}, '${s.title.replace(/'/g, "\\'")}')` 
+          : `openModal(${JSON.stringify(s).replace(/"/g, '&quot;')})`;
+          
         return `
-          <div class="card" onclick='openModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>
+          <div class="card" onclick="${clickAction}">
             ${isFree ? `<div class="badge-gratis"><i class="fas fa-gift"></i> GRÁTIS</div>` : `<span class="price-tag ${s.price == 0 ? 'free' : ''}">${s.price == 0 ? 'GRÁTIS' : 'R$ ' + s.price}</span>`}
             <img src="${s.cover_url}" alt="${s.title}" loading="lazy" onload="this.classList.add('loaded')" onerror="this.style.opacity=1">
             <div class="card-info">
@@ -892,7 +1016,7 @@
       document.getElementById('catalogSection').scrollIntoView({ behavior: 'smooth' });
     }
 
-    // ================= SISTEMA DE TOASTS (ORIGINAL) =================
+    // SISTEMA DE TOASTS
     function showToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
       const toast = document.createElement('div');
@@ -911,7 +1035,7 @@
       setTimeout(() => { toast.remove(); }, 3000);
     }
 
-    // ================= INICIAR APLICAÇÃO =================
+    // INICIAR APLICAÇÃO
     init();
   </script>
 </body>
