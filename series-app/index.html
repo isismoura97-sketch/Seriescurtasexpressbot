@@ -3,48 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <meta name="description" content="Séries Curtas Express - Catálogo completo de séries curtas em HD">
+    <meta name="description" content="Séries Curtas Express - Catálogo completo de séries curtas em HD. Assista online com acesso vitalício.">
     <meta name="theme-color" content="#0F0F0F">
 
     <title>Séries Curtas Express</title>
 
+    <!-- Telegram Mini App -->
     <script src="https://telegram.org/js/telegram-web-app.js" async defer></script>
-    
+
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css">
-    
-    <!-- Seu CSS -->
+
+    <!-- CSS Principal -->
     <link rel="stylesheet" href="styles.css">
 
-    <style>
-        /* FORÇANDO ALGUNS ESTILOS CRÍTICOS CASO O CSS EXTERNO FALHE */
-        body {
-            background: #0F0F0F !important;
-            color: #FFFFFF !important;
-            font-family: 'Inter', sans-serif;
-        }
-        .hero {
-            background: linear-gradient(to right, #0F0F0F, #1A1A1A) !important;
-            min-height: 70vh !important;
-        }
-    </style>
+    <!-- CSP Atualizado (Importante para evitar NetworkError) -->
+    <meta http-equiv="Content-Security-Policy" 
+          content="default-src 'self'; 
+                   img-src 'self' data: https: blob:; 
+                   script-src 'self' https://telegram.org https://cdn.jsdelivr.net; 
+                   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; 
+                   font-src https://fonts.gstatic.com https://cdn.jsdelivr.net; 
+                   connect-src 'self' https://uyyeascxvnrrkjtlygdoe.supabase.co https://*.supabase.co; 
+                   media-src 'self' blob: https:;">
 </head>
 <body>
 
+    <!-- Skip Link -->
     <a href="#main-content" class="skip-link">Pular para conteúdo principal</a>
 
-    <!-- PLAYER -->
+    <!-- ==================== PLAYER ==================== -->
     <div class="video-player-overlay" id="playerOverlay" role="dialog" aria-modal="true" aria-labelledby="playerTitle">
         <div class="player-container">
             <div class="player-header">
-                <button class="player-back" aria-label="Voltar"><i class="fas fa-arrow-left"></i></button>
+                <button class="player-back" aria-label="Voltar">
+                    <i class="fas fa-arrow-left"></i>
+                </button>
                 <div class="player-title" id="playerTitle">Carregando...</div>
-                <button class="player-close" aria-label="Fechar"><i class="fas fa-times"></i></button>
+                <button class="player-close" aria-label="Fechar player">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
-            
+
             <div class="loading-player" id="playerLoading">
                 <div class="spinner"></div>
                 <div>Carregando vídeo...</div>
@@ -52,24 +55,28 @@
 
             <div class="player-error" id="playerError" role="alert">
                 <i class="fas fa-exclamation-triangle"></i>
-                <div>Erro ao reproduzir o vídeo</div>
-                <button class="btn btn-primary" onclick="retryPlayer()">Tentar Novamente</button>
+                <div style="font-size:18px; margin:15px 0;">Erro ao reproduzir o vídeo</div>
+                <button class="btn btn-primary" onclick="retryPlayer()">
+                    <i class="fas fa-redo"></i> Tentar Novamente
+                </button>
             </div>
 
-            <video id="mainVideo" controls playsinline preload="auto"></video>
-            
+            <video id="mainVideo" controls playsinline preload="auto" aria-label="Vídeo da série"></video>
+
             <div class="player-watermark" id="playerWatermark">
                 <span id="watermarkId">---</span> | Acesso Vitalício
             </div>
         </div>
     </div>
 
-    <!-- CART -->
+    <!-- ==================== CART ==================== -->
     <div class="cart-overlay" id="cartOverlay"></div>
-    <aside class="cart-drawer" id="cartDrawer" role="dialog" aria-modal="true">
+    <aside class="cart-drawer" id="cartDrawer" role="dialog" aria-modal="true" aria-labelledby="cartTitle">
         <div class="cart-header">
-            <h3><i class="fas fa-shopping-cart"></i> Seu Carrinho</h3>
-            <button class="icon-btn" onclick="toggleCart(false)"><i class="fas fa-times"></i></button>
+            <h3 id="cartTitle"><i class="fas fa-shopping-cart"></i> Seu Carrinho</h3>
+            <button class="icon-btn" onclick="toggleCart(false)" aria-label="Fechar carrinho">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
         <div class="cart-body" id="cartItems"></div>
         <div class="cart-footer">
@@ -83,46 +90,54 @@
         </div>
     </aside>
 
-    <!-- MODAL -->
+    <!-- ==================== MODAL ==================== -->
     <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true">
         <div class="modal-content">
             <div class="modal-hero">
-                <img id="modalImg" src="" alt="">
-                <button class="modal-close"><i class="fas fa-times"></i></button>
+                <img id="modalImg" src="" alt="Capa da série">
+                <button class="modal-close" aria-label="Fechar modal">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
             <div class="modal-body">
-                <h2 class="modal-title" id="modalTitle"></h2>
+                <h2 class="modal-title" id="modalTitle">Título da Série</h2>
                 <div class="modal-price" id="modalPrice"></div>
-                <p class="modal-desc" id="modalDesc"></p>
+                <p class="modal-desc" id="modalDesc">Descrição da série...</p>
                 <div class="modal-actions" id="modalActions"></div>
             </div>
         </div>
     </div>
 
-    <!-- TOAST -->
-    <div class="toast-container" id="toastContainer"></div>
+    <!-- ==================== TOAST ==================== -->
+    <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-    <!-- HEADER -->
-    <header class="header" id="header">
-        <a href="#" class="logo">
+    <!-- ==================== HEADER ==================== -->
+    <header class="header" id="header" role="banner">
+        <a href="#" class="logo" aria-label="Início">
             <i class="fas fa-play-circle"></i>
-            <span>SÉRIES EXPRESS</span>
+            SÉRIES EXPRESS
         </a>
-        <div class="header-actions">
-            <button id="themeBtn" class="icon-btn"><i class="fas fa-moon" id="themeIcon"></i></button>
-            <button id="cartBtn" class="icon-btn">
-                <i class="fas fa-shopping-cart"></i>
-                <span class="badge" id="cartBadge">0</span>
+        <nav class="header-actions">
+            <button id="themeBtn" class="icon-btn" title="Alternar tema claro/escuro">
+                <i class="fas fa-moon" id="themeIcon"></i>
             </button>
-        </div>
+            <button id="cartBtn" class="icon-btn" aria-label="Abrir carrinho">
+                <i class="fas fa-shopping-cart"></i>
+                <span class="badge" id="cartBadge" style="display:none;">0</span>
+            </button>
+        </nav>
     </header>
 
+    <!-- ==================== MAIN CONTENT ==================== -->
     <main id="main-content">
+
         <!-- HERO -->
-        <section class="hero" role="region">
+        <section class="hero" role="region" aria-label="Destaque">
             <div class="hero-gradient"></div>
             <div class="hero-content">
-                <span class="hero-badge" id="heroBadge"><i class="fas fa-fire"></i> Destaque da Semana</span>
+                <span class="hero-badge" id="heroBadge">
+                    <i class="fas fa-fire"></i> Destaque da Semana
+                </span>
                 <h1 id="heroTitle">Carregando destaque...</h1>
                 <p id="heroDesc">Preparando o catálogo...</p>
                 <button class="btn btn-play" id="heroPlayBtn" style="display:none;">
@@ -135,15 +150,15 @@
         </section>
 
         <!-- NETFLIX ROW -->
-        <section class="netflix-row" id="netflixRow" style="display:none;">
+        <section class="netflix-row" id="netflixRow" role="region" aria-label="Em alta" style="display:none;">
             <div class="netflix-row-title">
-                <i class="fas fa-fire"></i> Em Alta
+                <i class="fas fa-fire" style="color:var(--primary);"></i> Em Alta
             </div>
             <div class="netflix-scroll" id="netflixScroll"></div>
         </section>
 
-        <!-- CATÁLOGO -->
-        <section class="section" id="catalogSection">
+        <!-- CATALOGO -->
+        <section class="section" id="catalogSection" role="region" aria-label="Catálogo">
             <div class="search-box">
                 <i class="fas fa-search"></i>
                 <input type="text" id="searchInput" placeholder="Buscar séries..." aria-label="Buscar séries">
@@ -157,14 +172,16 @@
             </div>
 
             <h2 class="section-title">Catálogo Completo</h2>
-            <div class="grid" id="catalogGrid"></div>
+            <div class="grid" id="catalogGrid" role="region" aria-label="Grade de séries"></div>
         </section>
     </main>
 
-    <footer style="padding:40px 4% 20px; text-align:center; color:#555; font-size:12px;">
-        © 2025 Séries Curtas Express. Todos os direitos reservados.
+    <!-- FOOTER -->
+    <footer style="padding:40px 4%; text-align:center; color:#555; font-size:12px; border-top:1px solid rgba(128,128,128,0.2);">
+        <p>© 2025 Séries Curtas Express. Todos os direitos reservados.</p>
     </footer>
 
+    <!-- Script Principal -->
     <script defer src="app.js"></script>
 </body>
 </html>
