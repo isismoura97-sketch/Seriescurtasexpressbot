@@ -1,6 +1,6 @@
 /* ============================================= */
 /* SÉRIES CURTAS EXPRESS - STYLES.CSS (REVISADO) */
-/* Versão: 2.3 - Alinhado com HTML + Telegram    */
+/* Versão: 2.3 - Alinhado com HTML + Debug       */
 /* ============================================= */
 
 :root {
@@ -54,10 +54,25 @@ html { scroll-behavior: smooth; }
 
 .skip-link:focus { top: 0; }
 
+.badge {
+    position: absolute;
+    top: -6px; right: -6px;
+    background: var(--primary);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--darker);
+}
+
 /* Header */
 .header {
-    position: fixed;
-    top: 0; left: 0; right: 0;
+    position: fixed; top: 0; left: 0; right: 0;
     z-index: 1000;
     padding: 15px 4%;
     display: flex;
@@ -133,7 +148,7 @@ html { scroll-behavior: smooth; }
     margin-bottom: 16px;
 }
 
-.hero p { color: var(--text-dim); margin-bottom: 24px; }
+.hero p { color: var(--text-dim); margin-bottom: 24px; font-size: 1.05rem; }
 
 /* Player */
 .video-player-overlay {
@@ -143,8 +158,11 @@ html { scroll-behavior: smooth; }
 
 .video-player-overlay.active { display: flex; }
 
+.player-container { width: 100%; height: 100%; position: relative; background: #000; }
+
 .player-header {
-    position: absolute; top: 0; left: 0; right: 0; padding: 20px 24px;
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 20px 24px;
     background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
     display: flex; justify-content: space-between; align-items: center; z-index: 30;
 }
@@ -162,6 +180,11 @@ html { scroll-behavior: smooth; }
     position: absolute; bottom: 70px; right: 20px; background: rgba(0,0,0,0.7);
     color: rgba(255,255,255,0.8); font-size: 13px; padding: 4px 12px; border-radius: 4px;
     z-index: 10; font-family: monospace;
+}
+
+.loading-player, .player-error {
+    position: absolute; inset: 0; background: rgba(0,0,0,0.9);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; z-index: 20;
 }
 
 .spinner {
@@ -241,7 +264,6 @@ html { scroll-behavior: smooth; }
     display: flex; gap: 16px; overflow-x: auto; padding-bottom: 15px;
     scrollbar-width: none;
 }
-
 .netflix-scroll::-webkit-scrollbar { display: none; }
 
 .netflix-card { flex: 0 0 300px; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden; }
