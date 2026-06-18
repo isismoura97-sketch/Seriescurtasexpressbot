@@ -1,6 +1,6 @@
 /**
  * Séries Curtas Express - Mini App Telegram
- * Versão Final - Correção do Badge GRÁTIS
+ * Versão Final - Correção da Imagem Null
  */
 
 'use strict';
@@ -10,6 +10,7 @@ console.log('%c[DEBUG] app.js carregado', 'color: #FFD700; font-weight: bold');
 // ==================== CONFIGURAÇÃO ====================
 const tg = window.Telegram?.WebApp;
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
+const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 const userId = tg?.initDataUnsafe?.user?.id || 'anonymous';
 
 let allSeries = [];
@@ -110,6 +111,27 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
+// ==================== FUNÇÃO CRÍTICA: OBTER URL DA CAPA ====================
+function getCoverUrl(serie) {
+    // Prioridade 1: cover_url (URL pública direta)
+    if (serie.cover_url && serie.cover_url !== 'null' && serie.cover_url !== null) {
+        return serie.cover_url;
+    }
+    
+    // Prioridade 2: cover_storage_path (converter em URL pública do Supabase)
+    if (serie.cover_storage_path && serie.cover_storage_path !== 'null') {
+        return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${serie.cover_storage_path}`;
+    }
+    
+    // Prioridade 3: cover_path (fallback)
+    if (serie.cover_path && serie.cover_path !== 'null') {
+        return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${serie.cover_path}`;
+    }
+    
+    // Fallback: imagem placeholder
+    return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
+}
+
 // ==================== INICIALIZAÇÃO ====================
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('%c[DEBUG] DOMContentLoaded', 'color: #FFD700');
@@ -124,9 +146,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         allSeries = Array.isArray(data) ? data : [];
         console.log(`[DEBUG] ${allSeries.length} séries carregadas`);
 
-        // Debug: mostrar preços para identificar o problema
+        // Debug: mostrar dados das séries
         allSeries.forEach(s => {
-            console.log(`[DEBUG] Série: ${s.title} | Price: ${s.price} | Type: ${typeof s.price}`);
+            console.log(`[DEBUG] Série: ${s.title}`);
+            console.log(`  - cover_url: ${s.cover_url}`);
+            console.log(`  - cover_storage_path: ${s.cover_storage_path}`);
+            console.log(`  - cover_path: ${s.cover_path}`);
+            console.log(`  - Price: ${s.price} | Type: ${typeof s.price}`);
         });
 
         renderNetflixRow(allSeries);
@@ -215,10 +241,9 @@ function updateHero(index) {
 
     DOM.heroTitle.textContent = serie.title || 'Destaque';
     DOM.heroDesc.textContent = serie.description || 'Uma história emocionante...';
-    DOM.heroImg.src = serie.cover_url || '';
+    DOM.heroImg.src = getCoverUrl(serie); // USAR FUNÇÃO CORRIGIDA
     DOM.heroImg.alt = serie.title || '';
 
-    // CORREÇÃO: usar Number() para comparar corretamente
     const isFree = Number(serie.price) === 0;
     DOM.heroBadge.className = isFree ? 'hero-badge-free' : 'hero-badge';
     DOM.heroBadge.innerHTML = isFree 
@@ -252,14 +277,14 @@ function createCard(serie, isNetflix = false) {
     card.setAttribute('role', 'button');
     card.setAttribute('aria-label', `Abrir ${serie.title}`);
 
-    // CORREÇÃO PRINCIPAL: usar Number() para comparação flexível
     const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
+    const coverUrl = getCoverUrl(serie); // USAR FUNÇÃO CORRIGIDA
     
-    console.log(`[DEBUG] Criando card: ${serie.title} | Price: ${serie.price} | isFree: ${isFree}`);
+    console.log(`[DEBUG] Card: ${serie.title} | Cover: ${coverUrl} | isFree: ${isFree}`);
 
     card.innerHTML = `
         ${isFree ? `<div class="badge-gratis-landscape"><i class="fas fa-gift"></i> GRÁTIS</div>` : ''}
-        <img src="${serie.cover_url}" alt="${serie.title}" loading="lazy">
+        <img src="${coverUrl}" alt="${serie.title}" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4='">
         <div class="${isNetflix ? 'netflix-info' : 'card-info'}">
             <div class="${isNetflix ? 'netflix-title' : 'card-title'}">${escapeHtml(serie.title)}</div>
         </div>
@@ -322,11 +347,10 @@ function closePlayer() {
 
 // ==================== MODAL ====================
 function openModal(serie) {
-    DOM.modalImg.src = serie.cover_url;
+    DOM.modalImg.src = getCoverUrl(serie); // USAR FUNÇÃO CORRIGIDA
     DOM.modalTitle.textContent = serie.title;
     DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
     
-    // CORREÇÃO: usar Number() para comparação
     const isFree = Number(serie.price) === 0;
     DOM.modalPrice.innerHTML = isFree 
         ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
@@ -386,7 +410,7 @@ function updateCartUI() {
         const div = document.createElement('div');
         div.className = 'cart-item';
         div.innerHTML = `
-            <img src="${item.cover_url}" alt="${item.title}">
+            <img src="${getCoverUrl(item)}" alt="${item.title}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4='">
             <div class="cart-item-info">
                 <div class="cart-item-title">${escapeHtml(item.title)}</div>
                 <div class="cart-item-price">${formatPrice(item.price)}</div>
