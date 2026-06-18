@@ -1,15 +1,14 @@
 /**
  * Séries Curtas Express - Mini App Telegram
- * Versão Final - URL Supabase Corrigida
+ * Versão Final - Correção do Badge GRÁTIS
  */
 
 'use strict';
 
-console.log('%c[DEBUG] app.js carregado', 'color: #E50914; font-weight: bold');
+console.log('%c[DEBUG] app.js carregado', 'color: #FFD700; font-weight: bold');
 
 // ==================== CONFIGURAÇÃO ====================
 const tg = window.Telegram?.WebApp;
-// URL CORRETA CONFIRMADA
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
 const userId = tg?.initDataUnsafe?.user?.id || 'anonymous';
 
@@ -83,8 +82,9 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
 }
 
 function formatPrice(price) {
-    if (price === 0 || price === null) return 'GRÁTIS';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(price);
+    const numPrice = Number(price);
+    if (numPrice === 0 || numPrice === null || isNaN(numPrice)) return 'GRÁTIS';
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numPrice);
 }
 
 function escapeHtml(text) {
@@ -112,7 +112,7 @@ function showToast(message, type = 'info') {
 
 // ==================== INICIALIZAÇÃO ====================
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('%c[DEBUG] DOMContentLoaded', 'color: #E50914');
+    console.log('%c[DEBUG] DOMContentLoaded', 'color: #FFD700');
 
     if (tg) {
         tg.ready();
@@ -123,6 +123,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const data = await fetchWithTimeout(`${API_URL}/api/series`);
         allSeries = Array.isArray(data) ? data : [];
         console.log(`[DEBUG] ${allSeries.length} séries carregadas`);
+
+        // Debug: mostrar preços para identificar o problema
+        allSeries.forEach(s => {
+            console.log(`[DEBUG] Série: ${s.title} | Price: ${s.price} | Type: ${typeof s.price}`);
+        });
 
         renderNetflixRow(allSeries);
         renderGrid(allSeries);
@@ -213,7 +218,9 @@ function updateHero(index) {
     DOM.heroImg.src = serie.cover_url || '';
     DOM.heroImg.alt = serie.title || '';
 
-    const isFree = serie.price === 0;
+    // CORREÇÃO: usar Number() para comparar corretamente
+    const isFree = Number(serie.price) === 0;
+    DOM.heroBadge.className = isFree ? 'hero-badge-free' : 'hero-badge';
     DOM.heroBadge.innerHTML = isFree 
         ? '<i class="fas fa-gift"></i> GRÁTIS' 
         : '<i class="fas fa-fire"></i> Destaque da Semana';
@@ -245,7 +252,11 @@ function createCard(serie, isNetflix = false) {
     card.setAttribute('role', 'button');
     card.setAttribute('aria-label', `Abrir ${serie.title}`);
 
-    const isFree = serie.price === 0;
+    // CORREÇÃO PRINCIPAL: usar Number() para comparação flexível
+    const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
+    
+    console.log(`[DEBUG] Criando card: ${serie.title} | Price: ${serie.price} | isFree: ${isFree}`);
+
     card.innerHTML = `
         ${isFree ? `<div class="badge-gratis-landscape"><i class="fas fa-gift"></i> GRÁTIS</div>` : ''}
         <img src="${serie.cover_url}" alt="${serie.title}" loading="lazy">
@@ -315,7 +326,8 @@ function openModal(serie) {
     DOM.modalTitle.textContent = serie.title;
     DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
     
-    const isFree = serie.price === 0;
+    // CORREÇÃO: usar Number() para comparação
+    const isFree = Number(serie.price) === 0;
     DOM.modalPrice.innerHTML = isFree 
         ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
         : `<span>${formatPrice(serie.price)}</span>`;
