@@ -1,6 +1,6 @@
 /* ============================================= */
 /* SÉRIES CURTAS EXPRESS - STYLES.CSS            */
-/* Versão: 3.0 - Paleta Roxo/Azul/Dourado        */
+/* Versão: 3.1 - Completa + Badge Grátis Fixado  */
 /* ============================================= */
 
 :root {
@@ -635,11 +635,12 @@ input:focus-visible {
     display: none;
 }
 
+/* CARDS - CORRIGIDO PARA BADGE GRÁTIS */
 .netflix-card {
     flex: 0 0 300px;
     aspect-ratio: 16/9;
     border-radius: 10px;
-    overflow: hidden;
+    overflow: visible; /* MUDANÇA: permite badge sair do card */
     position: relative;
     cursor: pointer;
     transition: transform 0.3s;
@@ -656,6 +657,8 @@ input:focus-visible {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    border-radius: 10px;
+    display: block;
 }
 
 .netflix-info {
@@ -665,6 +668,7 @@ input:focus-visible {
     right: 0;
     padding: 20px 12px 12px;
     background: linear-gradient(to top, rgba(10,22,40,0.95), transparent);
+    border-radius: 0 0 10px 10px;
 }
 
 .netflix-title {
@@ -684,7 +688,7 @@ input:focus-visible {
     aspect-ratio: 2/3;
     background: var(--card-bg);
     border-radius: 10px;
-    overflow: hidden;
+    overflow: visible; /* MUDANÇA: permite badge sair do card */
     position: relative;
     cursor: pointer;
     transition: transform 0.3s;
@@ -701,6 +705,8 @@ input:focus-visible {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    border-radius: 10px;
+    display: block;
 }
 
 .card-info {
@@ -710,6 +716,7 @@ input:focus-visible {
     right: 0;
     padding: 20px 12px 12px;
     background: linear-gradient(to top, rgba(10,22,40,0.95), transparent);
+    border-radius: 0 0 10px 10px;
 }
 
 .card-title {
@@ -718,21 +725,25 @@ input:focus-visible {
     color: var(--primary);
 }
 
+/* ====================== BADGE GRÁTIS (CORRIGIDO) ====================== */
 .badge-gratis-landscape {
     position: absolute;
     top: 10px;
     left: 10px;
     background: linear-gradient(135deg, var(--primary), var(--primary-dark));
     color: #000;
-    padding: 4px 10px;
+    padding: 6px 12px;
     border-radius: 20px;
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 12px;
+    font-weight: 800;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    z-index: 5;
-    box-shadow: 0 0 15px rgba(255,215,0,0.4);
+    gap: 5px;
+    z-index: 10;
+    box-shadow: 0 0 15px rgba(255,215,0,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    pointer-events: none;
 }
 
 /* ====================== CART ====================== */
