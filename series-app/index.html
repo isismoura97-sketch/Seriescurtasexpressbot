@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <meta name="description" content="Séries Curtas Express - Catálogo completo de séries curtas em HD.">
-    <meta name="theme-color" content="#0F0F0F">
+    <meta name="description" content="Séries Curtas Express - Catálogo completo de séries curtas em HD. Assista online com acesso vitalício.">
+    <meta name="theme-color" content="#FFD700">
 
     <title>Séries Curtas Express</title>
 
@@ -14,7 +14,7 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css">
@@ -22,7 +22,7 @@
     <!-- CSS Principal -->
     <link rel="stylesheet" href="styles.css">
 
-    <!-- CSP Configurada para o Supabase (URL Correta) -->
+    <!-- CSP Configurada para o Supabase -->
     <meta http-equiv="Content-Security-Policy" 
           content="default-src 'self' https:; 
                    script-src 'self' https://telegram.org https://cdn.jsdelivr.net 'unsafe-inline'; 
@@ -31,6 +31,44 @@
                    connect-src 'self' https://uyyeascxvnrkjtlygdoe.supabase.co https://*.supabase.co; 
                    img-src * data: blob: https:; 
                    media-src * blob: https:;">
+
+    <!-- Estilos inline para o background gradiente global -->
+    <style>
+        body {
+            background: linear-gradient(135deg, #2D1B69 0%, #0A1628 100%);
+            background-attachment: fixed;
+        }
+        
+        /* Efeito de brilho sutil no topo */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -200px;
+            left: -200px;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(107,70,193,0.15) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        body::after {
+            content: '';
+            position: fixed;
+            bottom: -200px;
+            right: -200px;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(255,215,0,0.08) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        main, header, footer, section {
+            position: relative;
+            z-index: 1;
+        }
+    </style>
 </head>
 <body>
 
@@ -116,8 +154,8 @@
     <!-- ==================== HEADER ==================== -->
     <header class="header" id="header" role="banner">
         <a href="#" class="logo" aria-label="Início">
-            <i class="fas fa-play-circle"></i>
-            SÉRIES EXPRESS
+            <i class="fas fa-play-circle" style="color: var(--primary); filter: drop-shadow(0 0 8px rgba(255,215,0,0.5));"></i>
+            <span>SÉRIES EXPRESS</span>
         </a>
         <nav class="header-actions">
             <button id="themeBtn" class="icon-btn" title="Alternar tema claro/escuro">
@@ -179,8 +217,11 @@
     </main>
 
     <!-- FOOTER -->
-    <footer style="padding:40px 4%; text-align:center; color:#666; font-size:13px; border-top:1px solid rgba(128,128,128,0.2);">
+    <footer style="padding:40px 4%; text-align:center; color:var(--gray); font-size:13px; border-top:1px solid rgba(255,215,0,0.1);">
         <p>© 2025 Séries Curtas Express. Todos os direitos reservados.</p>
+        <p style="margin-top:8px; font-size:12px; color:rgba(255,215,0,0.4);">
+            Desenvolvido com <i class="fas fa-heart" style="color:var(--primary);"></i> para você
+        </p>
     </footer>
 
     <!-- Script Principal -->
