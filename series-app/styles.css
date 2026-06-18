@@ -1,34 +1,53 @@
 /* ============================================= */
 /* SÉRIES CURTAS EXPRESS - STYLES.CSS            */
-/* Versão: 2.3 - Completa e Alinhada             */
+/* Versão: 3.0 - Paleta Roxo/Azul/Dourado        */
 /* ============================================= */
 
 :root {
-    --primary: #E50914;
-    --primary-dark: #B20710;
-    --dark: #141414;
-    --darker: #0F0F0F;
-    --gray: #808080;
-    --light: #FFFFFF;
-    --card-bg: #181818;
-    --hover: #2F2F2F;
+    /* Cores Principais - Baseadas na imagem */
+    --primary: #FFD700;
+    --primary-dark: #D4AF37;
+    --primary-light: #FFE44D;
+    
+    /* Backgrounds - Gradiente roxo/azul */
+    --dark: #0A1628;
+    --darker: #060E1A;
+    --bg-body: #0A1628;
+    --bg-gradient-start: #2D1B69;
+    --bg-gradient-end: #0A1628;
+    
+    /* Cards e Elementos */
+    --card-bg: #1A2744;
+    --card-bg-light: #16213E;
+    --hover: #243456;
+    
+    /* Textos */
+    --text-main: #FFFFFF;
+    --text-dim: #B8C5D6;
+    --gray: #8892A4;
+    
+    /* Acentos */
     --success: #4CAF50;
     --gold: #FFD700;
-    --text-main: #FFFFFF;
-    --text-dim: #E5E5E5;
-    --bg-body: #0F0F0F;
-    --skeleton: #252525;
+    --silver: #C0C0C0;
+    --purple-accent: #6B46C1;
+    --purple-light: #9F7AEA;
+    
+    /* Skeleton */
+    --skeleton: #1E2D4A;
 }
 
 body.light-mode {
-    --dark: #F5F5F5;
+    --dark: #F0F4F8;
     --darker: #FFFFFF;
-    --card-bg: #F0F0F0;
-    --hover: #E0E0E0;
-    --text-main: #141414;
-    --text-dim: #333333;
-    --bg-body: #F5F5F5;
-    --skeleton: #E0E0E0;
+    --bg-body: #F0F4F8;
+    --card-bg: #FFFFFF;
+    --card-bg-light: #F7FAFC;
+    --hover: #E2E8F0;
+    --text-main: #1A202C;
+    --text-dim: #4A5568;
+    --gray: #718096;
+    --skeleton: #E2E8F0;
 }
 
 /* ====================== BASE ====================== */
@@ -68,11 +87,12 @@ input:focus-visible {
     top: -50px;
     left: 10px;
     background: var(--primary);
-    color: white;
+    color: #000;
     padding: 10px 16px;
     z-index: 10000;
     text-decoration: none;
     border-radius: 0 0 6px 6px;
+    font-weight: 700;
 }
 
 .skip-link:focus {
@@ -84,7 +104,7 @@ input:focus-visible {
     top: -6px;
     right: -6px;
     background: var(--primary);
-    color: white;
+    color: #000;
     font-size: 11px;
     font-weight: 700;
     min-width: 20px;
@@ -107,13 +127,13 @@ input:focus-visible {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+    background: linear-gradient(to bottom, rgba(10,22,40,0.95), transparent);
     transition: all 0.3s;
 }
 
 .header.scrolled {
     background: var(--darker);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6);
 }
 
 .logo {
@@ -124,6 +144,7 @@ input:focus-visible {
     align-items: center;
     gap: 8px;
     text-decoration: none;
+    text-shadow: 0 0 20px rgba(255,215,0,0.3);
 }
 
 .header-actions {
@@ -133,7 +154,7 @@ input:focus-visible {
 
 .icon-btn {
     background: rgba(255,255,255,0.1);
-    border: none;
+    border: 1px solid rgba(255,215,0,0.2);
     color: var(--text-main);
     width: 44px;
     height: 44px;
@@ -148,7 +169,9 @@ input:focus-visible {
 
 .icon-btn:hover {
     background: var(--primary);
+    color: #000;
     transform: scale(1.1);
+    box-shadow: 0 0 20px rgba(255,215,0,0.4);
 }
 
 /* ====================== HERO ====================== */
@@ -158,7 +181,7 @@ input:focus-visible {
     display: flex;
     align-items: center;
     padding: 110px 4% 60px;
-    background: var(--darker);
+    background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
 }
 
 .hero-gradient {
@@ -179,25 +202,27 @@ input:focus-visible {
     align-items: center;
     gap: 8px;
     background: var(--primary);
-    color: white;
-    padding: 6px 14px;
-    border-radius: 30px;
-    font-size: 13px;
-    font-weight: 700;
-    margin-bottom: 16px;
-}
-
-.hero-badge-free {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--gold);
     color: #000;
     padding: 6px 14px;
     border-radius: 30px;
     font-size: 13px;
     font-weight: 700;
     margin-bottom: 16px;
+    box-shadow: 0 0 20px rgba(255,215,0,0.3);
+}
+
+.hero-badge-free {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #000;
+    padding: 6px 14px;
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    box-shadow: 0 0 20px rgba(255,215,0,0.4);
 }
 
 .hero h1 {
@@ -205,6 +230,10 @@ input:focus-visible {
     font-weight: 800;
     line-height: 1.1;
     margin-bottom: 16px;
+    background: linear-gradient(135deg, #FFFFFF 0%, var(--primary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .hero p {
@@ -226,7 +255,7 @@ input:focus-visible {
 .hero-poster {
     width: 100%;
     border-radius: 12px;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 40px rgba(107,70,193,0.3);
 }
 
 /* ====================== PLAYER ====================== */
@@ -257,7 +286,7 @@ input:focus-visible {
     left: 0;
     right: 0;
     padding: 20px 24px;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.9), transparent);
+    background: linear-gradient(to bottom, rgba(10,22,40,0.95), transparent);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -271,6 +300,7 @@ input:focus-visible {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--primary);
 }
 
 .player-back,
@@ -278,8 +308,8 @@ input:focus-visible {
     width: 44px;
     height: 44px;
     border-radius: 50%;
-    background: rgba(255,255,255,0.15);
-    border: none;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,215,0,0.3);
     color: white;
     font-size: 20px;
     cursor: pointer;
@@ -292,27 +322,30 @@ input:focus-visible {
 .player-back:hover,
 .player-close:hover {
     background: var(--primary);
+    color: #000;
     transform: scale(1.1);
+    box-shadow: 0 0 20px rgba(255,215,0,0.5);
 }
 
 .player-watermark {
     position: absolute;
     bottom: 70px;
     right: 20px;
-    background: rgba(0,0,0,0.7);
-    color: rgba(255,255,255,0.8);
+    background: rgba(10,22,40,0.8);
+    color: var(--primary);
     font-size: 13px;
     padding: 4px 12px;
     border-radius: 4px;
     z-index: 10;
     font-family: monospace;
+    border: 1px solid rgba(255,215,0,0.2);
 }
 
 .loading-player,
 .player-error {
     position: absolute;
     inset: 0;
-    background: rgba(0,0,0,0.9);
+    background: rgba(10,22,40,0.95);
     display: none;
     flex-direction: column;
     align-items: center;
@@ -329,10 +362,11 @@ input:focus-visible {
 .spinner {
     width: 60px;
     height: 60px;
-    border: 5px solid rgba(229,9,20,0.2);
+    border: 5px solid rgba(255,215,0,0.2);
     border-top-color: var(--primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;
+    box-shadow: 0 0 20px rgba(255,215,0,0.3);
 }
 
 @keyframes spin {
@@ -343,7 +377,7 @@ input:focus-visible {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.94);
+    background: rgba(10,22,40,0.95);
     backdrop-filter: blur(10px);
     z-index: 9999;
     display: none;
@@ -363,9 +397,10 @@ input:focus-visible {
     max-width: 540px;
     max-height: 92vh;
     overflow: hidden;
-    box-shadow: 0 30px 70px rgba(0,0,0,0.8);
+    box-shadow: 0 30px 70px rgba(0,0,0,0.8), 0 0 40px rgba(107,70,193,0.3);
     transform: scale(0.9);
     transition: transform 0.4s ease;
+    border: 1px solid rgba(255,215,0,0.1);
 }
 
 .modal-overlay.active .modal-content {
@@ -390,9 +425,9 @@ input:focus-visible {
     right: 16px;
     width: 46px;
     height: 46px;
-    background: rgba(0,0,0,0.7);
-    color: white;
-    border: none;
+    background: rgba(10,22,40,0.8);
+    color: var(--primary);
+    border: 1px solid rgba(255,215,0,0.3);
     border-radius: 50%;
     font-size: 24px;
     cursor: pointer;
@@ -405,7 +440,9 @@ input:focus-visible {
 
 .modal-close:hover {
     background: var(--primary);
+    color: #000;
     transform: rotate(90deg);
+    box-shadow: 0 0 20px rgba(255,215,0,0.5);
 }
 
 .modal-body {
@@ -417,6 +454,10 @@ input:focus-visible {
     font-size: 28px;
     font-weight: 800;
     margin-bottom: 10px;
+    background: linear-gradient(135deg, #FFFFFF 0%, var(--primary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .modal-price {
@@ -431,7 +472,7 @@ input:focus-visible {
 }
 
 .free-badge {
-    background: linear-gradient(135deg, #ffd700, #ffaa00);
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
     color: #000;
     padding: 8px 16px;
     border-radius: 30px;
@@ -439,6 +480,7 @@ input:focus-visible {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    box-shadow: 0 0 20px rgba(255,215,0,0.4);
 }
 
 .modal-desc {
@@ -470,28 +512,37 @@ input:focus-visible {
 }
 
 .btn-primary {
-    background: var(--primary);
-    color: white;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #000;
+    font-weight: 800;
+    box-shadow: 0 0 20px rgba(255,215,0,0.3);
+}
+
+.btn-primary:hover {
+    box-shadow: 0 0 30px rgba(255,215,0,0.6);
+    transform: translateY(-3px);
 }
 
 .btn-free {
-    background: var(--gold);
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
     color: #000;
     font-weight: 800;
+    box-shadow: 0 0 20px rgba(255,215,0,0.4);
 }
 
 .btn-play {
-    background: white;
-    color: black;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #000;
     padding: 14px 32px;
     border-radius: 8px;
-    font-weight: 700;
+    font-weight: 800;
     font-size: 16px;
+    box-shadow: 0 0 25px rgba(255,215,0,0.4);
 }
 
 .btn:hover {
     transform: translateY(-3px);
-    box-shadow: 0 15px 30px rgba(229,9,20,0.4);
+    box-shadow: 0 15px 30px rgba(255,215,0,0.4);
 }
 
 /* ====================== CATALOG ====================== */
@@ -503,6 +554,7 @@ input:focus-visible {
     font-size: 24px;
     font-weight: 700;
     margin-bottom: 20px;
+    color: var(--primary);
 }
 
 .search-box {
@@ -514,7 +566,7 @@ input:focus-visible {
     width: 100%;
     padding: 12px 16px 12px 44px;
     background: var(--card-bg);
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,215,0,0.2);
     border-radius: 10px;
     color: var(--text-main);
     font-size: 15px;
@@ -523,6 +575,7 @@ input:focus-visible {
 .search-box input:focus {
     outline: none;
     border-color: var(--primary);
+    box-shadow: 0 0 15px rgba(255,215,0,0.2);
 }
 
 .search-box i {
@@ -530,7 +583,7 @@ input:focus-visible {
     left: 16px;
     top: 50%;
     transform: translateY(-50%);
-    color: var(--gray);
+    color: var(--primary);
 }
 
 .categories {
@@ -543,7 +596,7 @@ input:focus-visible {
 .category-chip {
     padding: 8px 16px;
     background: var(--card-bg);
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,215,0,0.2);
     border-radius: 20px;
     color: var(--text-main);
     font-size: 14px;
@@ -555,6 +608,8 @@ input:focus-visible {
 .category-chip.active {
     background: var(--primary);
     border-color: var(--primary);
+    color: #000;
+    box-shadow: 0 0 15px rgba(255,215,0,0.3);
 }
 
 .netflix-row {
@@ -565,6 +620,7 @@ input:focus-visible {
     font-size: 20px;
     font-weight: 700;
     margin-bottom: 15px;
+    color: var(--primary);
 }
 
 .netflix-scroll {
@@ -587,10 +643,13 @@ input:focus-visible {
     position: relative;
     cursor: pointer;
     transition: transform 0.3s;
+    border: 1px solid rgba(255,215,0,0.1);
 }
 
 .netflix-card:hover {
     transform: scale(1.06);
+    box-shadow: 0 0 30px rgba(255,215,0,0.3);
+    border-color: var(--primary);
 }
 
 .netflix-card img {
@@ -605,13 +664,13 @@ input:focus-visible {
     left: 0;
     right: 0;
     padding: 20px 12px 12px;
-    background: linear-gradient(to top, rgba(0,0,0,0.95), transparent);
+    background: linear-gradient(to top, rgba(10,22,40,0.95), transparent);
 }
 
 .netflix-title {
     font-size: 14px;
     font-weight: 700;
-    color: white;
+    color: var(--primary);
 }
 
 .grid {
@@ -629,10 +688,13 @@ input:focus-visible {
     position: relative;
     cursor: pointer;
     transition: transform 0.3s;
+    border: 1px solid rgba(255,215,0,0.1);
 }
 
 .card:hover {
     transform: scale(1.05);
+    box-shadow: 0 0 25px rgba(255,215,0,0.3);
+    border-color: var(--primary);
 }
 
 .card img {
@@ -647,20 +709,20 @@ input:focus-visible {
     left: 0;
     right: 0;
     padding: 20px 12px 12px;
-    background: linear-gradient(to top, rgba(0,0,0,0.95), transparent);
+    background: linear-gradient(to top, rgba(10,22,40,0.95), transparent);
 }
 
 .card-title {
     font-size: 14px;
     font-weight: 700;
-    color: white;
+    color: var(--primary);
 }
 
 .badge-gratis-landscape {
     position: absolute;
     top: 10px;
     left: 10px;
-    background: var(--gold);
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
     color: #000;
     padding: 4px 10px;
     border-radius: 20px;
@@ -670,13 +732,14 @@ input:focus-visible {
     align-items: center;
     gap: 4px;
     z-index: 5;
+    box-shadow: 0 0 15px rgba(255,215,0,0.4);
 }
 
 /* ====================== CART ====================== */
 .cart-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.8);
+    background: rgba(10,22,40,0.9);
     z-index: 9998;
     opacity: 0;
     visibility: hidden;
@@ -701,6 +764,7 @@ input:focus-visible {
     box-shadow: -10px 0 30px rgba(0,0,0,0.5);
     display: flex;
     flex-direction: column;
+    border-left: 1px solid rgba(255,215,0,0.2);
 }
 
 .cart-drawer.active {
@@ -709,7 +773,7 @@ input:focus-visible {
 
 .cart-header {
     padding: 25px;
-    border-bottom: 1px solid rgba(128,128,128,0.2);
+    border-bottom: 1px solid rgba(255,215,0,0.2);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -718,6 +782,7 @@ input:focus-visible {
 .cart-header h3 {
     font-size: 20px;
     font-weight: 700;
+    color: var(--primary);
 }
 
 .cart-body {
@@ -729,11 +794,12 @@ input:focus-visible {
 .cart-item {
     display: flex;
     gap: 15px;
-    background: rgba(0,0,0,0.2);
+    background: rgba(255,255,255,0.05);
     padding: 15px;
     border-radius: 10px;
     margin-bottom: 15px;
     position: relative;
+    border: 1px solid rgba(255,215,0,0.1);
 }
 
 .cart-item img {
@@ -754,10 +820,11 @@ input:focus-visible {
     font-size: 14px;
     font-weight: 600;
     margin-bottom: 5px;
+    color: var(--text-main);
 }
 
 .cart-item-price {
-    color: var(--success);
+    color: var(--primary);
     font-weight: 700;
 }
 
@@ -783,7 +850,7 @@ input:focus-visible {
 
 .cart-footer {
     padding: 25px;
-    border-top: 1px solid rgba(128,128,128,0.2);
+    border-top: 1px solid rgba(255,215,0,0.2);
 }
 
 .cart-total {
@@ -795,7 +862,7 @@ input:focus-visible {
 }
 
 .cart-total span:last-child {
-    color: var(--success);
+    color: var(--primary);
     font-size: 22px;
 }
 
@@ -812,14 +879,15 @@ input:focus-visible {
 }
 
 .toast {
-    background: rgba(30,30,30,0.95);
-    color: white;
+    background: var(--card-bg);
+    color: var(--text-main);
     padding: 14px 20px;
     border-radius: 10px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.6);
     transform: translateY(30px);
     opacity: 0;
     transition: all 0.4s ease;
+    border: 1px solid rgba(255,215,0,0.2);
 }
 
 .toast.show {
@@ -829,10 +897,12 @@ input:focus-visible {
 
 .toast-success {
     background: rgba(76,175,80,0.95);
+    border-color: rgba(76,175,80,0.5);
 }
 
 .toast-error {
     background: rgba(229,9,20,0.95);
+    border-color: rgba(229,9,20,0.5);
 }
 
 /* ====================== RESPONSIVE ====================== */
