@@ -9,7 +9,7 @@
     <title>Séries Curtas Express</title>
 
     <!-- Telegram Mini App -->
-    <script src="https://telegram.org/js/telegram-web-app.js" async defer></script>
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,44 +31,6 @@
                    connect-src 'self' https://uyyeascxvnrkjtlygdoe.supabase.co https://*.supabase.co; 
                    img-src * data: blob: https:; 
                    media-src * blob: https:;">
-
-    <!-- Estilos inline para o background gradiente global -->
-    <style>
-        body {
-            background: linear-gradient(135deg, #2D1B69 0%, #0A1628 100%);
-            background-attachment: fixed;
-        }
-        
-        /* Efeito de brilho sutil no topo */
-        body::before {
-            content: '';
-            position: fixed;
-            top: -200px;
-            left: -200px;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(107,70,193,0.15) 0%, transparent 70%);
-            pointer-events: none;
-            z-index: 0;
-        }
-        
-        body::after {
-            content: '';
-            position: fixed;
-            bottom: -200px;
-            right: -200px;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(255,215,0,0.08) 0%, transparent 70%);
-            pointer-events: none;
-            z-index: 0;
-        }
-
-        main, header, footer, section {
-            position: relative;
-            z-index: 1;
-        }
-    </style>
 </head>
 <body>
 
