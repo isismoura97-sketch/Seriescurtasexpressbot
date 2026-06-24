@@ -1,6 +1,6 @@
 /* ============================================= */
 /* SÉRIES CURTAS EXPRESS - STYLES.CSS            */
-/* Versão: 3.2 - Revisada e Corrigida            */
+/* Versão: 3.3 - Revisada e Corrigida            */
 /* ============================================= */
 
 :root {
@@ -243,7 +243,7 @@ body.light-mode .header.scrolled {
     min-height: 75vh;
     display: flex;
     align-items: center;
-    padding: 110px 4% 60px;
+    padding: 110px 4% 60px 2%; /* padding-left reduzido de 4% para 2% */
     background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
 }
 
@@ -262,6 +262,7 @@ body.light-mode .hero-gradient {
     position: relative;
     z-index: 2;
     max-width: 55%;
+    margin-left: 2%; /* Adicionado: empurra conteúdo mais para a esquerda */
 }
 
 .hero-badge {
@@ -318,7 +319,7 @@ body.light-mode .hero h1 {
 
 .hero-image-container {
     position: absolute;
-    right: 4%;
+    right: 2%; /* Reduzido de 4% para 2% - imagem mais colada na direita */
     top: 50%;
     transform: translateY(-50%);
     width: 40%;
@@ -1039,6 +1040,7 @@ body.light-mode .cart-item {
 
     .hero-content {
         max-width: 100%;
+        margin-left: 0;
         margin-bottom: 30px;
     }
 
