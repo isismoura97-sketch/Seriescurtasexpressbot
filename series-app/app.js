@@ -1,6 +1,6 @@
 /**
  * Séries Curtas Express - Mini App Telegram
- * Versão Final - Correção da Imagem Null
+ * Versão 3.2 - Revisada e Corrigida
  */
 
 'use strict';
@@ -14,7 +14,13 @@ const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 const userId = tg?.initDataUnsafe?.user?.id || 'anonymous';
 
 let allSeries = [];
-let cart = JSON.parse(localStorage.getItem('cart_series')) || [];
+let cart = [];
+try {
+    cart = JSON.parse(localStorage.getItem('cart_series')) || [];
+} catch (e) {
+    cart = [];
+}
+
 let currentHeroIndex = 0;
 let heroInterval = null;
 let playerRetryData = null;
@@ -62,7 +68,7 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
         const res = await fetch(url, {
             ...options,
             signal: controller.signal,
-            headers: { 'Content-Type': 'application/json' }
+            headers: { ...(options.headers || {}), 'Content-Type': 'application/json' }
         });
 
         clearTimeout(timeoutId);
@@ -76,6 +82,10 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
 
     } catch (err) {
         clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+            showToast('Tempo de conexão esgotado', 'error');
+            throw new Error('Timeout');
+        }
         console.error('%c[ERROR]', 'color: red; font-weight: bold', err.message);
         showToast('Erro de conexão: ' + err.message, 'error');
         throw err;
@@ -84,11 +94,12 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
 
 function formatPrice(price) {
     const numPrice = Number(price);
-    if (numPrice === 0 || numPrice === null || isNaN(numPrice)) return 'GRÁTIS';
+    if (numPrice === 0 || price === null || price === undefined || isNaN(numPrice)) return 'GRÁTIS';
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numPrice);
 }
 
 function escapeHtml(text) {
+    if (text == null) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
@@ -113,6 +124,8 @@ function showToast(message, type = 'info') {
 
 // ==================== FUNÇÃO CRÍTICA: OBTER URL DA CAPA ====================
 function getCoverUrl(serie) {
+    if (!serie) return '';
+    
     // Prioridade 1: cover_url (URL pública direta)
     if (serie.cover_url && serie.cover_url !== 'null' && serie.cover_url !== null) {
         return serie.cover_url;
@@ -133,27 +146,20 @@ function getCoverUrl(serie) {
 }
 
 // ==================== INICIALIZAÇÃO ====================
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log('%c[DEBUG] DOMContentLoaded', 'color: #FFD700');
+async function init() {
+    console.log('%c[DEBUG] Inicializando app', 'color: #FFD700');
 
     if (tg) {
         tg.ready();
         tg.expand();
     }
 
+    applyTheme();
+
     try {
         const data = await fetchWithTimeout(`${API_URL}/api/series`);
         allSeries = Array.isArray(data) ? data : [];
         console.log(`[DEBUG] ${allSeries.length} séries carregadas`);
-
-        // Debug: mostrar dados das séries
-        allSeries.forEach(s => {
-            console.log(`[DEBUG] Série: ${s.title}`);
-            console.log(`  - cover_url: ${s.cover_url}`);
-            console.log(`  - cover_storage_path: ${s.cover_storage_path}`);
-            console.log(`  - cover_path: ${s.cover_path}`);
-            console.log(`  - Price: ${s.price} | Type: ${typeof s.price}`);
-        });
 
         renderNetflixRow(allSeries);
         renderGrid(allSeries);
@@ -166,7 +172,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     setupEventListeners();
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+} else {
+    init();
+}
 
 function setupEventListeners() {
     window.addEventListener('scroll', () => {
@@ -203,7 +215,7 @@ function setupEventListeners() {
         if (e.key === 'Escape') {
             if (DOM.playerOverlay?.classList.contains('active')) closePlayer();
             else if (DOM.modalOverlay?.classList.contains('active')) closeModal();
-            else toggleCart(false);
+            else if (DOM.cartDrawer?.classList.contains('active')) toggleCart(false);
         }
     });
 }
@@ -237,14 +249,14 @@ function initHero() {
 
 function updateHero(index) {
     const serie = allSeries[index];
-    if (!serie) return;
+    if (!serie || !DOM.heroTitle) return;
 
     DOM.heroTitle.textContent = serie.title || 'Destaque';
     DOM.heroDesc.textContent = serie.description || 'Uma história emocionante...';
-    DOM.heroImg.src = getCoverUrl(serie); // USAR FUNÇÃO CORRIGIDA
+    DOM.heroImg.src = getCoverUrl(serie);
     DOM.heroImg.alt = serie.title || '';
 
-    const isFree = Number(serie.price) === 0;
+    const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
     DOM.heroBadge.className = isFree ? 'hero-badge-free' : 'hero-badge';
     DOM.heroBadge.innerHTML = isFree 
         ? '<i class="fas fa-gift"></i> GRÁTIS' 
@@ -257,16 +269,25 @@ function updateHero(index) {
 // ==================== RENDERIZAÇÃO ====================
 function renderNetflixRow(series) {
     const container = DOM.netflixScroll;
-    if (!container) return;
+    const row = document.getElementById('netflixRow');
+    if (!container || !row) return;
     container.innerHTML = '';
+    if (!series.length) {
+        row.style.display = 'none';
+        return;
+    }
     series.slice(0, 10).forEach(s => container.appendChild(createCard(s, true)));
-    document.getElementById('netflixRow').style.display = 'block';
+    row.style.display = 'block';
 }
 
 function renderGrid(series) {
     const grid = DOM.catalogGrid;
     if (!grid) return;
     grid.innerHTML = '';
+    if (!series.length) {
+        grid.innerHTML = '<p style="text-align:center; color:var(--gray); padding:40px 0;">Nenhuma série encontrada.</p>';
+        return;
+    }
     series.forEach(s => grid.appendChild(createCard(s, false)));
 }
 
@@ -275,16 +296,17 @@ function createCard(serie, isNetflix = false) {
     card.className = isNetflix ? 'netflix-card' : 'card';
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
-    card.setAttribute('aria-label', `Abrir ${serie.title}`);
+    card.setAttribute('aria-label', `Abrir ${serie.title || 'série'}`);
 
     const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
-    const coverUrl = getCoverUrl(serie); // USAR FUNÇÃO CORRIGIDA
+    const coverUrl = getCoverUrl(serie);
+    const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
     
     console.log(`[DEBUG] Card: ${serie.title} | Cover: ${coverUrl} | isFree: ${isFree}`);
 
     card.innerHTML = `
         ${isFree ? `<div class="badge-gratis-landscape"><i class="fas fa-gift"></i> GRÁTIS</div>` : ''}
-        <img src="${coverUrl}" alt="${serie.title}" loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4='">
+        <img src="${coverUrl}" alt="${escapeHtml(serie.title)}" loading="lazy" onerror="this.src='${placeholder}'">
         <div class="${isNetflix ? 'netflix-info' : 'card-info'}">
             <div class="${isNetflix ? 'netflix-title' : 'card-title'}">${escapeHtml(serie.title)}</div>
         </div>
@@ -292,7 +314,12 @@ function createCard(serie, isNetflix = false) {
 
     const handleClick = () => isFree ? openPlayer(serie.id, serie.title) : openModal(serie);
     card.addEventListener('click', handleClick);
-    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') handleClick(); });
+    card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleClick();
+        }
+    });
 
     return card;
 }
@@ -301,10 +328,10 @@ function createCard(serie, isNetflix = false) {
 async function openPlayer(serieId, title) {
     playerRetryData = { id: serieId, title };
     DOM.playerOverlay.classList.add('active');
-    DOM.playerLoading.style.display = 'flex';
+    DOM.playerLoading.classList.add('active');
     DOM.playerError.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
-    DOM.playerTitle.textContent = title;
+    DOM.playerTitle.textContent = title || 'Reproduzir';
     DOM.watermarkId.textContent = userId;
 
     try {
@@ -315,7 +342,9 @@ async function openPlayer(serieId, title) {
         if (data.url) {
             DOM.mainVideo.src = data.url;
             DOM.mainVideo.style.display = 'block';
-            DOM.mainVideo.play().catch(console.warn);
+            DOM.mainVideo.play().catch(() => {
+                console.warn('Autoplay bloqueado pelo navegador');
+            });
         } else {
             throw new Error('URL de vídeo não retornada');
         }
@@ -323,12 +352,12 @@ async function openPlayer(serieId, title) {
         console.error(err);
         showPlayerError();
     } finally {
-        DOM.playerLoading.style.display = 'none';
+        DOM.playerLoading.classList.remove('active');
     }
 }
 
 function showPlayerError() {
-    DOM.playerLoading.style.display = 'none';
+    DOM.playerLoading.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
     DOM.playerError.classList.add('active');
 }
@@ -342,13 +371,14 @@ function closePlayer() {
     DOM.mainVideo.src = '';
     DOM.playerOverlay.classList.remove('active');
     DOM.playerError.classList.remove('active');
-    DOM.playerLoading.style.display = 'flex';
+    DOM.playerLoading.classList.remove('active');
 }
 
 // ==================== MODAL ====================
 function openModal(serie) {
-    DOM.modalImg.src = getCoverUrl(serie); // USAR FUNÇÃO CORRIGIDA
-    DOM.modalTitle.textContent = serie.title;
+    if (!serie) return;
+    DOM.modalImg.src = getCoverUrl(serie);
+    DOM.modalTitle.textContent = serie.title || 'Série';
     DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
     
     const isFree = Number(serie.price) === 0;
@@ -375,7 +405,10 @@ function openModal(serie) {
 
 function closeModal() {
     DOM.modalOverlay.classList.remove('active');
-    document.body.classList.remove('modal-open');
+    // Só remove modal-open se o carrinho não estiver aberto
+    if (!DOM.cartDrawer.classList.contains('active')) {
+        document.body.classList.remove('modal-open');
+    }
 }
 
 // ==================== CARRINHO ====================
@@ -383,7 +416,10 @@ function toggleCart(open) {
     const isOpen = typeof open === 'boolean' ? open : !DOM.cartDrawer.classList.contains('active');
     DOM.cartOverlay.classList.toggle('active', isOpen);
     DOM.cartDrawer.classList.toggle('active', isOpen);
-    document.body.classList.toggle('modal-open', isOpen);
+    // Só gerencia modal-open se o modal NÃO estiver aberto
+    if (!DOM.modalOverlay.classList.contains('active')) {
+        document.body.classList.toggle('modal-open', isOpen);
+    }
     if (isOpen) updateCartUI();
 }
 
@@ -393,6 +429,8 @@ function updateCartUI() {
 
     DOM.cartBadge.textContent = cart.length;
     DOM.cartBadge.style.display = cart.length > 0 ? 'flex' : 'none';
+
+    if (!container) return;
 
     if (cart.length === 0) {
         container.innerHTML = `
@@ -404,13 +442,14 @@ function updateCartUI() {
         return;
     }
 
+    const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
     container.innerHTML = '';
     cart.forEach(item => {
         total += parseFloat(item.price) || 0;
         const div = document.createElement('div');
         div.className = 'cart-item';
         div.innerHTML = `
-            <img src="${getCoverUrl(item)}" alt="${item.title}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4='">
+            <img src="${getCoverUrl(item)}" alt="${escapeHtml(item.title)}" onerror="this.src='${placeholder}'">
             <div class="cart-item-info">
                 <div class="cart-item-title">${escapeHtml(item.title)}</div>
                 <div class="cart-item-price">${formatPrice(item.price)}</div>
@@ -427,19 +466,27 @@ function updateCartUI() {
 }
 
 function addToCart(serie) {
-    if (cart.some(item => item.id === serie.id)) {
+    if (!serie || cart.some(item => item.id === serie.id)) {
         showToast('Já está no carrinho!', 'error');
         return;
     }
     cart.push(serie);
-    localStorage.setItem('cart_series', JSON.stringify(cart));
+    try {
+        localStorage.setItem('cart_series', JSON.stringify(cart));
+    } catch (e) {
+        console.warn('localStorage não disponível');
+    }
     updateCartUI();
     showToast('Adicionado ao carrinho!', 'success');
 }
 
 function removeFromCart(id) {
     cart = cart.filter(item => item.id !== id);
-    localStorage.setItem('cart_series', JSON.stringify(cart));
+    try {
+        localStorage.setItem('cart_series', JSON.stringify(cart));
+    } catch (e) {
+        console.warn('localStorage não disponível');
+    }
     updateCartUI();
 }
 
@@ -458,10 +505,12 @@ function checkout() {
     showToast('Finalizando compra...', 'success');
     setTimeout(() => {
         cart = [];
-        localStorage.setItem('cart_series', JSON.stringify(cart));
+        try {
+            localStorage.setItem('cart_series', JSON.stringify(cart));
+        } catch (e) {}
         updateCartUI();
         toggleCart(false);
-        tg?.close();
+        if (tg && typeof tg.close === 'function') tg.close();
     }, 1500);
 }
 
@@ -471,7 +520,7 @@ function filterCategory(category) {
         renderGrid(allSeries);
     } else {
         const filtered = allSeries.filter(s => 
-            s.category && s.category.toLowerCase() === category
+            s.category?.toLowerCase() === category
         );
         renderGrid(filtered);
     }
@@ -483,7 +532,7 @@ function searchSeries(term) {
         return;
     }
     const filtered = allSeries.filter(s => 
-        s.title.toLowerCase().includes(term.toLowerCase())
+        s.title?.toLowerCase().includes(term.toLowerCase())
     );
     renderGrid(filtered);
 }
