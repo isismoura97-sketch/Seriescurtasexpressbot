@@ -1,6 +1,6 @@
 /**
  * Séries Curtas Express - Mini App Telegram
- * Versão 3.3 - Player Corrigido
+ * Versão 3.4 - Player Corrigido (404 Fix)
  */
 
 'use strict';
@@ -74,7 +74,11 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
         clearTimeout(timeoutId);
         console.log(`%c[DEBUG] Status: ${res.status}`, 'color: cyan');
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+            const errorText = await res.text().catch(() => '');
+            console.error(`%c[ERROR] HTTP ${res.status}: ${errorText}`, 'color: red');
+            throw new Error(`HTTP ${res.status}`);
+        }
 
         const data = await res.json();
         console.log('%c[DEBUG] Sucesso:', 'color: lime', data);
@@ -320,7 +324,7 @@ function createCard(serie, isNetflix = false) {
     return card;
 }
 
-// ==================== PLAYER - CORRIGIDO ====================
+// ==================== PLAYER - CORRIGIDO (404 FIX) ====================
 async function openPlayer(serieId, title) {
     playerRetryData = { id: serieId, title };
     DOM.playerOverlay.classList.add('active');
@@ -336,24 +340,29 @@ async function openPlayer(serieId, title) {
     DOM.mainVideo.removeAttribute('src');
 
     try {
-        const url = new URL(`${API_URL}/api/stream/${serieId}`);
+        // CORREÇÃO: Supabase Edge Functions usam query params, não path params
+        // A URL correta é: /functions/v1/bot-unificado?action=stream&serie_id=123&user_id=xxx
+        const url = new URL(API_URL);
+        url.searchParams.set('action', 'stream');
+        url.searchParams.set('serie_id', serieId);
         url.searchParams.set('user_id', userId);
+        
+        console.log(`%c[DEBUG] Stream URL: ${url.toString()}`, 'color: magenta');
+
         const data = await fetchWithTimeout(url.toString());
         
         if (data.url) {
-            // Usar setAttribute para garantir compatibilidade com WebViews
             DOM.mainVideo.setAttribute('src', data.url);
             DOM.mainVideo.style.display = 'block';
             
-            // Tentar reproduzir - em iOS pode falhar sem interação do usuário
             const playPromise = DOM.mainVideo.play();
             if (playPromise !== undefined) {
                 playPromise.catch(err => {
                     console.warn('Autoplay bloqueado:', err.name);
-                    // Em iOS/WebView, o vídeo precisa de interação do usuário
-                    // O controls nativo do <video> permite que o usuário toque para play
                 });
             }
+        } else if (data.error) {
+            throw new Error(data.error);
         } else {
             throw new Error('URL de vídeo não retornada');
         }
