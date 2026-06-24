@@ -1,6 +1,6 @@
 /**
  * Séries Curtas Express - Mini App Telegram
- * Versão 3.2 - Revisada e Corrigida
+ * Versão 3.3 - Player Corrigido
  */
 
 'use strict';
@@ -126,22 +126,18 @@ function showToast(message, type = 'info') {
 function getCoverUrl(serie) {
     if (!serie) return '';
     
-    // Prioridade 1: cover_url (URL pública direta)
     if (serie.cover_url && serie.cover_url !== 'null' && serie.cover_url !== null) {
         return serie.cover_url;
     }
     
-    // Prioridade 2: cover_storage_path (converter em URL pública do Supabase)
     if (serie.cover_storage_path && serie.cover_storage_path !== 'null') {
         return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${serie.cover_storage_path}`;
     }
     
-    // Prioridade 3: cover_path (fallback)
     if (serie.cover_path && serie.cover_path !== 'null') {
         return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${serie.cover_path}`;
     }
     
-    // Fallback: imagem placeholder
     return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
 }
 
@@ -324,7 +320,7 @@ function createCard(serie, isNetflix = false) {
     return card;
 }
 
-// ==================== PLAYER ====================
+// ==================== PLAYER - CORRIGIDO ====================
 async function openPlayer(serieId, title) {
     playerRetryData = { id: serieId, title };
     DOM.playerOverlay.classList.add('active');
@@ -334,22 +330,35 @@ async function openPlayer(serieId, title) {
     DOM.playerTitle.textContent = title || 'Reproduzir';
     DOM.watermarkId.textContent = userId;
 
+    // Reset do vídeo para evitar carregamento de URL antiga
+    DOM.mainVideo.pause();
+    DOM.mainVideo.src = '';
+    DOM.mainVideo.removeAttribute('src');
+
     try {
         const url = new URL(`${API_URL}/api/stream/${serieId}`);
         url.searchParams.set('user_id', userId);
         const data = await fetchWithTimeout(url.toString());
         
         if (data.url) {
-            DOM.mainVideo.src = data.url;
+            // Usar setAttribute para garantir compatibilidade com WebViews
+            DOM.mainVideo.setAttribute('src', data.url);
             DOM.mainVideo.style.display = 'block';
-            DOM.mainVideo.play().catch(() => {
-                console.warn('Autoplay bloqueado pelo navegador');
-            });
+            
+            // Tentar reproduzir - em iOS pode falhar sem interação do usuário
+            const playPromise = DOM.mainVideo.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(err => {
+                    console.warn('Autoplay bloqueado:', err.name);
+                    // Em iOS/WebView, o vídeo precisa de interação do usuário
+                    // O controls nativo do <video> permite que o usuário toque para play
+                });
+            }
         } else {
             throw new Error('URL de vídeo não retornada');
         }
     } catch (err) {
-        console.error(err);
+        console.error('[PLAYER ERROR]', err);
         showPlayerError();
     } finally {
         DOM.playerLoading.classList.remove('active');
@@ -369,6 +378,7 @@ function retryPlayer() {
 function closePlayer() {
     DOM.mainVideo.pause();
     DOM.mainVideo.src = '';
+    DOM.mainVideo.removeAttribute('src');
     DOM.playerOverlay.classList.remove('active');
     DOM.playerError.classList.remove('active');
     DOM.playerLoading.classList.remove('active');
@@ -405,7 +415,6 @@ function openModal(serie) {
 
 function closeModal() {
     DOM.modalOverlay.classList.remove('active');
-    // Só remove modal-open se o carrinho não estiver aberto
     if (!DOM.cartDrawer.classList.contains('active')) {
         document.body.classList.remove('modal-open');
     }
@@ -416,7 +425,6 @@ function toggleCart(open) {
     const isOpen = typeof open === 'boolean' ? open : !DOM.cartDrawer.classList.contains('active');
     DOM.cartOverlay.classList.toggle('active', isOpen);
     DOM.cartDrawer.classList.toggle('active', isOpen);
-    // Só gerencia modal-open se o modal NÃO estiver aberto
     if (!DOM.modalOverlay.classList.contains('active')) {
         document.body.classList.toggle('modal-open', isOpen);
     }
