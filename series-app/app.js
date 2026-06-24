@@ -289,4 +289,268 @@ function renderGrid(series) {
 
 function createCard(serie, isNetflix = false) {
     const card = document.createElement('div');
-    card.className = isNetflix ? 'netflix-card' : '
+    card.className = isNetflix ? 'netflix-card' : 'card';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', `Abrir ${serie.title || 'série'}`);
+
+    const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
+    const coverUrl = getCoverUrl(serie);
+    const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
+    
+    console.log(`[DEBUG] Card: ${serie.title} | Cover: ${coverUrl} | isFree: ${isFree}`);
+
+    card.innerHTML = `
+        ${isFree ? `<div class="badge-gratis-landscape"><i class="fas fa-gift"></i> GRÁTIS</div>` : ''}
+        <img src="${coverUrl}" alt="${escapeHtml(serie.title)}" loading="lazy" onerror="this.src='${placeholder}'">
+        <div class="${isNetflix ? 'netflix-info' : 'card-info'}">
+            <div class="${isNetflix ? 'netflix-title' : 'card-title'}">${escapeHtml(serie.title)}</div>
+        </div>
+    `;
+
+    const handleClick = () => isFree ? openPlayer(serie.id, serie.title) : openModal(serie);
+    card.addEventListener('click', handleClick);
+    card.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleClick();
+        }
+    });
+
+    return card;
+}
+
+// ==================== PLAYER - CORRIGIDO ====================
+async function openPlayer(serieId, title) {
+    playerRetryData = { id: serieId, title };
+    DOM.playerOverlay.classList.add('active');
+    DOM.playerLoading.classList.add('active');
+    DOM.playerError.classList.remove('active');
+    DOM.mainVideo.style.display = 'none';
+    DOM.playerTitle.textContent = title || 'Reproduzir';
+    DOM.watermarkId.textContent = userId;
+
+    // Reset do vídeo para evitar carregamento de URL antiga
+    DOM.mainVideo.pause();
+    DOM.mainVideo.src = '';
+    DOM.mainVideo.removeAttribute('src');
+
+    try {
+        const url = new URL(`${API_URL}/api/stream/${serieId}`);
+        url.searchParams.set('user_id', userId);
+        const data = await fetchWithTimeout(url.toString());
+        
+        if (data.url) {
+            // Usar setAttribute para garantir compatibilidade com WebViews
+            DOM.mainVideo.setAttribute('src', data.url);
+            DOM.mainVideo.style.display = 'block';
+            
+            // Tentar reproduzir - em iOS pode falhar sem interação do usuário
+            const playPromise = DOM.mainVideo.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(err => {
+                    console.warn('Autoplay bloqueado:', err.name);
+                    // Em iOS/WebView, o vídeo precisa de interação do usuário
+                    // O controls nativo do <video> permite que o usuário toque para play
+                });
+            }
+        } else {
+            throw new Error('URL de vídeo não retornada');
+        }
+    } catch (err) {
+        console.error('[PLAYER ERROR]', err);
+        showPlayerError();
+    } finally {
+        DOM.playerLoading.classList.remove('active');
+    }
+}
+
+function showPlayerError() {
+    DOM.playerLoading.classList.remove('active');
+    DOM.mainVideo.style.display = 'none';
+    DOM.playerError.classList.add('active');
+}
+
+function retryPlayer() {
+    if (playerRetryData) openPlayer(playerRetryData.id, playerRetryData.title);
+}
+
+function closePlayer() {
+    DOM.mainVideo.pause();
+    DOM.mainVideo.src = '';
+    DOM.mainVideo.removeAttribute('src');
+    DOM.playerOverlay.classList.remove('active');
+    DOM.playerError.classList.remove('active');
+    DOM.playerLoading.classList.remove('active');
+}
+
+// ==================== MODAL ====================
+function openModal(serie) {
+    if (!serie) return;
+    DOM.modalImg.src = getCoverUrl(serie);
+    DOM.modalTitle.textContent = serie.title || 'Série';
+    DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
+    
+    const isFree = Number(serie.price) === 0;
+    DOM.modalPrice.innerHTML = isFree 
+        ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
+        : `<span>${formatPrice(serie.price)}</span>`;
+
+    DOM.modalActions.innerHTML = '';
+    const btn = document.createElement('button');
+    btn.className = isFree ? 'btn btn-free' : 'btn btn-primary';
+    btn.innerHTML = isFree 
+        ? '<i class="fas fa-play"></i> ASSISTIR AGORA'
+        : '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
+    
+    btn.onclick = () => {
+        if (isFree) { closeModal(); openPlayer(serie.id, serie.title); }
+        else { addToCart(serie); closeModal(); }
+    };
+    
+    DOM.modalActions.appendChild(btn);
+    DOM.modalOverlay.classList.add('active');
+    document.body.classList.add('modal-open');
+}
+
+function closeModal() {
+    DOM.modalOverlay.classList.remove('active');
+    if (!DOM.cartDrawer.classList.contains('active')) {
+        document.body.classList.remove('modal-open');
+    }
+}
+
+// ==================== CARRINHO ====================
+function toggleCart(open) {
+    const isOpen = typeof open === 'boolean' ? open : !DOM.cartDrawer.classList.contains('active');
+    DOM.cartOverlay.classList.toggle('active', isOpen);
+    DOM.cartDrawer.classList.toggle('active', isOpen);
+    if (!DOM.modalOverlay.classList.contains('active')) {
+        document.body.classList.toggle('modal-open', isOpen);
+    }
+    if (isOpen) updateCartUI();
+}
+
+function updateCartUI() {
+    const container = DOM.cartItems;
+    let total = 0;
+
+    DOM.cartBadge.textContent = cart.length;
+    DOM.cartBadge.style.display = cart.length > 0 ? 'flex' : 'none';
+
+    if (!container) return;
+
+    if (cart.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center; padding:60px 20px; color:var(--gray);">
+                <i class="fas fa-shopping-basket" style="font-size:48px; opacity:0.3; margin-bottom:16px"></i>
+                <p>Seu carrinho está vazio</p>
+            </div>`;
+        DOM.cartTotal.textContent = 'R$ 0,00';
+        return;
+    }
+
+    const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
+    container.innerHTML = '';
+    cart.forEach(item => {
+        total += parseFloat(item.price) || 0;
+        const div = document.createElement('div');
+        div.className = 'cart-item';
+        div.innerHTML = `
+            <img src="${getCoverUrl(item)}" alt="${escapeHtml(item.title)}" onerror="this.src='${placeholder}'">
+            <div class="cart-item-info">
+                <div class="cart-item-title">${escapeHtml(item.title)}</div>
+                <div class="cart-item-price">${formatPrice(item.price)}</div>
+            </div>
+            <button class="cart-item-remove" aria-label="Remover">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+        div.querySelector('.cart-item-remove').addEventListener('click', () => removeFromCart(item.id));
+        container.appendChild(div);
+    });
+
+    DOM.cartTotal.textContent = formatPrice(total);
+}
+
+function addToCart(serie) {
+    if (!serie || cart.some(item => item.id === serie.id)) {
+        showToast('Já está no carrinho!', 'error');
+        return;
+    }
+    cart.push(serie);
+    try {
+        localStorage.setItem('cart_series', JSON.stringify(cart));
+    } catch (e) {
+        console.warn('localStorage não disponível');
+    }
+    updateCartUI();
+    showToast('Adicionado ao carrinho!', 'success');
+}
+
+function removeFromCart(id) {
+    cart = cart.filter(item => item.id !== id);
+    try {
+        localStorage.setItem('cart_series', JSON.stringify(cart));
+    } catch (e) {
+        console.warn('localStorage não disponível');
+    }
+    updateCartUI();
+}
+
+function checkout() {
+    if (!cart.length) return showToast('Carrinho vazio!', 'error');
+
+    const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+    
+    tg?.sendData(JSON.stringify({
+        action: 'checkout_cart',
+        items: cart,
+        total: total,
+        user_id: userId
+    }));
+
+    showToast('Finalizando compra...', 'success');
+    setTimeout(() => {
+        cart = [];
+        try {
+            localStorage.setItem('cart_series', JSON.stringify(cart));
+        } catch (e) {}
+        updateCartUI();
+        toggleCart(false);
+        if (tg && typeof tg.close === 'function') tg.close();
+    }, 1500);
+}
+
+// ==================== FILTROS ====================
+function filterCategory(category) {
+    if (category === 'all') {
+        renderGrid(allSeries);
+    } else {
+        const filtered = allSeries.filter(s => 
+            s.category?.toLowerCase() === category
+        );
+        renderGrid(filtered);
+    }
+}
+
+function searchSeries(term) {
+    if (!term) {
+        renderGrid(allSeries);
+        return;
+    }
+    const filtered = allSeries.filter(s => 
+        s.title?.toLowerCase().includes(term.toLowerCase())
+    );
+    renderGrid(filtered);
+}
+
+// ==================== EXPORT GLOBAL ====================
+window.retryPlayer = retryPlayer;
+window.toggleCart = toggleCart;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.checkout = checkout;
+window.searchSeries = searchSeries;
+
+console.log('%c[DEBUG] app.js finalizado', 'color: lime');
