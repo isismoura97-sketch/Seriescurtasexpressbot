@@ -78,6 +78,9 @@ function sanitizeUrl(url) {
     return '';
 }
 
+// Utility functions from utils.js: formatPrice, escapeHtml, isFreePrice,
+// filterByCategory, searchByTitle, calculateCartTotal, canAddToCart
+
 async function fetchWithTimeout(url, options = {}, timeout = 15000) {
     debugLog(`[FETCH] ${url}`);
 
@@ -109,19 +112,6 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
         showToast('Erro de conexão', 'error');
         throw err;
     }
-}
-
-function formatPrice(price) {
-    const numPrice = Number(price);
-    if (numPrice === 0 || price === null || price === undefined || isNaN(numPrice)) return 'GRÁTIS';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numPrice);
-}
-
-function escapeHtml(text) {
-    if (text == null) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 function showToast(message, type = 'info') {
@@ -274,7 +264,7 @@ function updateHero(index) {
     DOM.heroImg.src = getCoverUrl(serie);
     DOM.heroImg.alt = serie.title || '';
 
-    const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
+    const isFree = isFreePrice(serie.price);
     DOM.heroBadge.className = isFree ? 'hero-badge-free' : 'hero-badge';
     DOM.heroBadge.innerHTML = isFree 
         ? '<i class="fas fa-gift"></i> GRÁTIS' 
@@ -316,7 +306,7 @@ function createCard(serie, isNetflix = false) {
     card.setAttribute('role', 'button');
     card.setAttribute('aria-label', `Abrir ${serie.title || 'série'}`);
 
-    const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
+    const isFree = isFreePrice(serie.price);
     const coverUrl = getCoverUrl(serie);
 
     if (isFree) {
@@ -427,7 +417,7 @@ function openModal(serie) {
     DOM.modalTitle.textContent = serie.title || 'Série';
     DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
     
-    const isFree = Number(serie.price) === 0;
+    const isFree = isFreePrice(serie.price);
     DOM.modalPrice.innerHTML = isFree 
         ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
         : `<span>${formatPrice(serie.price)}</span>`;
@@ -523,7 +513,7 @@ function updateCartUI() {
 }
 
 function addToCart(serie) {
-    if (!serie || cart.some(item => item.id === serie.id)) {
+    if (!canAddToCart(cart, serie)) {
         showToast('Já está no carrinho!', 'error');
         return;
     }
@@ -550,7 +540,7 @@ function removeFromCart(id) {
 function checkout() {
     if (!cart.length) return showToast('Carrinho vazio!', 'error');
 
-    const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+    const total = calculateCartTotal(cart);
     
     tg?.sendData(JSON.stringify({
         action: 'checkout_cart',
@@ -573,25 +563,11 @@ function checkout() {
 
 // ==================== FILTROS ====================
 function filterCategory(category) {
-    if (category === 'all') {
-        renderGrid(allSeries);
-    } else {
-        const filtered = allSeries.filter(s => 
-            s.category?.toLowerCase() === category
-        );
-        renderGrid(filtered);
-    }
+    renderGrid(filterByCategory(allSeries, category));
 }
 
 function searchSeries(term) {
-    if (!term) {
-        renderGrid(allSeries);
-        return;
-    }
-    const filtered = allSeries.filter(s => 
-        s.title?.toLowerCase().includes(term.toLowerCase())
-    );
-    renderGrid(filtered);
+    renderGrid(searchByTitle(allSeries, term));
 }
 
 // ==================== EXPORT GLOBAL ====================
