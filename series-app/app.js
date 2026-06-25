@@ -5,13 +5,19 @@
 
 'use strict';
 
-console.log('%c[DEBUG] app.js carregado', 'color: #FFD700; font-weight: bold');
-
 // ==================== CONFIGURAÇÃO ====================
+const DEBUG = false;
 const tg = window.Telegram?.WebApp;
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
 const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
-const userId = tg?.initDataUnsafe?.user?.id || 'anonymous';
+
+function sanitizeUserId(raw) {
+    if (raw == null) return null;
+    const str = String(raw);
+    if (/^\d{1,20}$/.test(str)) return str;
+    return null;
+}
+const userId = sanitizeUserId(tg?.initDataUnsafe?.user?.id);
 
 let allSeries = [];
 let cart = [];
@@ -58,8 +64,22 @@ const DOM = {
 };
 
 // ==================== UTILITÁRIOS ====================
+function debugLog(...args) {
+    if (DEBUG) console.log(...args);
+}
+
+function sanitizeUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return url;
+    } catch (_) {}
+    if (url.startsWith('data:image/')) return url;
+    return '';
+}
+
 async function fetchWithTimeout(url, options = {}, timeout = 15000) {
-    console.log(`%c[DEBUG] Fetching: ${url}`, 'color: orange');
+    debugLog(`[FETCH] ${url}`);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -72,17 +92,13 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
         });
 
         clearTimeout(timeoutId);
-        console.log(`%c[DEBUG] Status: ${res.status}`, 'color: cyan');
 
         if (!res.ok) {
-            const errorText = await res.text().catch(() => '');
-            console.error(`%c[ERROR] HTTP ${res.status}: ${errorText}`, 'color: red');
+            await res.text().catch(() => '');
             throw new Error(`HTTP ${res.status}`);
         }
 
-        const data = await res.json();
-        console.log('%c[DEBUG] Sucesso:', 'color: lime', data);
-        return data;
+        return await res.json();
 
     } catch (err) {
         clearTimeout(timeoutId);
@@ -90,8 +106,7 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
             showToast('Tempo de conexão esgotado', 'error');
             throw new Error('Timeout');
         }
-        console.error('%c[ERROR]', 'color: red; font-weight: bold', err.message);
-        showToast('Erro de conexão: ' + err.message, 'error');
+        showToast('Erro de conexão', 'error');
         throw err;
     }
 }
@@ -126,29 +141,27 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
+const PLACEHOLDER_IMG = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
+
 // ==================== FUNÇÃO CRÍTICA: OBTER URL DA CAPA ====================
 function getCoverUrl(serie) {
-    if (!serie) return '';
+    if (!serie) return PLACEHOLDER_IMG;
     
+    let raw = null;
     if (serie.cover_url && serie.cover_url !== 'null' && serie.cover_url !== null) {
-        return serie.cover_url;
+        raw = serie.cover_url;
+    } else if (serie.cover_storage_path && serie.cover_storage_path !== 'null') {
+        raw = `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${encodeURI(serie.cover_storage_path)}`;
+    } else if (serie.cover_path && serie.cover_path !== 'null') {
+        raw = `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${encodeURI(serie.cover_path)}`;
     }
     
-    if (serie.cover_storage_path && serie.cover_storage_path !== 'null') {
-        return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${serie.cover_storage_path}`;
-    }
-    
-    if (serie.cover_path && serie.cover_path !== 'null') {
-        return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${serie.cover_path}`;
-    }
-    
-    return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
+    const safe = raw ? sanitizeUrl(raw) : '';
+    return safe || PLACEHOLDER_IMG;
 }
 
 // ==================== INICIALIZAÇÃO ====================
 async function init() {
-    console.log('%c[DEBUG] Inicializando app', 'color: #FFD700');
-
     if (tg) {
         tg.ready();
         tg.expand();
@@ -156,17 +169,22 @@ async function init() {
 
     applyTheme();
 
+    if (!userId) {
+        if (DOM.heroTitle) DOM.heroTitle.textContent = 'Acesso Negado';
+        if (DOM.heroDesc) DOM.heroDesc.textContent = 'Abra este app pelo Telegram.';
+        return;
+    }
+
     try {
         const data = await fetchWithTimeout(`${API_URL}/api/series`);
         allSeries = Array.isArray(data) ? data : [];
-        console.log(`[DEBUG] ${allSeries.length} séries carregadas`);
+        debugLog(`[INIT] ${allSeries.length} séries carregadas`);
 
         renderNetflixRow(allSeries);
         renderGrid(allSeries);
         initHero();
         updateCartUI();
     } catch (err) {
-        console.error('[DEBUG] Falha no carregamento:', err);
         if (DOM.heroTitle) DOM.heroTitle.textContent = "Erro de Conexão";
         if (DOM.heroDesc) DOM.heroDesc.textContent = "Não foi possível carregar o catálogo.";
     }
@@ -300,17 +318,28 @@ function createCard(serie, isNetflix = false) {
 
     const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
     const coverUrl = getCoverUrl(serie);
-    const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
-    
-    console.log(`[DEBUG] Card: ${serie.title} | Cover: ${coverUrl} | isFree: ${isFree}`);
 
-    card.innerHTML = `
-        ${isFree ? `<div class="badge-gratis-landscape"><i class="fas fa-gift"></i> GRÁTIS</div>` : ''}
-        <img src="${coverUrl}" alt="${escapeHtml(serie.title)}" loading="lazy" onerror="this.src='${placeholder}'">
-        <div class="${isNetflix ? 'netflix-info' : 'card-info'}">
-            <div class="${isNetflix ? 'netflix-title' : 'card-title'}">${escapeHtml(serie.title)}</div>
-        </div>
-    `;
+    if (isFree) {
+        const badge = document.createElement('div');
+        badge.className = 'badge-gratis-landscape';
+        badge.innerHTML = '<i class="fas fa-gift"></i> GRÁTIS';
+        card.appendChild(badge);
+    }
+
+    const img = document.createElement('img');
+    img.src = coverUrl;
+    img.alt = serie.title || '';
+    img.loading = 'lazy';
+    img.onerror = function() { this.src = PLACEHOLDER_IMG; };
+    card.appendChild(img);
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = isNetflix ? 'netflix-info' : 'card-info';
+    const titleDiv = document.createElement('div');
+    titleDiv.className = isNetflix ? 'netflix-title' : 'card-title';
+    titleDiv.textContent = serie.title || '';
+    infoDiv.appendChild(titleDiv);
+    card.appendChild(infoDiv);
 
     const handleClick = () => isFree ? openPlayer(serie.id, serie.title) : openModal(serie);
     card.addEventListener('click', handleClick);
@@ -332,7 +361,7 @@ async function openPlayer(serieId, title) {
     DOM.playerError.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
     DOM.playerTitle.textContent = title || 'Reproduzir';
-    DOM.watermarkId.textContent = userId;
+    DOM.watermarkId.textContent = userId || '---';
 
     // Reset do vídeo para evitar carregamento de URL antiga
     DOM.mainVideo.pause();
@@ -340,19 +369,17 @@ async function openPlayer(serieId, title) {
     DOM.mainVideo.removeAttribute('src');
 
     try {
-        // CORREÇÃO: Supabase Edge Functions usam query params, não path params
-        // A URL correta é: /functions/v1/bot-unificado?action=stream&serie_id=123&user_id=xxx
         const url = new URL(API_URL);
         url.searchParams.set('action', 'stream');
         url.searchParams.set('serie_id', serieId);
         url.searchParams.set('user_id', userId);
-        
-        console.log(`%c[DEBUG] Stream URL: ${url.toString()}`, 'color: magenta');
 
         const data = await fetchWithTimeout(url.toString());
         
         if (data.url) {
-            DOM.mainVideo.setAttribute('src', data.url);
+            const safeVideoUrl = sanitizeUrl(data.url);
+            if (!safeVideoUrl) throw new Error('URL de vídeo inválida');
+            DOM.mainVideo.setAttribute('src', safeVideoUrl);
             DOM.mainVideo.style.display = 'block';
             
             const playPromise = DOM.mainVideo.play();
@@ -367,7 +394,7 @@ async function openPlayer(serieId, title) {
             throw new Error('URL de vídeo não retornada');
         }
     } catch (err) {
-        console.error('[PLAYER ERROR]', err);
+    
         showPlayerError();
     } finally {
         DOM.playerLoading.classList.remove('active');
@@ -459,23 +486,36 @@ function updateCartUI() {
         return;
     }
 
-    const placeholder = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
     container.innerHTML = '';
     cart.forEach(item => {
         total += parseFloat(item.price) || 0;
         const div = document.createElement('div');
         div.className = 'cart-item';
-        div.innerHTML = `
-            <img src="${getCoverUrl(item)}" alt="${escapeHtml(item.title)}" onerror="this.src='${placeholder}'">
-            <div class="cart-item-info">
-                <div class="cart-item-title">${escapeHtml(item.title)}</div>
-                <div class="cart-item-price">${formatPrice(item.price)}</div>
-            </div>
-            <button class="cart-item-remove" aria-label="Remover">
-                <i class="fas fa-trash"></i>
-            </button>
-        `;
-        div.querySelector('.cart-item-remove').addEventListener('click', () => removeFromCart(item.id));
+
+        const cartImg = document.createElement('img');
+        cartImg.src = getCoverUrl(item);
+        cartImg.alt = item.title || '';
+        cartImg.onerror = function() { this.src = PLACEHOLDER_IMG; };
+        div.appendChild(cartImg);
+
+        const info = document.createElement('div');
+        info.className = 'cart-item-info';
+        const titleDiv = document.createElement('div');
+        titleDiv.className = 'cart-item-title';
+        titleDiv.textContent = item.title || '';
+        const priceDiv = document.createElement('div');
+        priceDiv.className = 'cart-item-price';
+        priceDiv.textContent = formatPrice(item.price);
+        info.appendChild(titleDiv);
+        info.appendChild(priceDiv);
+        div.appendChild(info);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'cart-item-remove';
+        removeBtn.setAttribute('aria-label', 'Remover');
+        removeBtn.innerHTML = '<i class="fas fa-trash"></i>';
+        div.appendChild(removeBtn);
+        removeBtn.addEventListener('click', () => removeFromCart(item.id));
         container.appendChild(div);
     });
 
@@ -562,4 +602,4 @@ window.closeModal = closeModal;
 window.checkout = checkout;
 window.searchSeries = searchSeries;
 
-console.log('%c[DEBUG] app.js finalizado', 'color: lime');
+
