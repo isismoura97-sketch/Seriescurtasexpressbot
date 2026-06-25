@@ -32,6 +32,38 @@ let currentHeroIndex = 0;
 let heroInterval = null;
 let playerRetryData = null;
 
+// ==================== SHARED UTILITIES ====================
+const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
+
+function isFree(serie) {
+    const price = Number(serie.price);
+    return price === 0 || serie.price === null || serie.price === undefined;
+}
+
+function saveCart(context = 'CART') {
+    try {
+        localStorage.setItem('cart_series', JSON.stringify(cart));
+        return true;
+    } catch (e) {
+        console.warn(`[${context}] Falha ao salvar carrinho no localStorage:`, e.message);
+        return false;
+    }
+}
+
+function resetVideo() {
+    DOM.mainVideo.pause();
+    DOM.mainVideo.src = '';
+    DOM.mainVideo.removeAttribute('src');
+}
+
+function handleSeriesClick(serie) {
+    if (isFree(serie)) {
+        openPlayer(serie.id, serie.title);
+    } else {
+        openModal(serie);
+    }
+}
+
 // ==================== CACHE DOM ====================
 const DOM = {
     playerOverlay: document.getElementById('playerOverlay'),
@@ -113,9 +145,8 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
 }
 
 function formatPrice(price) {
-    const numPrice = Number(price);
-    if (numPrice === 0 || price === null || price === undefined || isNaN(numPrice)) return 'GRÁTIS';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numPrice);
+    if (isFree({ price }) || isNaN(Number(price))) return 'GRÁTIS';
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(price));
 }
 
 function escapeHtml(text) {
@@ -142,11 +173,9 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
-const PLACEHOLDER_IMG = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
-
 // ==================== FUNÇÃO CRÍTICA: OBTER URL DA CAPA ====================
 function getCoverUrl(serie) {
-    if (!serie) return PLACEHOLDER_IMG;
+    if (!serie) return PLACEHOLDER_IMAGE;
     
     let raw = null;
     if (serie.cover_url && serie.cover_url !== 'null' && serie.cover_url !== null) {
@@ -158,7 +187,7 @@ function getCoverUrl(serie) {
     }
     
     const safe = raw ? sanitizeUrl(raw) : '';
-    return safe || PLACEHOLDER_IMG;
+    return safe || PLACEHOLDER_IMAGE;
 }
 
 // ==================== INICIALIZAÇÃO ====================
@@ -284,14 +313,14 @@ function updateHero(index) {
     DOM.heroImg.src = getCoverUrl(serie);
     DOM.heroImg.alt = serie.title || '';
 
-    const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
-    DOM.heroBadge.className = isFree ? 'hero-badge-free' : 'hero-badge';
-    DOM.heroBadge.innerHTML = isFree 
+    const free = isFree(serie);
+    DOM.heroBadge.className = free ? 'hero-badge-free' : 'hero-badge';
+    DOM.heroBadge.innerHTML = free 
         ? '<i class="fas fa-gift"></i> GRÁTIS' 
         : '<i class="fas fa-fire"></i> Destaque da Semana';
 
     DOM.heroPlayBtn.style.display = 'inline-flex';
-    DOM.heroPlayBtn.onclick = () => isFree ? openPlayer(serie.id, serie.title) : openModal(serie);
+    DOM.heroPlayBtn.onclick = () => handleSeriesClick(serie);
 }
 
 // ==================== RENDERIZAÇÃO ====================
@@ -326,10 +355,10 @@ function createCard(serie, isNetflix = false) {
     card.setAttribute('role', 'button');
     card.setAttribute('aria-label', `Abrir ${serie.title || 'série'}`);
 
-    const isFree = Number(serie.price) === 0 || serie.price === null || serie.price === undefined;
+    const free = isFree(serie);
     const coverUrl = getCoverUrl(serie);
 
-    if (isFree) {
+    if (free) {
         const badge = document.createElement('div');
         badge.className = 'badge-gratis-landscape';
         badge.innerHTML = '<i class="fas fa-gift"></i> GRÁTIS';
@@ -340,7 +369,7 @@ function createCard(serie, isNetflix = false) {
     img.src = coverUrl;
     img.alt = serie.title || '';
     img.loading = 'lazy';
-    img.onerror = function() { this.src = PLACEHOLDER_IMG; };
+    img.onerror = function() { this.src = PLACEHOLDER_IMAGE; };
     card.appendChild(img);
 
     const infoDiv = document.createElement('div');
@@ -351,12 +380,11 @@ function createCard(serie, isNetflix = false) {
     infoDiv.appendChild(titleDiv);
     card.appendChild(infoDiv);
 
-    const handleClick = () => isFree ? openPlayer(serie.id, serie.title) : openModal(serie);
-    card.addEventListener('click', handleClick);
+    card.addEventListener('click', () => handleSeriesClick(serie));
     card.addEventListener('keydown', e => {
         if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            handleClick();
+            handleSeriesClick(serie);
         }
     });
 
@@ -379,10 +407,7 @@ async function openPlayer(serieId, title) {
     if (DOM.playerTitle) DOM.playerTitle.textContent = title || 'Reproduzir';
     if (DOM.watermarkId) DOM.watermarkId.textContent = userId || '---';
 
-    // Reset do vídeo para evitar carregamento de URL antiga
-    DOM.mainVideo.pause();
-    DOM.mainVideo.src = '';
-    DOM.mainVideo.removeAttribute('src');
+    resetVideo();
 
     try {
         const url = new URL(API_URL);
@@ -429,9 +454,7 @@ function retryPlayer() {
 }
 
 function closePlayer() {
-    DOM.mainVideo.pause();
-    DOM.mainVideo.src = '';
-    DOM.mainVideo.removeAttribute('src');
+    resetVideo();
     DOM.playerOverlay.classList.remove('active');
     DOM.playerError.classList.remove('active');
     DOM.playerLoading.classList.remove('active');
@@ -449,21 +472,22 @@ function openModal(serie) {
     DOM.modalTitle.textContent = serie.title || 'Série';
     DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
     
-    const isFree = Number(serie.price) === 0;
-    DOM.modalPrice.innerHTML = isFree 
+    const free = isFree(serie);
+    DOM.modalPrice.innerHTML = free 
         ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
         : `<span>${formatPrice(serie.price)}</span>`;
 
     DOM.modalActions.innerHTML = '';
     const btn = document.createElement('button');
-    btn.className = isFree ? 'btn btn-free' : 'btn btn-primary';
-    btn.innerHTML = isFree 
+    btn.className = free ? 'btn btn-free' : 'btn btn-primary';
+    btn.innerHTML = free 
         ? '<i class="fas fa-play"></i> ASSISTIR AGORA'
         : '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
     
     btn.onclick = () => {
-        if (isFree) { closeModal(); openPlayer(serie.id, serie.title); }
-        else { addToCart(serie); closeModal(); }
+        closeModal();
+        if (free) { openPlayer(serie.id, serie.title); }
+        else { addToCart(serie); }
     };
     
     DOM.modalActions.appendChild(btn);
@@ -523,7 +547,7 @@ function updateCartUI() {
         const cartImg = document.createElement('img');
         cartImg.src = getCoverUrl(item);
         cartImg.alt = item.title || '';
-        cartImg.onerror = function() { this.src = PLACEHOLDER_IMG; };
+        cartImg.onerror = function() { this.src = PLACEHOLDER_IMAGE; };
         div.appendChild(cartImg);
 
         const info = document.createElement('div');
@@ -556,10 +580,7 @@ function addToCart(serie) {
         return;
     }
     cart.push(serie);
-    try {
-        localStorage.setItem('cart_series', JSON.stringify(cart));
-    } catch (e) {
-        console.warn('[CART] Falha ao salvar carrinho no localStorage:', e.message);
+    if (!saveCart()) {
         showToast('Item adicionado, mas não será salvo entre sessões', 'error');
     }
     updateCartUI();
@@ -568,11 +589,7 @@ function addToCart(serie) {
 
 function removeFromCart(id) {
     cart = cart.filter(item => item.id !== id);
-    try {
-        localStorage.setItem('cart_series', JSON.stringify(cart));
-    } catch (e) {
-        console.warn('[CART] Falha ao atualizar carrinho no localStorage:', e.message);
-    }
+    saveCart();
     updateCartUI();
 }
 
@@ -600,11 +617,7 @@ function checkout() {
     showToast('Finalizando compra...', 'success');
     setTimeout(() => {
         cart = [];
-        try {
-            localStorage.setItem('cart_series', JSON.stringify(cart));
-        } catch (e) {
-            console.warn('[CHECKOUT] Falha ao limpar carrinho no localStorage:', e.message);
-        }
+        saveCart('CHECKOUT');
         updateCartUI();
         toggleCart(false);
         if (tg && typeof tg.close === 'function') tg.close();
