@@ -10,7 +10,7 @@ console.log('%c[DEBUG] app.js carregado', 'color: #FFD700; font-weight: bold');
 // ==================== CONFIGURAÇÃO ====================
 const tg = window.Telegram?.WebApp;
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
-const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
+// SUPABASE_PROJECT_URL is defined in utils.js
 const userId = tg?.initDataUnsafe?.user?.id || 'anonymous';
 
 let allSeries = [];
@@ -58,6 +58,9 @@ const DOM = {
 };
 
 // ==================== UTILITÁRIOS ====================
+// formatPrice, escapeHtml, getCoverUrl, isFreePrice, filterByCategory,
+// searchByTitle, calculateCartTotal, canAddToCart are defined in utils.js
+
 async function fetchWithTimeout(url, options = {}, timeout = 15000) {
     console.log(`%c[DEBUG] Fetching: ${url}`, 'color: orange');
 
@@ -96,19 +99,6 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
     }
 }
 
-function formatPrice(price) {
-    const numPrice = Number(price);
-    if (numPrice === 0 || price === null || price === undefined || isNaN(numPrice)) return 'GRÁTIS';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(numPrice);
-}
-
-function escapeHtml(text) {
-    if (text == null) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
 function showToast(message, type = 'info') {
     const container = DOM.toastContainer;
     if (!container) return;
@@ -126,24 +116,7 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
-// ==================== FUNÇÃO CRÍTICA: OBTER URL DA CAPA ====================
-function getCoverUrl(serie) {
-    if (!serie) return '';
-    
-    if (serie.cover_url && serie.cover_url !== 'null' && serie.cover_url !== null) {
-        return serie.cover_url;
-    }
-    
-    if (serie.cover_storage_path && serie.cover_storage_path !== 'null') {
-        return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${serie.cover_storage_path}`;
-    }
-    
-    if (serie.cover_path && serie.cover_path !== 'null') {
-        return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${serie.cover_path}`;
-    }
-    
-    return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
-}
+// getCoverUrl is defined in utils.js
 
 // ==================== INICIALIZAÇÃO ====================
 async function init() {
@@ -533,25 +506,11 @@ function checkout() {
 
 // ==================== FILTROS ====================
 function filterCategory(category) {
-    if (category === 'all') {
-        renderGrid(allSeries);
-    } else {
-        const filtered = allSeries.filter(s => 
-            s.category?.toLowerCase() === category
-        );
-        renderGrid(filtered);
-    }
+    renderGrid(filterByCategory(allSeries, category));
 }
 
 function searchSeries(term) {
-    if (!term) {
-        renderGrid(allSeries);
-        return;
-    }
-    const filtered = allSeries.filter(s => 
-        s.title?.toLowerCase().includes(term.toLowerCase())
-    );
-    renderGrid(filtered);
+    renderGrid(searchByTitle(allSeries, term));
 }
 
 // ==================== EXPORT GLOBAL ====================
