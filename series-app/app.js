@@ -24,6 +24,7 @@ let cart = [];
 try {
     cart = JSON.parse(localStorage.getItem('cart_series')) || [];
 } catch (e) {
+    console.warn('[CART] Falha ao restaurar carrinho do localStorage:', e.message);
     cart = [];
 }
 
@@ -240,7 +241,12 @@ function setupEventListeners() {
 
 // ==================== TEMA ====================
 function applyTheme() {
-    const isLight = localStorage.getItem('theme_series') === 'light';
+    let isLight = false;
+    try {
+        isLight = localStorage.getItem('theme_series') === 'light';
+    } catch (e) {
+        console.warn('[THEME] Falha ao ler tema do localStorage:', e.message);
+    }
     document.body.classList.toggle('light-mode', isLight);
     if (DOM.themeIcon) {
         DOM.themeIcon.className = isLight ? 'fas fa-sun' : 'fas fa-moon';
@@ -249,7 +255,11 @@ function applyTheme() {
 
 function toggleTheme() {
     const isLight = document.body.classList.toggle('light-mode');
-    localStorage.setItem('theme_series', isLight ? 'light' : 'dark');
+    try {
+        localStorage.setItem('theme_series', isLight ? 'light' : 'dark');
+    } catch (e) {
+        console.warn('[THEME] Falha ao salvar tema no localStorage:', e.message);
+    }
     applyTheme();
     showToast(isLight ? 'Tema Claro ativado' : 'Tema Escuro ativado', 'success');
 }
@@ -355,13 +365,19 @@ function createCard(serie, isNetflix = false) {
 
 // ==================== PLAYER - CORRIGIDO (404 FIX) ====================
 async function openPlayer(serieId, title) {
+    if (!DOM.playerOverlay || !DOM.mainVideo || !DOM.playerLoading || !DOM.playerError) {
+        console.error('[PLAYER] Elementos DOM do player não encontrados');
+        showToast('Erro interno: player indisponível', 'error');
+        return;
+    }
+
     playerRetryData = { id: serieId, title };
     DOM.playerOverlay.classList.add('active');
     DOM.playerLoading.classList.add('active');
     DOM.playerError.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
-    DOM.playerTitle.textContent = title || 'Reproduzir';
-    DOM.watermarkId.textContent = userId || '---';
+    if (DOM.playerTitle) DOM.playerTitle.textContent = title || 'Reproduzir';
+    if (DOM.watermarkId) DOM.watermarkId.textContent = userId || '---';
 
     // Reset do vídeo para evitar carregamento de URL antiga
     DOM.mainVideo.pause();
@@ -385,7 +401,8 @@ async function openPlayer(serieId, title) {
             const playPromise = DOM.mainVideo.play();
             if (playPromise !== undefined) {
                 playPromise.catch(err => {
-                    console.warn('Autoplay bloqueado:', err.name);
+                    console.warn('[PLAYER] Autoplay bloqueado:', err.name);
+                    showToast('Toque no vídeo para reproduzir', 'info');
                 });
             }
         } else if (data.error) {
@@ -423,6 +440,11 @@ function closePlayer() {
 // ==================== MODAL ====================
 function openModal(serie) {
     if (!serie) return;
+    if (!DOM.modalOverlay || !DOM.modalImg || !DOM.modalTitle || !DOM.modalDesc || !DOM.modalPrice || !DOM.modalActions) {
+        console.error('[MODAL] Elementos DOM do modal não encontrados');
+        showToast('Erro interno: modal indisponível', 'error');
+        return;
+    }
     DOM.modalImg.src = getCoverUrl(serie);
     DOM.modalTitle.textContent = serie.title || 'Série';
     DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
@@ -450,18 +472,22 @@ function openModal(serie) {
 }
 
 function closeModal() {
-    DOM.modalOverlay.classList.remove('active');
-    if (!DOM.cartDrawer.classList.contains('active')) {
+    DOM.modalOverlay?.classList.remove('active');
+    if (!DOM.cartDrawer?.classList.contains('active')) {
         document.body.classList.remove('modal-open');
     }
 }
 
 // ==================== CARRINHO ====================
 function toggleCart(open) {
+    if (!DOM.cartDrawer || !DOM.cartOverlay) {
+        console.error('[CART] Elementos DOM do carrinho não encontrados');
+        return;
+    }
     const isOpen = typeof open === 'boolean' ? open : !DOM.cartDrawer.classList.contains('active');
     DOM.cartOverlay.classList.toggle('active', isOpen);
     DOM.cartDrawer.classList.toggle('active', isOpen);
-    if (!DOM.modalOverlay.classList.contains('active')) {
+    if (!DOM.modalOverlay?.classList.contains('active')) {
         document.body.classList.toggle('modal-open', isOpen);
     }
     if (isOpen) updateCartUI();
@@ -471,8 +497,10 @@ function updateCartUI() {
     const container = DOM.cartItems;
     let total = 0;
 
-    DOM.cartBadge.textContent = cart.length;
-    DOM.cartBadge.style.display = cart.length > 0 ? 'flex' : 'none';
+    if (DOM.cartBadge) {
+        DOM.cartBadge.textContent = cart.length;
+        DOM.cartBadge.style.display = cart.length > 0 ? 'flex' : 'none';
+    }
 
     if (!container) return;
 
@@ -531,7 +559,8 @@ function addToCart(serie) {
     try {
         localStorage.setItem('cart_series', JSON.stringify(cart));
     } catch (e) {
-        console.warn('localStorage não disponível');
+        console.warn('[CART] Falha ao salvar carrinho no localStorage:', e.message);
+        showToast('Item adicionado, mas não será salvo entre sessões', 'error');
     }
     updateCartUI();
     showToast('Adicionado ao carrinho!', 'success');
@@ -542,7 +571,7 @@ function removeFromCart(id) {
     try {
         localStorage.setItem('cart_series', JSON.stringify(cart));
     } catch (e) {
-        console.warn('localStorage não disponível');
+        console.warn('[CART] Falha ao atualizar carrinho no localStorage:', e.message);
     }
     updateCartUI();
 }
@@ -551,20 +580,31 @@ function checkout() {
     if (!cart.length) return showToast('Carrinho vazio!', 'error');
 
     const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
-    
-    tg?.sendData(JSON.stringify({
-        action: 'checkout_cart',
-        items: cart,
-        total: total,
-        user_id: userId
-    }));
+
+    try {
+        if (!tg || typeof tg.sendData !== 'function') {
+            throw new Error('Telegram WebApp não disponível');
+        }
+        tg.sendData(JSON.stringify({
+            action: 'checkout_cart',
+            items: cart,
+            total: total,
+            user_id: userId
+        }));
+    } catch (err) {
+        console.error('[CHECKOUT] Falha ao enviar dados ao Telegram:', err.message);
+        showToast('Erro ao finalizar compra. Tente novamente.', 'error');
+        return;
+    }
 
     showToast('Finalizando compra...', 'success');
     setTimeout(() => {
         cart = [];
         try {
             localStorage.setItem('cart_series', JSON.stringify(cart));
-        } catch (e) {}
+        } catch (e) {
+            console.warn('[CHECKOUT] Falha ao limpar carrinho no localStorage:', e.message);
+        }
         updateCartUI();
         toggleCart(false);
         if (tg && typeof tg.close === 'function') tg.close();
