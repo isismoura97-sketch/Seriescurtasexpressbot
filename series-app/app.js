@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-3';
+const BUILD_VERSION = '20260626-4';
 let tg = null;
 let userId = null;
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
@@ -427,12 +427,14 @@ function createCard(serie, isNetflix = false) {
 
     const free = isFree(serie);
     const coverUrl = getCoverUrl(serie);
+    const cover = document.createElement('div');
+    cover.className = isNetflix ? 'netflix-cover' : 'card-cover';
 
     if (free) {
         const badge = document.createElement('div');
         badge.className = 'badge-gratis-landscape';
         badge.innerHTML = '<i class="fas fa-gift"></i> GRÁTIS';
-        card.appendChild(badge);
+        cover.appendChild(badge);
     }
 
     const img = document.createElement('img');
@@ -440,7 +442,8 @@ function createCard(serie, isNetflix = false) {
     img.alt = serie.title || '';
     img.loading = 'lazy';
     img.onerror = function() { this.src = PLACEHOLDER_IMAGE; };
-    card.appendChild(img);
+    cover.appendChild(img);
+    card.appendChild(cover);
 
     const infoDiv = document.createElement('div');
     infoDiv.className = isNetflix ? 'netflix-info' : 'card-info';
