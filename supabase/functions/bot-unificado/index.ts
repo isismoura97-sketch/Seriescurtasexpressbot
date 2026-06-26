@@ -2,6 +2,16 @@ const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const SERIES_TABLE = Deno.env.get("SERIES_TABLE") ?? "series";
+const SERIES_ID_COLUMN = Deno.env.get("SERIES_ID_COLUMN") ?? "id";
+const SERIES_TITLE_COLUMN = Deno.env.get("SERIES_TITLE_COLUMN") ?? "title";
+const SERIES_VIDEO_URL_COLUMNS = (Deno.env.get("SERIES_VIDEO_URL_COLUMNS") ?? "video_url,stream_url,media_url,url")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const SERIES_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("SERIES_VIDEO_FILE_ID_COLUMNS") ?? "video_file_id,file_id,telegram_file_id")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 function corsHeaders(req: Request) {
   const origin = req.headers.get("origin") || "*";
@@ -134,7 +144,7 @@ async function getSeriesList() {
 }
 
 async function getSeriesById(seriesId: string) {
-  const idColumns = ["id", "serie_id"];
+  const idColumns = [SERIES_ID_COLUMN, "id", "serie_id"].filter((value, index, arr) => arr.indexOf(value) === index);
 
   for (const column of idColumns) {
     const data = await supabaseFetch(
@@ -147,8 +157,7 @@ async function getSeriesById(seriesId: string) {
 }
 
 function extractDirectUrl(row: Record<string, unknown>) {
-  const candidates = ["video_url", "stream_url", "media_url", "url"];
-  for (const key of candidates) {
+  for (const key of SERIES_VIDEO_URL_COLUMNS) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
@@ -156,8 +165,7 @@ function extractDirectUrl(row: Record<string, unknown>) {
 }
 
 function extractTelegramFileId(row: Record<string, unknown>) {
-  const candidates = ["video_file_id", "file_id", "telegram_file_id"];
-  for (const key of candidates) {
+  for (const key of SERIES_VIDEO_FILE_ID_COLUMNS) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
@@ -179,15 +187,15 @@ async function handleStream(req: Request, url: URL) {
 
   const directUrl = extractDirectUrl(row as Record<string, unknown>);
   if (directUrl) {
-    return json(req, { url: directUrl, type: "direct", title: (row as Record<string, unknown>).title ?? title });
+    return json(req, { url: directUrl, type: "direct", title: (row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title });
   }
 
   const fileId = extractTelegramFileId(row as Record<string, unknown>);
   if (fileId) {
     return json(req, {
-      url: buildPlaybackUrl(req, fileId, String((row as Record<string, unknown>).title ?? title)),
+      url: buildPlaybackUrl(req, fileId, String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title)),
       type: "telegram_proxy",
-      title: (row as Record<string, unknown>).title ?? title,
+      title: (row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title,
     });
   }
 

@@ -42,5 +42,9 @@ Secrets necessários no Supabase:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SERIES_TABLE` se o nome da tabela não for `series`
+- `SERIES_ID_COLUMN` se o identificador não for `id`
+- `SERIES_TITLE_COLUMN` se o título não estiver em `title`
+- `SERIES_VIDEO_URL_COLUMNS` com uma lista separada por vírgulas para URLs diretas
+- `SERIES_VIDEO_FILE_ID_COLUMNS` com uma lista separada por vírgulas para IDs do Telegram
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.

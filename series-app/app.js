@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-8';
+const BUILD_VERSION = '20260626-9';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
@@ -40,6 +40,7 @@ try {
 let currentHeroIndex = 0;
 let heroInterval = null;
 let playerRetryData = null;
+let playerVideoEventsBound = false;
 
 // ==================== SHARED UTILITIES ====================
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
@@ -201,6 +202,21 @@ function openTelegramPlayback(serieId, title, telegramFileId) {
     }
 }
 
+function bindPlayerVideoEvents() {
+    if (playerVideoEventsBound || !DOM.mainVideo) return;
+    playerVideoEventsBound = true;
+
+    DOM.mainVideo.addEventListener('loadeddata', () => {
+        DOM.playerLoading?.classList.remove('active');
+    });
+
+    DOM.mainVideo.addEventListener('error', () => {
+        if (DOM.playerOverlay?.classList.contains('active')) {
+            showPlayerError();
+        }
+    });
+}
+
 async function fetchWithTimeout(url, options = {}, timeout = 15000) {
     debugLog(`[FETCH] ${url}`);
 
@@ -303,6 +319,7 @@ function getCoverUrl(serie) {
 // ==================== INICIALIZAÇÃO ====================
 async function init() {
     resolveTelegramContext();
+    bindPlayerVideoEvents();
 
     if (tg) {
         tg.ready();
@@ -568,7 +585,6 @@ async function openPlayer(serieId, title) {
             }
         } else if ((data.type === 'telegram_file' || data.file_id) && data.file_id) {
             playerRetryData = { id: serieId, title, telegramFileId: data.file_id };
-            DOM.playerLoading.classList.remove('active');
             DOM.mainVideo.style.display = 'none';
             setPlayerErrorView({
                 iconClass: 'fab fa-telegram',
@@ -587,8 +603,6 @@ async function openPlayer(serieId, title) {
         }
     } catch (err) {
         showPlayerError();
-    } finally {
-        DOM.playerLoading.classList.remove('active');
     }
 }
 
