@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Séries Curtas Express - Mini App Telegram
  * Versão 3.4 - Player Corrigido (404 Fix)
  */
@@ -7,6 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
+const BUILD_VERSION = '20260626-2';
 const tg = window.Telegram?.WebApp;
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
 const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
@@ -122,6 +123,16 @@ function sanitizeUrl(url) {
     return '';
 }
 
+function withCacheBuster(url) {
+    try {
+        const parsed = new URL(url);
+        parsed.searchParams.set('cb', BUILD_VERSION);
+        return parsed.toString();
+    } catch (_) {
+        return url;
+    }
+}
+
 async function fetchWithTimeout(url, options = {}, timeout = 15000) {
     debugLog(`[FETCH] ${url}`);
 
@@ -137,6 +148,7 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
 
     try {
         const res = await fetch(url, {
+            cache: 'no-store',
             ...options,
             signal: controller.signal,
             headers
@@ -238,7 +250,7 @@ async function init() {
     try {
         const url = new URL(API_URL);
         url.searchParams.set('action', 'series');
-        const data = await fetchWithTimeout(url.toString());
+        const data = await fetchWithTimeout(withCacheBuster(url.toString()));
         allSeries = Array.isArray(data) ? data : [];
         debugLog(`[INIT] ${allSeries.length} éries carregadas`);
 
@@ -365,7 +377,7 @@ function renderNetflixRow(series) {
         row.style.display = 'none';
         return;
     }
-    series.slice(0, 10).forEach(s => container.appendChild(createCard(s, true));
+    series.slice(0, 10).forEach(s => container.appendChild(createCard(s, true)));
     row.style.display = 'block';
 }
 
@@ -465,7 +477,7 @@ async function openPlayer(serieId, title) {
         url.searchParams.set('serie_id', serieId);
         url.searchParams.set('user_id', userId);
 
-        const data = await fetchWithTimeout(url.toString());
+        const data = await fetchWithTimeout(withCacheBuster(url.toString()));
         
         if (data.url) {
             const safeVideoUrl = sanitizeUrl(data.url);
@@ -483,7 +495,7 @@ async function openPlayer(serieId, title) {
         } else if (data.error) {
             throw new Error(data.error);
         } else {
-            throw new Error('URL de vídeo na�j retornada');
+            throw new Error('URL de vídeo na�j retornada');
         }
     } catch (err) {
     
