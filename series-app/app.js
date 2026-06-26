@@ -7,7 +7,8 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-6';
+const BUILD_VERSION = '20260626-7';
+const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
@@ -135,6 +136,63 @@ function withCacheBuster(url) {
         return parsed.toString();
     } catch (_) {
         return url;
+    }
+}
+
+function setPlayerErrorView({ iconClass, iconColor, message, buttonHtml, buttonHandler }) {
+    const icon = DOM.playerError?.querySelector('i');
+    const messageNode = DOM.playerError?.querySelector('div');
+    const button = DOM.playerError?.querySelector('button');
+
+    if (icon) {
+        icon.className = iconClass;
+        icon.style.color = iconColor;
+    }
+
+    if (messageNode) {
+        messageNode.textContent = message;
+    }
+
+    if (button) {
+        button.innerHTML = buttonHtml;
+        button.onclick = buttonHandler;
+    }
+}
+
+function openTelegramPlayback(serieId, title, telegramFileId) {
+    const payload = JSON.stringify({
+        action: 'play_video',
+        serie_id: serieId,
+        file_id: telegramFileId,
+        title
+    });
+
+    try {
+        if (tg && typeof tg.sendData === 'function') {
+            tg.sendData(payload);
+            showToast('Solicitando a reprodução no Telegram...', 'success');
+            closePlayer();
+            return true;
+        }
+    } catch (err) {
+        console.warn('[PLAYER] Falha ao enviar dados ao Telegram:', err.message);
+    }
+
+    const startPayload = encodeURIComponent(`play_${serieId || telegramFileId}`);
+    const deepLink = `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${startPayload}`;
+
+    try {
+        if (tg && typeof tg.openTelegramLink === 'function') {
+            tg.openTelegramLink(deepLink);
+        } else {
+            window.open(deepLink, '_blank', 'noopener,noreferrer');
+        }
+        showToast('Abrindo o Telegram para reproduzir o vídeo...', 'info');
+        closePlayer();
+        return true;
+    } catch (err) {
+        console.warn('[PLAYER] Falha ao abrir Telegram:', err.message);
+        return false;
     }
 }
 
@@ -503,6 +561,19 @@ async function openPlayer(serieId, title) {
                     showToast('Toque no vídeo para reproduzir', 'info');
                 });
             }
+        } else if ((data.type === 'telegram_file' || data.file_id) && data.file_id) {
+            playerRetryData = { id: serieId, title, telegramFileId: data.file_id };
+            DOM.playerLoading.classList.remove('active');
+            DOM.mainVideo.style.display = 'none';
+            setPlayerErrorView({
+                iconClass: 'fab fa-telegram',
+                iconColor: '#2AABEE',
+                message: 'Este vídeo abre no Telegram, não direto no navegador.',
+                buttonHtml: '<i class="fab fa-telegram"></i> Abrir no Telegram',
+                buttonHandler: () => openTelegramPlayback(serieId, title, data.file_id)
+            });
+            DOM.playerError.classList.add('active');
+            return;
         } else if (data.error) {
             throw new Error(data.error);
         } else {
@@ -518,11 +589,25 @@ async function openPlayer(serieId, title) {
 function showPlayerError() {
     DOM.playerLoading.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
+    setPlayerErrorView({
+        iconClass: 'fas fa-exclamation-triangle',
+        iconColor: '#ff4444',
+        message: 'Erro ao reproduzir o vídeo',
+        buttonHtml: '<i class="fas fa-redo"></i> Tentar Novamente',
+        buttonHandler: retryPlayer
+    });
     DOM.playerError.classList.add('active');
 }
 
 function retryPlayer() {
-    if (playerRetryData) openPlayer(playerRetryData.id, playerRetryData.title);
+    if (!playerRetryData) return;
+
+    if (playerRetryData.telegramFileId) {
+        openTelegramPlayback(playerRetryData.id, playerRetryData.title, playerRetryData.telegramFileId);
+        return;
+    }
+
+    openPlayer(playerRetryData.id, playerRetryData.title);
 }
 
 function closePlayer() {
