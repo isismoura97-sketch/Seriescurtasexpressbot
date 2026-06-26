@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="styles.css?v=20260626-7">
+    <link rel="stylesheet" href="styles.css?v=20260626-8">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
@@ -58,11 +58,23 @@
             </div>
 
             <div class="player-error" id="playerError" role="alert">
-                <i class="fas fa-exclamation-triangle" style="font-size:48px; color:#ff4444;"></i>
-                <div style="margin:15px 0; font-size:17px;">Erro ao reproduzir o vídeo</div>
-                <button class="btn btn-primary" onclick="retryPlayer()">
-                    <i class="fas fa-redo"></i> Tentar Novamente
-                </button>
+                <div class="player-error-panel">
+                    <div class="player-error-icon" id="playerErrorIcon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="player-error-copy">
+                        <h3 id="playerErrorTitle">Erro ao reproduzir o vídeo</h3>
+                        <p id="playerErrorDesc">Tente novamente ou abra no Telegram.</p>
+                    </div>
+                    <div class="player-error-actions">
+                        <button class="btn btn-primary" id="playerErrorAction" onclick="retryPlayer()">
+                            <i class="fas fa-redo"></i> Tentar Novamente
+                        </button>
+                        <button class="btn btn-secondary" onclick="closePlayer()">
+                            <i class="fas fa-times"></i> Fechar
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <video id="mainVideo" 
@@ -203,6 +215,6 @@
     <script defer src="/_vercel/speed-insights/script.js"></script>
 
     <!-- Script Principal -->
-    <script defer src="app.js?v=20260626-7"></script>
+    <script defer src="app.js?v=20260626-8"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-7';
+const BUILD_VERSION = '20260626-8';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
@@ -139,18 +139,23 @@ function withCacheBuster(url) {
     }
 }
 
-function setPlayerErrorView({ iconClass, iconColor, message, buttonHtml, buttonHandler }) {
-    const icon = DOM.playerError?.querySelector('i');
-    const messageNode = DOM.playerError?.querySelector('div');
-    const button = DOM.playerError?.querySelector('button');
+function setPlayerErrorView({ iconClass, iconColor, title, description, buttonHtml, buttonHandler }) {
+    const icon = document.getElementById('playerErrorIcon')?.querySelector('i');
+    const titleNode = document.getElementById('playerErrorTitle');
+    const descNode = document.getElementById('playerErrorDesc');
+    const button = document.getElementById('playerErrorAction');
 
     if (icon) {
         icon.className = iconClass;
         icon.style.color = iconColor;
     }
 
-    if (messageNode) {
-        messageNode.textContent = message;
+    if (titleNode) {
+        titleNode.textContent = title;
+    }
+
+    if (descNode) {
+        descNode.textContent = description;
     }
 
     if (button) {
@@ -568,7 +573,8 @@ async function openPlayer(serieId, title) {
             setPlayerErrorView({
                 iconClass: 'fab fa-telegram',
                 iconColor: '#2AABEE',
-                message: 'Este vídeo abre no Telegram, não direto no navegador.',
+                title: 'Reprodução via Telegram',
+                description: 'Este título usa um arquivo do Telegram. Abra no bot para continuar a reprodução.',
                 buttonHtml: '<i class="fab fa-telegram"></i> Abrir no Telegram',
                 buttonHandler: () => openTelegramPlayback(serieId, title, data.file_id)
             });
@@ -592,7 +598,8 @@ function showPlayerError() {
     setPlayerErrorView({
         iconClass: 'fas fa-exclamation-triangle',
         iconColor: '#ff4444',
-        message: 'Erro ao reproduzir o vídeo',
+        title: 'Erro ao reproduzir o vídeo',
+        description: 'Tente novamente. Se o erro persistir, o player pode depender de abertura no Telegram.',
         buttonHtml: '<i class="fas fa-redo"></i> Tentar Novamente',
         buttonHandler: retryPlayer
     });
