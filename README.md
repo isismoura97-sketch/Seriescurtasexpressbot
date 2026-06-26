@@ -27,3 +27,20 @@ python -m http.server 8000
 - O app depende de `window.Telegram.WebApp` para identificar o usuário.
 - O catálogo é carregado do backend em Supabase.
 - Fora do Telegram, o app exibe "Acesso Negado" por design.
+
+## Backend Supabase
+
+Há uma Edge Function preparada em `supabase/functions/bot-unificado/index.ts` para:
+
+- retornar a lista de séries em `action=series`
+- resolver `action=stream` para uma `url` reproduzível
+- fazer proxy de arquivos do Telegram em `action=playback`
+
+Secrets necessários no Supabase:
+
+- `TELEGRAM_BOT_TOKEN`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SERIES_TABLE` se o nome da tabela não for `series`
+
+Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
