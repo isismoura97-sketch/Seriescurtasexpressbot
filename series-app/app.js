@@ -8,7 +8,7 @@
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
 const tg = window.Telegram?.WebApp;
-const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado';
+const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
 const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 
 function sanitizeUserId(raw) {
@@ -21,6 +21,8 @@ const userId = sanitizeUserId(tg?.initDataUnsafe?.user?.id);
 
 let allSeries = [];
 let cart = [];
+let currentSearchTerm = '';
+let currentCategory = 'all';
 try {
     cart = JSON.parse(localStorage.getItem('cart_series')) || [];
 } catch (e) {
@@ -38,6 +40,15 @@ const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWl
 function isFree(serie) {
     const price = Number(serie.price);
     return price === 0 || serie.price === null || serie.price === undefined;
+}
+
+function normalizeId(value) {
+    if (value == null) return '';
+    return String(value);
+}
+
+function sameId(a, b) {
+    return normalizeId(a) === normalizeId(b);
 }
 
 function saveCart(context = 'CART') {
@@ -64,7 +75,7 @@ function handleSeriesClick(serie) {
     }
 }
 
-// ==================== CACHE DOM ====================
+// ==================== CACHE DOM =====================
 const DOM = {
     playerOverlay: document.getElementById('playerOverlay'),
     mainVideo: document.getElementById('mainVideo'),
@@ -96,7 +107,7 @@ const DOM = {
     themeIcon: document.getElementById('themeIcon')
 };
 
-// ==================== UTILITÁRIOS ====================
+// ==================== UTILITIES ====================
 function debugLog(...args) {
     if (DEBUG) console.log(...args);
 }
@@ -116,12 +127,19 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const method = String(options.method || 'GET').toUpperCase();
+    const headers = { Accept: 'application/json', ...(options.headers || {}) };
+    const hasContentType = Object.keys(headers).some(key => key.toLowerCase() === 'content-type');
+
+    if (method !== 'GET' && method !== 'HEAD' && options.body != null && !hasContentType) {
+        headers['Content-Type'] = 'application/json';
+    }
 
     try {
         const res = await fetch(url, {
             ...options,
             signal: controller.signal,
-            headers: { ...(options.headers || {}), 'Content-Type': 'application/json' }
+            headers
         });
 
         clearTimeout(timeoutId);
@@ -131,7 +149,19 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
             throw new Error(`HTTP ${res.status}`);
         }
 
-        return await res.json();
+        if (res.status === 204) return null;
+
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            return await res.json();
+        }
+
+        const text = await res.text();
+        try {
+            return JSON.parse(text);
+        } catch (_) {
+            return text;
+        }
 
     } catch (err) {
         clearTimeout(timeoutId);
@@ -139,7 +169,7 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
             showToast('Tempo de conexão esgotado', 'error');
             throw new Error('Timeout');
         }
-        showToast('Erro de conexão', 'error');
+        showToast('Erro  de conexão', 'error');
         throw err;
     }
 }
@@ -173,7 +203,7 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
-// ==================== FUNÇÃO CRÍTICA: OBTER URL DA CAPA ====================
+// =================== FUNÇÃO CRÍTICA: OBTER URL DA CAPA ====================
 function getCoverUrl(serie) {
     if (!serie) return PLACEHOLDER_IMAGE;
     
@@ -206,12 +236,14 @@ async function init() {
     }
 
     try {
-        const data = await fetchWithTimeout(`${API_URL}/api/series`);
+        const url = new URL(API_URL);
+        url.searchParams.set('action', 'series');
+        const data = await fetchWithTimeout(url.toString());
         allSeries = Array.isArray(data) ? data : [];
-        debugLog(`[INIT] ${allSeries.length} séries carregadas`);
+        debugLog(`[INIT] ${allSeries.length} éries carregadas`);
 
         renderNetflixRow(allSeries);
-        renderGrid(allSeries);
+        renderGrid(getVisibleSeries());
         initHero();
         updateCartUI();
     } catch (err) {
@@ -293,10 +325,10 @@ function toggleTheme() {
     showToast(isLight ? 'Tema Claro ativado' : 'Tema Escuro ativado', 'success');
 }
 
-// ==================== HERO ====================
+// =================== HERO ====================
 function initHero() {
     if (!allSeries.length) return;
-    updateHero(0);
+    updateHero(1);
     clearInterval(heroInterval);
     heroInterval = setInterval(() => {
         currentHeroIndex = (currentHeroIndex + 1) % allSeries.length;
@@ -333,7 +365,7 @@ function renderNetflixRow(series) {
         row.style.display = 'none';
         return;
     }
-    series.slice(0, 10).forEach(s => container.appendChild(createCard(s, true)));
+    series.slice(0, 10).forEach(s => container.appendChild(createCard(s, true));
     row.style.display = 'block';
 }
 
@@ -346,6 +378,24 @@ function renderGrid(series) {
         return;
     }
     series.forEach(s => grid.appendChild(createCard(s, false)));
+}
+
+function getVisibleSeries() {
+    let filtered = allSeries.slice();
+
+    if (currentCategory !== 'all') {
+        filtered = filtered.filter(s => s.category?.toLowerCase() === currentCategory);
+    }
+
+    if (currentSearchTerm) {
+        filtered = filtered.filter(s => s.title?.toLowerCase().includes(currentSearchTerm));
+    }
+
+    return filtered;
+}
+
+function refreshCatalog() {
+    renderGrid(getVisibleSeries());
 }
 
 function createCard(serie, isNetflix = false) {
@@ -391,10 +441,10 @@ function createCard(serie, isNetflix = false) {
     return card;
 }
 
-// ==================== PLAYER - CORRIGIDO (404 FIX) ====================
+// =================== PLAYER - CORRIGIDO (@444 FIX) ===================
 async function openPlayer(serieId, title) {
     if (!DOM.playerOverlay || !DOM.mainVideo || !DOM.playerLoading || !DOM.playerError) {
-        console.error('[PLAYER] Elementos DOM do player não encontrados');
+        console.error('[PLAYER] Elementos DOM do player nhão encontrados');
         showToast('Erro interno: player indisponível', 'error');
         return;
     }
@@ -419,7 +469,7 @@ async function openPlayer(serieId, title) {
         
         if (data.url) {
             const safeVideoUrl = sanitizeUrl(data.url);
-            if (!safeVideoUrl) throw new Error('URL de vídeo inválida');
+            if (!safeVideoUrl) throw new Error('URL de vídeo invalida');
             DOM.mainVideo.setAttribute('src', safeVideoUrl);
             DOM.mainVideo.style.display = 'block';
             
@@ -433,7 +483,7 @@ async function openPlayer(serieId, title) {
         } else if (data.error) {
             throw new Error(data.error);
         } else {
-            throw new Error('URL de vídeo não retornada');
+            throw new Error('URL de vídeo na�j retornada');
         }
     } catch (err) {
     
@@ -460,12 +510,12 @@ function closePlayer() {
     DOM.playerLoading.classList.remove('active');
 }
 
-// ==================== MODAL ====================
+// =================== MODAL ====================
 function openModal(serie) {
     if (!serie) return;
     if (!DOM.modalOverlay || !DOM.modalImg || !DOM.modalTitle || !DOM.modalDesc || !DOM.modalPrice || !DOM.modalActions) {
         console.error('[MODAL] Elementos DOM do modal não encontrados');
-        showToast('Erro interno: modal indisponível', 'error');
+        showToast('Erroc interno: modal indisponível', 'error');
         return;
     }
     DOM.modalImg.src = getCoverUrl(serie);
@@ -474,7 +524,7 @@ function openModal(serie) {
     
     const free = isFree(serie);
     DOM.modalPrice.innerHTML = free 
-        ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
+        ? '<span class="free-badge"><i class="fas fa-gift"></i> GRáTIS</span>'
         : `<span>${formatPrice(serie.price)}</span>`;
 
     DOM.modalActions.innerHTML = '';
@@ -502,7 +552,7 @@ function closeModal() {
     }
 }
 
-// ==================== CARRINHO ====================
+// =================== CARRINHO ====================
 function toggleCart(open) {
     if (!DOM.cartDrawer || !DOM.cartOverlay) {
         console.error('[CART] Elementos DOM do carrinho não encontrados');
@@ -575,20 +625,20 @@ function updateCartUI() {
 }
 
 function addToCart(serie) {
-    if (!serie || cart.some(item => item.id === serie.id)) {
+    if (!serie || cart.some(item => sameId(item.id, serie.id))) {
         showToast('Já está no carrinho!', 'error');
         return;
     }
     cart.push(serie);
     if (!saveCart()) {
-        showToast('Item adicionado, mas não será salvo entre sessões', 'error');
+        showToast('Item adicionado, mas não serã salvo entre sessões', 'error');
     }
     updateCartUI();
     showToast('Adicionado ao carrinho!', 'success');
 }
 
 function removeFromCart(id) {
-    cart = cart.filter(item => item.id !== id);
+    cart = cart.filter(item => !sameId(item.id, id));
     saveCart();
     updateCartUI();
 }
@@ -626,28 +676,16 @@ function checkout() {
 
 // ==================== FILTROS ====================
 function filterCategory(category) {
-    if (category === 'all') {
-        renderGrid(allSeries);
-    } else {
-        const filtered = allSeries.filter(s => 
-            s.category?.toLowerCase() === category
-        );
-        renderGrid(filtered);
-    }
+    currentCategory = (category || 'all').trim().toLowerCase();
+    refreshCatalog();
 }
 
 function searchSeries(term) {
-    if (!term) {
-        renderGrid(allSeries);
-        return;
-    }
-    const filtered = allSeries.filter(s => 
-        s.title?.toLowerCase().includes(term.toLowerCase())
-    );
-    renderGrid(filtered);
+    currentSearchTerm = (term || '').trim().toLowerCase();
+    refreshCatalog();
 }
 
-// ==================== EXPORT GLOBAL ====================
+// =================== EXPORT GLOBAL }
 window.retryPlayer = retryPlayer;
 window.toggleCart = toggleCart;
 window.openModal = openModal;
