@@ -7,8 +7,9 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-2';
-const tg = window.Telegram?.WebApp;
+const BUILD_VERSION = '20260626-3';
+let tg = null;
+let userId = null;
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
 const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 
@@ -18,7 +19,11 @@ function sanitizeUserId(raw) {
     if (/^\d{1,20}$/.test(str)) return str;
     return null;
 }
-const userId = sanitizeUserId(tg?.initDataUnsafe?.user?.id);
+
+function resolveTelegramContext() {
+    tg = window.Telegram?.WebApp ?? null;
+    userId = sanitizeUserId(tg?.initDataUnsafe?.user?.id);
+}
 
 let allSeries = [];
 let cart = [];
@@ -181,7 +186,7 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
             showToast('Tempo de conexão esgotado', 'error');
             throw new Error('Timeout');
         }
-        showToast('Erro  de conexão', 'error');
+        showToast('Erro de conexão', 'error');
         throw err;
     }
 }
@@ -234,6 +239,8 @@ function getCoverUrl(serie) {
 
 // ==================== INICIALIZAÇÃO ====================
 async function init() {
+    resolveTelegramContext();
+
     if (tg) {
         tg.ready();
         tg.expand();
@@ -340,7 +347,8 @@ function toggleTheme() {
 // =================== HERO ====================
 function initHero() {
     if (!allSeries.length) return;
-    updateHero(1);
+    currentHeroIndex = 0;
+    updateHero(currentHeroIndex);
     clearInterval(heroInterval);
     heroInterval = setInterval(() => {
         currentHeroIndex = (currentHeroIndex + 1) % allSeries.length;
@@ -456,7 +464,7 @@ function createCard(serie, isNetflix = false) {
 // =================== PLAYER - CORRIGIDO (@444 FIX) ===================
 async function openPlayer(serieId, title) {
     if (!DOM.playerOverlay || !DOM.mainVideo || !DOM.playerLoading || !DOM.playerError) {
-        console.error('[PLAYER] Elementos DOM do player nhão encontrados');
+        console.error('[PLAYER] Elementos DOM do player não encontrados');
         showToast('Erro interno: player indisponível', 'error');
         return;
     }
@@ -495,10 +503,9 @@ async function openPlayer(serieId, title) {
         } else if (data.error) {
             throw new Error(data.error);
         } else {
-            throw new Error('URL de vídeo na�j retornada');
+            throw new Error('URL de vídeo não retornada');
         }
     } catch (err) {
-    
         showPlayerError();
     } finally {
         DOM.playerLoading.classList.remove('active');
@@ -527,7 +534,7 @@ function openModal(serie) {
     if (!serie) return;
     if (!DOM.modalOverlay || !DOM.modalImg || !DOM.modalTitle || !DOM.modalDesc || !DOM.modalPrice || !DOM.modalActions) {
         console.error('[MODAL] Elementos DOM do modal não encontrados');
-        showToast('Erroc interno: modal indisponível', 'error');
+        showToast('Erro interno: modal indisponível', 'error');
         return;
     }
     DOM.modalImg.src = getCoverUrl(serie);
@@ -536,7 +543,7 @@ function openModal(serie) {
     
     const free = isFree(serie);
     DOM.modalPrice.innerHTML = free 
-        ? '<span class="free-badge"><i class="fas fa-gift"></i> GRáTIS</span>'
+        ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
         : `<span>${formatPrice(serie.price)}</span>`;
 
     DOM.modalActions.innerHTML = '';
@@ -643,7 +650,7 @@ function addToCart(serie) {
     }
     cart.push(serie);
     if (!saveCart()) {
-        showToast('Item adicionado, mas não serã salvo entre sessões', 'error');
+        showToast('Item adicionado, mas não será salvo entre sessões', 'error');
     }
     updateCartUI();
     showToast('Adicionado ao carrinho!', 'success');
