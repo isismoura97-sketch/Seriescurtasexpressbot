@@ -171,7 +171,7 @@ function buildCaptchaQuestion() {
 }
 
 async function buildCaptchaToken(update: {
-  query_id: string;
+  query_id?: string;
   user_id: number | string;
   chat_id: number | string;
   title?: string;
@@ -180,7 +180,7 @@ async function buildCaptchaToken(update: {
   const expiresAt = Math.floor(Date.now() / 1000) + CAPTCHA_MAX_AGE_SECONDS;
   const payload = {
     v: 1,
-    query_id: update.query_id,
+    query_id: update.query_id ?? "",
     user_id: String(update.user_id),
     chat_id: String(update.chat_id),
     title: update.title ?? "",
@@ -190,13 +190,15 @@ async function buildCaptchaToken(update: {
   const token = await encryptChallenge(CAPTCHA_SECRET, payload);
 
   return {
-    token: base64UrlEncode(textEncode(JSON.stringify({
-      v: 1,
-      q: question,
-      exp: expiresAt,
-      u: String(update.user_id),
-      c: token,
-    }))),
+    token: base64UrlEncode(
+      textEncode(JSON.stringify({
+        v: 1,
+        q: question,
+        exp: expiresAt,
+        u: String(update.user_id),
+        c: token,
+      })),
+    ),
     question,
   };
 }
@@ -207,7 +209,10 @@ function parseWebAppInitData(initData: string) {
   params.delete("hash");
 
   const checkString = [...params.entries()]
-    .sort(([aKey, aValue], [bKey, bValue]) => (aKey === bKey ? aValue.localeCompare(bValue) : aKey.localeCompare(bKey)))
+    .sort(([aKey, aValue], [bKey, bValue]) => {
+      if (aKey === bKey) return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+      return aKey < bKey ? -1 : 1;
+    })
     .map(([key, value]) => `${key}=${value}`)
     .join("\n");
 
@@ -300,6 +305,30 @@ async function answerChatJoinRequestQuery(
   });
 }
 
+async function sendCaptchaInvitation(chatId: string | number, webAppUrl: string) {
+  return await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: "Abra a verificação para confirmar sua entrada.",
+    reply_markup: JSON.stringify({
+      inline_keyboard: [[{ text: "Abrir verificação", web_app: { url: webAppUrl } }]],
+    }),
+  });
+}
+
+async function approveChatJoinRequest(chatId: string | number, userId: string | number) {
+  return await telegramRequest("approveChatJoinRequest", {
+    chat_id: chatId,
+    user_id: userId,
+  });
+}
+
+async function declineChatJoinRequest(chatId: string | number, userId: string | number) {
+  return await telegramRequest("declineChatJoinRequest", {
+    chat_id: chatId,
+    user_id: userId,
+  });
+}
+
 async function proxyTelegramFile(req: Request, fileId: string, title = "") {
   if (!TELEGRAM_BOT_TOKEN) {
     return json(req, { error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
@@ -378,17 +407,24 @@ async function proxyTelegramFile(req: Request, fileId: string, title = "") {
   });
 }
 
-function getUpdateChatJoinRequest(update: Record<string, unknown>) {
+function getUpdateChatJoinRequest(update: Record<string, unknown>): {
+  queryId: string;
+  chatId: string | number;
+  userId: string | number;
+  userChatId: string | number | null;
+  title: string;
+} | null {
   const chatJoinRequest = update.chat_join_request as Record<string, unknown> | undefined;
   if (!chatJoinRequest) return null;
 
   const chat = chatJoinRequest.chat as Record<string, unknown> | undefined;
   const user = chatJoinRequest.from as Record<string, unknown> | undefined;
   const queryId = typeof chatJoinRequest.query_id === "string" ? chatJoinRequest.query_id : "";
-  const chatId = chat?.id;
-  const userId = user?.id;
+  const rawUserChatId = chatJoinRequest.user_chat_id;
+  const chatId = chat?.id as string | number | null | undefined;
+  const userId = user?.id as string | number | null | undefined;
 
-  if (!queryId || chatId == null || userId == null) {
+  if (chatId == null || userId == null) {
     return null;
   }
 
@@ -396,6 +432,7 @@ function getUpdateChatJoinRequest(update: Record<string, unknown>) {
     queryId,
     chatId,
     userId,
+    userChatId: (typeof rawUserChatId === "string" || typeof rawUserChatId === "number") ? rawUserChatId : null,
     title: typeof chat?.title === "string" ? chat.title : typeof chat?.username === "string" ? chat.username : "",
   };
 }
@@ -422,13 +459,8 @@ async function handleTelegramWebhook(req: Request) {
     return json(req, { ok: true, ignored: true });
   }
 
-  if (!CAPTCHA_WEBAPP_URL) {
-    await answerChatJoinRequestQuery(joinRequest.queryId, "queue");
-    return json(req, { ok: true, action: "queued" });
-  }
-
   const challenge = await buildCaptchaToken({
-    query_id: joinRequest.queryId,
+    query_id: joinRequest.queryId || undefined,
     user_id: joinRequest.userId,
     chat_id: joinRequest.chatId,
     title: joinRequest.title,
@@ -437,7 +469,12 @@ async function handleTelegramWebhook(req: Request) {
   const webAppUrl = new URL(CAPTCHA_WEBAPP_URL);
   webAppUrl.searchParams.set("token", challenge.token);
 
-  await sendChatJoinRequestWebApp(joinRequest.queryId, webAppUrl.toString());
+  if (joinRequest.queryId) {
+    await sendChatJoinRequestWebApp(joinRequest.queryId, webAppUrl.toString());
+  } else {
+    const fallbackChatId = joinRequest.userChatId ?? joinRequest.userId;
+    await sendCaptchaInvitation(fallbackChatId, webAppUrl.toString());
+  }
   return json(req, { ok: true, action: "captcha_sent" });
 }
 
@@ -492,10 +529,11 @@ async function handleCaptchaVerify(req: Request) {
   const expectedAnswer = String(privatePayload.answer ?? "");
   const expiresAt = Number(privatePayload.expires_at ?? 0);
   const queryId = String(privatePayload.query_id ?? "");
+  const chatId = String(privatePayload.chat_id ?? "");
   const userId = String(privatePayload.user_id ?? "");
   const answer = String(body.answer || "").trim();
 
-  if (!queryId || !userId || !expectedAnswer) {
+  if (!chatId || !userId || !expectedAnswer) {
     return json(req, { ok: false, error: "Desafio incompleto" }, 400);
   }
 
@@ -505,7 +543,11 @@ async function handleCaptchaVerify(req: Request) {
 
   if (!expiresAt || Math.floor(Date.now() / 1000) > expiresAt) {
     try {
-      await answerChatJoinRequestQuery(queryId, "decline");
+      if (queryId) {
+        await answerChatJoinRequestQuery(queryId, "decline");
+      } else {
+        await declineChatJoinRequest(chatId, userId);
+      }
     } catch {
       // ignore
     }
@@ -514,14 +556,22 @@ async function handleCaptchaVerify(req: Request) {
 
   if (!constantTimeEqual(answer, expectedAnswer)) {
     try {
-      await answerChatJoinRequestQuery(queryId, "decline");
+      if (queryId) {
+        await answerChatJoinRequestQuery(queryId, "decline");
+      } else {
+        await declineChatJoinRequest(chatId, userId);
+      }
     } catch {
       // ignore
     }
     return json(req, { ok: false, error: "Resposta incorreta" }, 400);
   }
 
-  await answerChatJoinRequestQuery(queryId, "approve");
+  if (queryId) {
+    await answerChatJoinRequestQuery(queryId, "approve");
+  } else {
+    await approveChatJoinRequest(chatId, userId);
+  }
   return json(req, { ok: true, approved: true });
 }
 
