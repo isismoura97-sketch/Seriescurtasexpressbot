@@ -660,6 +660,153 @@ function normalizeWebhookStatus(value: unknown) {
   return status;
 }
 
+function getHeaderValue(req: Request, names: string[]) {
+  for (const name of names) {
+    const value = req.headers.get(name);
+    if (value) return value;
+  }
+  return "";
+}
+
+function parseMercadoPagoSignature(signatureHeader: string) {
+  const parts = String(signatureHeader ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const ts = parts.find((part) => part.startsWith("ts="))?.slice(3) ?? "";
+  const v1 = parts.find((part) => part.startsWith("v1="))?.slice(3) ?? "";
+
+  return { ts, v1 };
+}
+
+function getMercadoPagoNotificationDataId(payload: Record<string, unknown>, url: URL) {
+  const data = payload.data as Record<string, unknown> | undefined;
+  const bodyId = typeof data?.id === "string" || typeof data?.id === "number" ? String(data.id) : "";
+  const queryId = url.searchParams.get("data.id") || url.searchParams.get("id") || "";
+  return bodyId || queryId;
+}
+
+function buildMercadoPagoSignatureManifest(dataId: string, requestId: string, ts: string) {
+  const parts: string[] = [];
+  if (dataId) parts.push(`id:${dataId};`);
+  if (requestId) parts.push(`request-id:${requestId};`);
+  if (ts) parts.push(`ts:${ts};`);
+  return parts.join("");
+}
+
+function hexFromBytes(bytes: Uint8Array) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function timingSafeEqualHex(left: string, right: string) {
+  const a = left.trim().toLowerCase();
+  const b = right.trim().toLowerCase();
+  if (!a || !b || a.length !== b.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+async function hashMercadoPagoWebhookManifest(secret: string, manifest: string) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(manifest));
+  return hexFromBytes(new Uint8Array(signature));
+}
+
+async function validateMercadoPagoWebhookSignature(req: Request, payload: Record<string, unknown>, url: URL) {
+  if (!MERCADO_PAGO_WEBHOOK_SECRET) {
+    return { validated: false, skipped: true, reason: "secret_missing" };
+  }
+
+  const notificationType = String(payload.type ?? payload.action ?? payload.topic ?? "").trim().toLowerCase();
+  const isPayment = notificationType.includes("payment");
+  const signatureHeader = getHeaderValue(req, ["x-signature"]);
+  const requestId = getHeaderValue(req, ["x-request-id"]);
+  const dataId = getMercadoPagoNotificationDataId(payload, url);
+
+  if (!signatureHeader || !requestId || !dataId) {
+    if (isPayment) {
+      throw new Error("Assinatura do webhook ausente");
+    }
+
+    return { validated: false, skipped: true, reason: "signature_unavailable_for_notification_type" };
+  }
+
+  const { ts, v1 } = parseMercadoPagoSignature(signatureHeader);
+  if (!ts || !v1) {
+    if (isPayment) {
+      throw new Error("Assinatura do webhook inválida");
+    }
+
+    return { validated: false, skipped: true, reason: "signature_headers_incomplete" };
+  }
+
+  const manifest = buildMercadoPagoSignatureManifest(dataId, requestId, ts);
+  const expected = await hashMercadoPagoWebhookManifest(MERCADO_PAGO_WEBHOOK_SECRET, manifest);
+
+  if (!timingSafeEqualHex(expected, v1)) {
+    throw new Error("Assinatura do webhook inválida");
+  }
+
+  return { validated: true, skipped: false };
+}
+
+async function applyMercadoPagoPaymentState(order: Record<string, unknown>, payment: Record<string, unknown>, webhookPayload: unknown) {
+  const previousStatus = String(order.status ?? "");
+  const currentStatus = normalizeWebhookStatus(payment.status);
+  const nextPatch: Record<string, unknown> = {
+    mercado_pago_payment_id: String(payment.id ?? order.mercado_pago_payment_id ?? ""),
+    webhook_payload: webhookPayload,
+    last_event_at: new Date().toISOString(),
+    status: currentStatus,
+  };
+
+  if (typeof payment.point_of_interaction === "object" && payment.point_of_interaction) {
+    const interaction = payment.point_of_interaction as Record<string, unknown>;
+    const transactionData = interaction.transaction_data as Record<string, unknown> | undefined;
+    if (typeof transactionData?.qr_code === "string" && transactionData.qr_code) {
+      nextPatch.pix_qr_code = transactionData.qr_code;
+    }
+    if (typeof transactionData?.qr_code_base64 === "string" && transactionData.qr_code_base64) {
+      nextPatch.pix_qr_code_base64 = transactionData.qr_code_base64;
+    }
+    if (typeof transactionData?.ticket_url === "string" && transactionData.ticket_url) {
+      nextPatch.ticket_url = transactionData.ticket_url;
+    }
+  }
+
+  if (currentStatus === "approved") {
+    nextPatch.confirmed_at = new Date().toISOString();
+    nextPatch.error_message = null;
+  } else if (currentStatus === "rejected") {
+    nextPatch.rejected_at = new Date().toISOString();
+  } else if (currentStatus === "cancelled" || currentStatus === "canceled") {
+    nextPatch.canceled_at = new Date().toISOString();
+  }
+
+  const orderId = String(order.order_id ?? "").trim();
+  const updatedOrder = orderId
+    ? await updatePaymentOrderRecord(orderId, nextPatch) as Record<string, unknown>
+    : order;
+
+  if (currentStatus === "approved" && previousStatus !== "approved") {
+    await sendPaymentConfirmationMessage(updatedOrder, payment);
+  }
+
+  return updatedOrder;
+}
+
 async function handlePaymentCreate(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
@@ -815,9 +962,28 @@ async function handlePaymentStatus(req: Request) {
     return json(req, { error: "Acesso negado" }, 403);
   }
 
+  let refreshedOrder = order;
+  const paymentId = String(order.mercado_pago_payment_id ?? "").trim();
+  if (paymentId && String(order.status ?? "").toLowerCase() !== "approved") {
+    try {
+      const payment = await fetchMercadoPagoPayment(paymentId);
+      const externalReference = String(payment.external_reference ?? "").trim();
+      const metadata = payment.metadata as Record<string, unknown> | undefined;
+      const metadataOrderId = String(metadata?.order_id ?? "").trim();
+      if (!externalReference || externalReference === orderId || metadataOrderId === orderId) {
+        refreshedOrder = await applyMercadoPagoPaymentState(order as Record<string, unknown>, payment, {
+          source: "payment-status",
+          fetched_at: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.warn("[PAYMENT] Falha ao sincronizar status do pagamento:", error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return json(req, {
     ok: true,
-    order,
+    order: refreshedOrder,
   });
 }
 
@@ -825,6 +991,14 @@ async function handleMercadoPagoWebhook(req: Request, url: URL) {
   const payload = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!payload) {
     return json(req, { ok: false, error: "Webhook inválido" }, 400);
+  }
+
+  try {
+    await validateMercadoPagoWebhookSignature(req, payload, url);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[PAYMENT] Webhook do Mercado Pago rejeitado:", message);
+    return json(req, { ok: false, error: message }, 401);
   }
 
   const paymentId = getWebhookOrderId(payload, url);
@@ -847,43 +1021,8 @@ async function handleMercadoPagoWebhook(req: Request, url: URL) {
       return json(req, { ok: true, ignored: true });
     }
 
-    const previousStatus = String(order.status ?? "");
+    order = await applyMercadoPagoPaymentState(order as Record<string, unknown>, payment, payload);
     const currentStatus = normalizeWebhookStatus(payment.status);
-    const nextPatch: Record<string, unknown> = {
-      mercado_pago_payment_id: paymentId,
-      webhook_payload: payload,
-      last_event_at: new Date().toISOString(),
-      status: currentStatus,
-    };
-
-    if (typeof payment.point_of_interaction === "object" && payment.point_of_interaction) {
-      const interaction = payment.point_of_interaction as Record<string, unknown>;
-      const transactionData = interaction.transaction_data as Record<string, unknown> | undefined;
-      if (typeof transactionData?.qr_code === "string" && transactionData.qr_code) {
-        nextPatch.pix_qr_code = transactionData.qr_code;
-      }
-      if (typeof transactionData?.qr_code_base64 === "string" && transactionData.qr_code_base64) {
-        nextPatch.pix_qr_code_base64 = transactionData.qr_code_base64;
-      }
-      if (typeof transactionData?.ticket_url === "string" && transactionData.ticket_url) {
-        nextPatch.ticket_url = transactionData.ticket_url;
-      }
-    }
-
-    if (currentStatus === "approved") {
-      nextPatch.confirmed_at = new Date().toISOString();
-      nextPatch.error_message = null;
-    } else if (currentStatus === "rejected") {
-      nextPatch.rejected_at = new Date().toISOString();
-    } else if (currentStatus === "cancelled" || currentStatus === "canceled") {
-      nextPatch.canceled_at = new Date().toISOString();
-    }
-
-    order = await updatePaymentOrderRecord(orderId, nextPatch) as Record<string, unknown>;
-
-    if (currentStatus === "approved" && previousStatus !== "approved") {
-      await sendPaymentConfirmationMessage(order, payment);
-    }
 
     return json(req, {
       ok: true,

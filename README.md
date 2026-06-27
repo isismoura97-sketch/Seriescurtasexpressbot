@@ -42,7 +42,7 @@ Secrets necessários no Supabase:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `MERCADO_PAGO_ACCESS_TOKEN` para criar link de pagamento e Pix
-- `MERCADO_PAGO_WEBHOOK_SECRET` se você quiser validar eventos do provedor no futuro
+- `MERCADO_PAGO_WEBHOOK_SECRET` para validar o webhook do Mercado Pago
 - `MERCADO_PAGO_PIX_KEY` para fallback do Pix estático
 - `MERCADO_PAGO_PIX_COPY` com o código "copia e cola" do Pix
 - `MERCADO_PAGO_PIX_QR_CODE_BASE64` com o QR Code em base64, caso você queira mostrar o mesmo QR no mini app
@@ -60,8 +60,8 @@ Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
 
 O checkout agora suporta três caminhos:
 
+- `Pix` com QR Code, agora como opção padrão do checkout
 - `Mercado Pago` com link de pagamento
-- `Pix` com QR Code
 - `Checkout no Telegram`, que mantém a jornada dentro do mini app e confirma automaticamente pelo webhook
 
 O mini app envia o carrinho para a Edge Function `bot-unificado`, que:
@@ -70,6 +70,8 @@ O mini app envia o carrinho para a Edge Function `bot-unificado`, que:
 2. gera a preferência do Mercado Pago ou o Pix
 3. devolve o link ou o QR Code para a interface
 4. acompanha o status até a confirmação automática
+
+Mesmo se o webhook atrasar, o mini app volta a consultar o pedido e sincroniza o status com o Mercado Pago antes de mostrar o resultado final.
 
 Para o Pix, o fluxo pede e-mail do comprador, porque o Mercado Pago exige isso para gerar o pagamento.
 

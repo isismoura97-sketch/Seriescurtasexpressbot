@@ -1,13 +1,13 @@
 ﻿/**
  * Séries Curtas Express - Mini App Telegram
- * Versão 3.4 - Player Corrigido (404 Fix)
+ * Versão 3.5 - Pix Prioritário e Webhook Robusto
  */
 
 'use strict';
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260627-03';
+const BUILD_VERSION = '20260627-04';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
@@ -38,13 +38,13 @@ let allSeries = [];
 let cart = [];
 let currentSearchTerm = '';
 let currentCategory = 'all';
-let selectedPaymentMethod = localStorage.getItem(PAYMENT_METHOD_STORAGE_KEY) || 'mercado_pago_link';
+let selectedPaymentMethod = localStorage.getItem(PAYMENT_METHOD_STORAGE_KEY) || 'pix_qr';
 let buyerEmail = localStorage.getItem(BUYER_EMAIL_STORAGE_KEY) || '';
 let activePaymentOrder = null;
 let paymentStatusTimer = null;
 let paymentStatusLoading = false;
 if (!['mercado_pago_link', 'pix_qr', 'telegram_checkout'].includes(selectedPaymentMethod)) {
-    selectedPaymentMethod = 'mercado_pago_link';
+    selectedPaymentMethod = 'pix_qr';
 }
 try {
     cart = JSON.parse(localStorage.getItem('cart_series')) || [];
@@ -434,6 +434,10 @@ function updatePaymentMethodUI() {
 
     if (DOM.buyerEmailInput && buyerEmail) {
         DOM.buyerEmailInput.value = buyerEmail;
+    }
+
+    if (DOM.buyerEmailInput) {
+        DOM.buyerEmailInput.required = selectedPaymentMethod === 'pix_qr';
     }
 }
 
@@ -1320,7 +1324,7 @@ function checkout() {
     const checkoutItems = sanitizeCheckoutItems(cart);
     const buyerEmailValue = String(DOM.buyerEmailInput?.value || buyerEmail || '').trim();
 
-    if (selectedPaymentMethod === 'pix_qr' && !buyerEmailValue) {
+    if (selectedPaymentMethod === 'pix_qr' && (!buyerEmailValue || (DOM.buyerEmailInput && !DOM.buyerEmailInput.checkValidity()))) {
         showToast('Informe um e-mail válido para gerar o Pix.', 'error');
         DOM.buyerEmailInput?.focus();
         return;
