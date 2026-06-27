@@ -73,3 +73,9 @@ node scripts/import-migration-template.mjs --input outputs/migration-template.cs
 
 Para enviar as alterações ao Supabase, adicione `--apply` e configure `SUPABASE_SERVICE_ROLE_KEY`.
 Se a coluna da chave primária não for `id`, passe `--id-column` com o nome correto.
+
+Para gerar uma prioridade de migração dos itens sem mídia:
+
+```bash
+node scripts/missing-priority-report.mjs --output outputs/missing-priority.md
+```
