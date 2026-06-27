@@ -129,3 +129,17 @@ Para gerar uma prioridade de migração dos itens sem mídia:
 ```bash
 node scripts/missing-priority-report.mjs --output outputs/missing-priority.md
 ```
+
+## Preset equilibrado
+
+Se quiser usar o canal público com um equilíbrio bom entre proteção e redução de falso positivo, use estes valores como base:
+
+```env
+PUBLIC_CHANNEL_STRICTNESS=balanced
+PUBLIC_CHANNEL_AUTO_BAN=true
+PUBLIC_CHANNEL_ALERT_CHAT_ID=<chat_id_de_alerta>
+PUBLIC_CHANNEL_ALLOWLIST_USER_IDS=<ids_confiáveis_separados_por_vírgula>
+PUBLIC_CHANNEL_ALLOWLIST_USERNAMES=<usernames_confiáveis_separados_por_vírgula>
+```
+
+Esse preset mantém o monitoramento ativo, mas evita banir por sinais isolados ou por conta com perfil simples.
