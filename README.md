@@ -73,6 +73,8 @@ https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api?action=t
 - `PUBLIC_CHANNEL_STRICTNESS` para ajustar a agressividade da heurística (`conservative`, `balanced` ou `strict`). O padrão atual é `conservative` para reduzir falso positivo.
 - `PUBLIC_CHANNEL_AUTO_BAN=true` para banir automaticamente
 - `PUBLIC_CHANNEL_AUTO_BAN=false` se você quiser começar só em modo de alerta
+- `PUBLIC_CHANNEL_ALLOWLIST_USER_IDS` com IDs de usuários confiáveis separados por vírgula
+- `PUBLIC_CHANNEL_ALLOWLIST_USERNAMES` com `@usernames` confiáveis separados por vírgula
 
 O bot precisa ser administrador do canal com permissão para banir membros. Sem isso ele consegue detectar, mas não consegue expulsar.
 
@@ -83,6 +85,7 @@ Sugestão prática:
 - `strict` para expulsar mais agressivamente contas suspeitas
 
 Neste ajuste, o banimento automático só acontece quando há combinação de sinais fortes de automação, e não apenas por ausência de foto, `@username` ou código de idioma.
+Se você já sabe quais contas são legítimas, coloque-as na allowlist para impedir qualquer ação automática nelas.
 
 5. Use o script de webhook com atualização de eventos:
 

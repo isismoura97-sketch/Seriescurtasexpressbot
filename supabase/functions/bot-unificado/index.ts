@@ -12,6 +12,18 @@ const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
 const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID") ?? "";
 const PUBLIC_CHANNEL_AUTO_BAN = (Deno.env.get("PUBLIC_CHANNEL_AUTO_BAN") ?? "true").toLowerCase() !== "false";
 const PUBLIC_CHANNEL_STRICTNESS = (Deno.env.get("PUBLIC_CHANNEL_STRICTNESS") ?? "conservative").toLowerCase();
+const PUBLIC_CHANNEL_ALLOWLIST_USER_IDS = new Set(
+  (Deno.env.get("PUBLIC_CHANNEL_ALLOWLIST_USER_IDS") ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean),
+);
+const PUBLIC_CHANNEL_ALLOWLIST_USERNAMES = new Set(
+  (Deno.env.get("PUBLIC_CHANNEL_ALLOWLIST_USERNAMES") ?? "")
+    .split(",")
+    .map((value) => normalizeHandle(value))
+    .filter(Boolean),
+);
 const FUNCTION_NAME = "bot-unificado";
 const SERIES_TABLE = Deno.env.get("SERIES_TABLE") ?? "series";
 const SERIES_ID_COLUMN = Deno.env.get("SERIES_ID_COLUMN") ?? "id";
@@ -82,6 +94,16 @@ function telegramApiUrl(path: string) {
 
 function normalizeHandle(value: unknown) {
   return String(value || "").trim().replace(/^@/, "").toLowerCase();
+}
+
+function isPublicChannelAllowlisted(user: Record<string, unknown>) {
+  const userId = user.id == null ? "" : String(user.id);
+  const username = normalizeHandle(user.username);
+
+  return (
+    (userId && PUBLIC_CHANNEL_ALLOWLIST_USER_IDS.has(userId)) ||
+    (username && PUBLIC_CHANNEL_ALLOWLIST_USERNAMES.has(username))
+  );
 }
 
 function isTargetPublicChannel(chat: Record<string, unknown> | undefined) {
@@ -819,6 +841,14 @@ async function handleTelegramWebhook(req: Request) {
 
     if (!chatMemberUpdate.joined) {
       return json(req, { ok: true, ignored: true });
+    }
+
+    if (isPublicChannelAllowlisted(chatMemberUpdate.user)) {
+      return json(req, {
+        ok: true,
+        action: "allowlisted",
+        user_id: String(chatMemberUpdate.userId),
+      });
     }
 
     const analysis = await analyzePublicChannelJoin(chatMemberUpdate.user);
