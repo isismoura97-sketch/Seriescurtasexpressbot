@@ -41,7 +41,10 @@ Secrets necessários no Supabase:
 - `TELEGRAM_BOT_TOKEN`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `MERCADO_PAGO_ACCESS_TOKEN` para criar link de pagamento e Pix
+- `MERCADO_PAGO_WEBHOOK_SECRET` se você quiser validar eventos do provedor no futuro
 - `SERIES_WEBAPP_URL` com a URL principal do mini app, por exemplo `https://seriescurtasexpressbot.vercel.app/`
+- `PAYMENT_ORDERS_TABLE` com o nome da tabela de pedidos, padrão `payment_orders`
 - `SERIES_TABLE` se o nome da tabela não for `series`
 - `SERIES_ID_COLUMN` se o identificador não for `id`
 - `SERIES_TITLE_COLUMN` se o título não estiver em `title`
@@ -49,6 +52,25 @@ Secrets necessários no Supabase:
 - `SERIES_VIDEO_FILE_ID_COLUMNS` com uma lista separada por vírgulas para IDs do Telegram
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
+
+## Pagamentos
+
+O checkout agora suporta três caminhos:
+
+- `Mercado Pago` com link de pagamento
+- `Pix` com QR Code
+- `Checkout no Telegram`, que mantém a jornada dentro do mini app e confirma automaticamente pelo webhook
+
+O mini app envia o carrinho para a Edge Function `bot-unificado`, que:
+
+1. cria o pedido no Supabase
+2. gera a preferência do Mercado Pago ou o Pix
+3. devolve o link ou o QR Code para a interface
+4. acompanha o status até a confirmação automática
+
+Para o Pix, o fluxo pede e-mail do comprador, porque o Mercado Pago exige isso para gerar o pagamento.
+
+As regras da integração ficam na migration `supabase/migrations/20260627224636_mercado_pago_checkout.sql`.
 
 ## Canal público e anti-bot
 

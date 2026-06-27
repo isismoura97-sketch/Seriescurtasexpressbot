@@ -7,6 +7,9 @@ const CAPTCHA_WEBAPP_URL = Deno.env.get("CAPTCHA_WEBAPP_URL") ?? "https://series
 const CAPTCHA_MAX_AGE_SECONDS = Number(Deno.env.get("CAPTCHA_MAX_AGE_SECONDS") ?? "600");
 const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? "600");
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
+const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
+const MERCADO_PAGO_WEBHOOK_SECRET = Deno.env.get("MERCADO_PAGO_WEBHOOK_SECRET") ?? "";
+const PAYMENT_ORDERS_TABLE = Deno.env.get("PAYMENT_ORDERS_TABLE") ?? "payment_orders";
 const PUBLIC_CHANNEL_USERNAME = Deno.env.get("PUBLIC_CHANNEL_USERNAME") ?? "";
 const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
 const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID") ?? "";
@@ -44,8 +47,8 @@ function corsHeaders(req: Request) {
 
   return {
     "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET,OPTIONS",
-    "access-control-allow-headers": "authorization,apikey,content-type,x-client-info,range",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "authorization,apikey,content-type,x-client-info,range,x-webapp-init-data,x-request-id",
     "access-control-allow-credentials": "true",
     "access-control-max-age": "86400",
     "vary": "Origin",
@@ -256,6 +259,614 @@ async function supabaseRestRequest(path: string, init: { method?: string; header
   }
 
   return data;
+}
+
+type CheckoutMethod = "mercado_pago_link" | "pix_qr" | "telegram_checkout";
+
+function normalizeCheckoutMethod(value: unknown): CheckoutMethod {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "pix" || normalized === "pix_qr" || normalized === "pix-qr") return "pix_qr";
+  if (normalized === "telegram" || normalized === "telegram_checkout" || normalized === "telegram-checkout") return "telegram_checkout";
+  return "mercado_pago_link";
+}
+
+function normalizeCheckoutItems(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item, index) => {
+      if (!item || typeof item !== "object") return null;
+      const entry = item as Record<string, unknown>;
+      const title = String(entry.title ?? entry.name ?? `Item ${index + 1}`).trim() || `Item ${index + 1}`;
+      const id = String(entry.id ?? entry.serie_id ?? entry.product_id ?? `${index + 1}`).trim() || `${index + 1}`;
+      const rawQuantity = Number(entry.quantity ?? 1);
+      const quantity = Number.isFinite(rawQuantity) && rawQuantity > 0 ? Math.floor(rawQuantity) : 1;
+      const rawPrice = Number(entry.price ?? entry.unit_price ?? entry.amount ?? 0);
+      const price = Number.isFinite(rawPrice) && rawPrice >= 0 ? Number(rawPrice.toFixed(2)) : 0;
+      const coverUrl = typeof entry.cover_url === "string" && entry.cover_url.trim() ? entry.cover_url.trim() : null;
+
+      return {
+        id,
+        title,
+        quantity,
+        price,
+        cover_url: coverUrl,
+      };
+    })
+    .filter(Boolean) as Array<{
+      id: string;
+      title: string;
+      quantity: number;
+      price: number;
+      cover_url: string | null;
+    }>;
+}
+
+function calculateCheckoutTotal(items: Array<{ quantity: number; price: number }>) {
+  return Number(
+    items
+      .reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0)
+      .toFixed(2),
+  );
+}
+
+function buildCheckoutDescription(items: Array<{ title: string }>) {
+  const titles = items.map((item) => item.title).filter(Boolean).slice(0, 4);
+  if (!titles.length) return "Compra no Séries Express";
+  return titles.join(" • ").slice(0, 120);
+}
+
+function formatCurrencyBRL(value: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value) || 0);
+}
+
+function buildPaymentNotificationUrl() {
+  const baseUrl = SUPABASE_URL
+    ? new URL(`/functions/v1/${FUNCTION_NAME}/api`, SUPABASE_URL)
+    : new URL("https://seriescurtasexpressbot.vercel.app/");
+  baseUrl.searchParams.set("action", "mercado-pago-webhook");
+  return baseUrl.toString();
+}
+
+function buildPaymentReturnUrl(orderId: string) {
+  const url = new URL(SERIES_WEBAPP_URL);
+  url.searchParams.set("payment_order_id", orderId);
+  return url.toString();
+}
+
+function mercadoPagoApiUrl(path: string) {
+  return `https://api.mercadopago.com${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+async function mercadoPagoRequest(path: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
+  if (!MERCADO_PAGO_ACCESS_TOKEN) {
+    throw new Error("MERCADO_PAGO_ACCESS_TOKEN não configurado");
+  }
+
+  const res = await fetch(mercadoPagoApiUrl(path), {
+    method: init.method ?? "GET",
+    headers: {
+      authorization: `Bearer ${MERCADO_PAGO_ACCESS_TOKEN}`,
+      accept: "application/json",
+      ...(init.headers || {}),
+    },
+    body: init.body,
+  });
+
+  const text = await res.text();
+  let data: unknown = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // keep raw text
+  }
+
+  if (!res.ok) {
+    const error = new Error(
+      typeof data === "object" && data && "message" in data
+        ? String((data as { message?: string }).message)
+        : `Mercado Pago request failed (${res.status})`,
+    ) as Error & { status?: number; body?: unknown };
+    error.status = res.status;
+    error.body = data;
+    throw error;
+  }
+
+  return data;
+}
+
+function getWebhookOrderId(payload: Record<string, unknown>, url: URL) {
+  const data = payload.data as Record<string, unknown> | undefined;
+  const bodyId = typeof data?.id === "string" || typeof data?.id === "number" ? String(data.id) : "";
+  const queryId = url.searchParams.get("id") || url.searchParams.get("data.id") || "";
+  return bodyId || queryId;
+}
+
+async function createPaymentOrderRecord(entry: {
+  orderId: string;
+  userId: string;
+  chatId: string;
+  paymentMethod: CheckoutMethod;
+  amount: number;
+  items: Array<{ id: string; title: string; quantity: number; price: number; cover_url: string | null }>;
+  buyerEmail?: string | null;
+  buyerName?: string | null;
+  description: string;
+  status?: string;
+}) {
+  const rows = await supabaseRestRequest(PAYMENT_ORDERS_TABLE, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      prefer: "return=representation",
+    },
+    body: stringifyJson([
+      {
+        order_id: entry.orderId,
+        user_id: entry.userId,
+        chat_id: entry.chatId,
+        status: entry.status ?? "created",
+        payment_method: entry.paymentMethod,
+        checkout_mode: "telegram",
+        currency: "BRL",
+        amount: Number(entry.amount.toFixed(2)),
+        items: entry.items,
+        buyer_email: entry.buyerEmail ?? null,
+        buyer_name: entry.buyerName ?? null,
+        description: entry.description,
+        external_reference: entry.orderId,
+      },
+    ]),
+  });
+
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : rows;
+}
+
+async function updatePaymentOrderRecord(orderId: string, patch: Record<string, unknown>) {
+  const rows = await supabaseRestRequest(`${PAYMENT_ORDERS_TABLE}?order_id=eq.${encodeURIComponent(orderId)}`, {
+    method: "PATCH",
+    headers: {
+      "content-type": "application/json",
+      prefer: "return=representation",
+    },
+    body: stringifyJson({
+      updated_at: new Date().toISOString(),
+      ...patch,
+    }),
+  });
+
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : rows;
+}
+
+async function getPaymentOrderById(orderId: string) {
+  const rows = await supabaseRestRequest(`${PAYMENT_ORDERS_TABLE}?select=*&order_id=eq.${encodeURIComponent(orderId)}&limit=1`);
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+}
+
+async function getPaymentOrderByPaymentId(paymentId: string) {
+  const rows = await supabaseRestRequest(`${PAYMENT_ORDERS_TABLE}?select=*&mercado_pago_payment_id=eq.${encodeURIComponent(paymentId)}&limit=1`);
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+}
+
+async function createMercadoPagoPreference(order: {
+  orderId: string;
+  userId: string;
+  amount: number;
+  description: string;
+  items: Array<{ title: string; quantity: number; price: number }>;
+  buyerEmail?: string | null;
+  buyerName?: string | null;
+}) {
+  const response = await mercadoPagoRequest("/checkout/preferences", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: stringifyJson({
+      items: order.items.map((item) => ({
+        title: item.title,
+        quantity: item.quantity,
+        unit_price: Number(item.price.toFixed(2)),
+        currency_id: "BRL",
+      })),
+      payer: {
+        email: order.buyerEmail ?? undefined,
+        first_name: order.buyerName ?? undefined,
+      },
+      external_reference: order.orderId,
+      metadata: {
+        order_id: order.orderId,
+        user_id: order.userId,
+        payment_method: "mercado_pago_link",
+      },
+      back_urls: {
+        success: buildPaymentReturnUrl(order.orderId),
+        pending: buildPaymentReturnUrl(order.orderId),
+        failure: buildPaymentReturnUrl(order.orderId),
+      },
+      auto_return: "approved",
+      notification_url: buildPaymentNotificationUrl(),
+      statement_descriptor: "SERIES EXPRESS",
+    }),
+  }) as Record<string, unknown>;
+
+  return {
+    preferenceId: typeof response.id === "string" ? response.id : String(response.id ?? ""),
+    initPoint:
+      typeof response.init_point === "string" && response.init_point
+        ? response.init_point
+        : typeof response.sandbox_init_point === "string"
+        ? response.sandbox_init_point
+        : "",
+    response,
+  };
+}
+
+async function createMercadoPagoPixPayment(order: {
+  orderId: string;
+  userId: string;
+  amount: number;
+  description: string;
+  buyerEmail: string;
+  buyerName?: string | null;
+}) {
+  const response = await mercadoPagoRequest("/v1/payments", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: stringifyJson({
+      transaction_amount: Number(order.amount.toFixed(2)),
+      description: order.description,
+      payment_method_id: "pix",
+      payer: {
+        email: order.buyerEmail,
+        first_name: order.buyerName ?? undefined,
+      },
+      external_reference: order.orderId,
+      metadata: {
+        order_id: order.orderId,
+        user_id: order.userId,
+        payment_method: "pix_qr",
+      },
+      notification_url: buildPaymentNotificationUrl(),
+    }),
+  }) as Record<string, unknown>;
+
+  const interaction = response.point_of_interaction as Record<string, unknown> | undefined;
+  const transactionData = interaction?.transaction_data as Record<string, unknown> | undefined;
+
+  return {
+    paymentId: typeof response.id === "string" ? response.id : String(response.id ?? ""),
+    status: typeof response.status === "string" ? response.status : "pending",
+    qrCode: typeof transactionData?.qr_code === "string" ? transactionData.qr_code : "",
+    qrCodeBase64: typeof transactionData?.qr_code_base64 === "string" ? transactionData.qr_code_base64 : "",
+    ticketUrl: typeof transactionData?.ticket_url === "string" ? transactionData.ticket_url : "",
+    response,
+  };
+}
+
+async function fetchMercadoPagoPayment(paymentId: string) {
+  return await mercadoPagoRequest(`/v1/payments/${encodeURIComponent(paymentId)}`) as Record<string, unknown>;
+}
+
+async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
+  const chatId = String(order.chat_id ?? order.user_id ?? "");
+  if (!chatId) return;
+
+  const method = normalizeCheckoutMethod(order.payment_method);
+  const amount = Number(order.amount ?? 0);
+  const amountText = formatCurrencyBRL(amount);
+  const shortOrderId = String(order.order_id ?? "").slice(0, 8);
+  const baseLines = [
+    "Pedido criado com sucesso.",
+    `Pedido: ${shortOrderId}`,
+    `Pagamento: ${amountText}`,
+  ];
+
+  if (method === "mercado_pago_link" && typeof order.checkout_url === "string" && order.checkout_url) {
+    baseLines.push("Abra o botão abaixo para concluir o pagamento.");
+    await telegramRequest("sendMessage", {
+      chat_id: chatId,
+      text: baseLines.join("\n"),
+      reply_markup: JSON.stringify({
+        inline_keyboard: [[{ text: "Abrir pagamento", url: order.checkout_url }]],
+      }),
+    });
+    return;
+  }
+
+  if (method === "pix_qr") {
+    baseLines.push("O QR Code do Pix está disponível no mini app.");
+    if (typeof order.ticket_url === "string" && order.ticket_url) {
+      baseLines.push(`Link alternativo: ${order.ticket_url}`);
+    }
+    await telegramRequest("sendMessage", {
+      chat_id: chatId,
+      text: baseLines.join("\n"),
+    });
+    return;
+  }
+
+  baseLines.push("O checkout foi iniciado dentro do Telegram.");
+  await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: baseLines.join("\n"),
+  });
+}
+
+async function sendPaymentConfirmationMessage(order: Record<string, unknown>, payment: Record<string, unknown>) {
+  const chatId = String(order.chat_id ?? order.user_id ?? "");
+  if (!chatId) return;
+
+  const method = normalizeCheckoutMethod(order.payment_method);
+  const amount = Number(order.amount ?? 0);
+  const amountText = formatCurrencyBRL(amount);
+  const shortOrderId = String(order.order_id ?? "").slice(0, 8);
+  const statusDetail = typeof payment.status_detail === "string" ? payment.status_detail : "";
+  const lines = [
+    "Pagamento confirmado com sucesso.",
+    `Pedido: ${shortOrderId}`,
+    `Valor: ${amountText}`,
+    `Método: ${method === "pix_qr" ? "Pix" : "Mercado Pago"}`,
+  ];
+
+  if (statusDetail) {
+    lines.push(`Detalhe: ${statusDetail}`);
+  }
+
+  await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: lines.join("\n"),
+  });
+}
+
+function normalizeWebhookStatus(value: unknown) {
+  const status = String(value ?? "").trim().toLowerCase();
+  if (!status) return "pending";
+  if (status === "authorized") return "approved";
+  if (status === "in_process") return "pending";
+  if (status === "in_mediation") return "pending";
+  return status;
+}
+
+async function handlePaymentCreate(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisição inválido" }, 400);
+  }
+
+  let userId = "";
+  try {
+    const initData = String(body.init_data ?? body.initData ?? "");
+    const validated = await validateWebAppInitData(initData);
+    userId = validated.userId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(req, { error: message }, 401);
+  }
+
+  const items = normalizeCheckoutItems(body.items);
+  if (!items.length) {
+    return json(req, { error: "Carrinho vazio" }, 400);
+  }
+
+  const paymentMethod = normalizeCheckoutMethod(body.payment_method ?? body.method ?? body.checkout_method);
+  const buyerEmail = String(body.buyer_email ?? body.email ?? "").trim();
+  const buyerName = String(body.buyer_name ?? body.name ?? "").trim();
+  const amount = calculateCheckoutTotal(items);
+  const description = buildCheckoutDescription(items);
+  const orderId = crypto.randomUUID();
+  const chatId = String(body.chat_id ?? userId);
+
+  if (paymentMethod === "pix_qr" && !buyerEmail) {
+    return json(req, { error: "Informe um e-mail válido para gerar o Pix." }, 400);
+  }
+
+  let order = await createPaymentOrderRecord({
+    orderId,
+    userId,
+    chatId,
+    paymentMethod,
+    amount,
+    items,
+    buyerEmail: buyerEmail || null,
+    buyerName: buyerName || null,
+    description,
+    status: "created",
+  });
+
+  try {
+    if (paymentMethod === "pix_qr") {
+      const pix = await createMercadoPagoPixPayment({
+        orderId,
+        userId,
+        amount,
+        description,
+        buyerEmail,
+        buyerName: buyerName || null,
+      });
+
+      order = await updatePaymentOrderRecord(orderId, {
+        status: "pending_payment",
+        mercado_pago_payment_id: pix.paymentId,
+        pix_qr_code: pix.qrCode || null,
+        pix_qr_code_base64: pix.qrCodeBase64 || null,
+        ticket_url: pix.ticketUrl || null,
+        webhook_payload: pix.response,
+        last_event_at: new Date().toISOString(),
+      }) as Record<string, unknown>;
+
+      await sendPaymentCreatedMessage({
+        ...order,
+        payment_method: paymentMethod,
+        order_id: orderId,
+      });
+
+      return json(req, {
+        ok: true,
+        order,
+        payment_method: paymentMethod,
+        payment_link: null,
+        pix_qr_code: pix.qrCode,
+        pix_qr_code_base64: pix.qrCodeBase64,
+        ticket_url: pix.ticketUrl,
+      });
+    }
+
+    const preference = await createMercadoPagoPreference({
+      orderId,
+      userId,
+      amount,
+      description,
+      items,
+      buyerEmail: buyerEmail || null,
+      buyerName: buyerName || null,
+    });
+
+    order = await updatePaymentOrderRecord(orderId, {
+      status: "pending_payment",
+      preference_id: preference.preferenceId,
+      checkout_url: preference.initPoint || null,
+      webhook_payload: preference.response,
+      last_event_at: new Date().toISOString(),
+    }) as Record<string, unknown>;
+
+    await sendPaymentCreatedMessage({
+      ...order,
+      payment_method: paymentMethod,
+      order_id: orderId,
+    });
+
+    return json(req, {
+      ok: true,
+      order,
+      payment_method: paymentMethod,
+      payment_link: preference.initPoint,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await updatePaymentOrderRecord(orderId, {
+      status: "failed",
+      error_message: message,
+      last_event_at: new Date().toISOString(),
+    }).catch(() => null);
+    return json(req, { error: message }, 500);
+  }
+}
+
+async function handlePaymentStatus(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisição inválido" }, 400);
+  }
+
+  const orderId = String(body.order_id ?? body.orderId ?? "").trim();
+  if (!orderId) {
+    return json(req, { error: "order_id ausente" }, 400);
+  }
+
+  let userId = "";
+  try {
+    const initData = String(body.init_data ?? body.initData ?? "");
+    const validated = await validateWebAppInitData(initData);
+    userId = validated.userId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(req, { error: message }, 401);
+  }
+
+  const order = await getPaymentOrderById(orderId);
+  if (!order) {
+    return json(req, { error: "Pedido não encontrado" }, 404);
+  }
+
+  if (String(order.user_id) !== userId) {
+    return json(req, { error: "Acesso negado" }, 403);
+  }
+
+  return json(req, {
+    ok: true,
+    order,
+  });
+}
+
+async function handleMercadoPagoWebhook(req: Request, url: URL) {
+  const payload = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!payload) {
+    return json(req, { ok: false, error: "Webhook inválido" }, 400);
+  }
+
+  const paymentId = getWebhookOrderId(payload, url);
+  if (!paymentId) {
+    return json(req, { ok: true, ignored: true });
+  }
+
+  try {
+    const payment = await fetchMercadoPagoPayment(paymentId);
+    const orderId = String(payment.external_reference ?? (payment.metadata as Record<string, unknown> | undefined)?.order_id ?? "").trim();
+    if (!orderId) {
+      return json(req, { ok: true, ignored: true });
+    }
+
+    let order = await getPaymentOrderById(orderId);
+    if (!order) {
+      order = await getPaymentOrderByPaymentId(paymentId);
+    }
+    if (!order) {
+      return json(req, { ok: true, ignored: true });
+    }
+
+    const previousStatus = String(order.status ?? "");
+    const currentStatus = normalizeWebhookStatus(payment.status);
+    const nextPatch: Record<string, unknown> = {
+      mercado_pago_payment_id: paymentId,
+      webhook_payload: payload,
+      last_event_at: new Date().toISOString(),
+      status: currentStatus,
+    };
+
+    if (typeof payment.point_of_interaction === "object" && payment.point_of_interaction) {
+      const interaction = payment.point_of_interaction as Record<string, unknown>;
+      const transactionData = interaction.transaction_data as Record<string, unknown> | undefined;
+      if (typeof transactionData?.qr_code === "string" && transactionData.qr_code) {
+        nextPatch.pix_qr_code = transactionData.qr_code;
+      }
+      if (typeof transactionData?.qr_code_base64 === "string" && transactionData.qr_code_base64) {
+        nextPatch.pix_qr_code_base64 = transactionData.qr_code_base64;
+      }
+      if (typeof transactionData?.ticket_url === "string" && transactionData.ticket_url) {
+        nextPatch.ticket_url = transactionData.ticket_url;
+      }
+    }
+
+    if (currentStatus === "approved") {
+      nextPatch.confirmed_at = new Date().toISOString();
+      nextPatch.error_message = null;
+    } else if (currentStatus === "rejected") {
+      nextPatch.rejected_at = new Date().toISOString();
+    } else if (currentStatus === "cancelled" || currentStatus === "canceled") {
+      nextPatch.canceled_at = new Date().toISOString();
+    }
+
+    order = await updatePaymentOrderRecord(orderId, nextPatch) as Record<string, unknown>;
+
+    if (currentStatus === "approved" && previousStatus !== "approved") {
+      await sendPaymentConfirmationMessage(order, payment);
+    }
+
+    return json(req, {
+      ok: true,
+      action: "mercado_pago_webhook",
+      payment_id: paymentId,
+      status: currentStatus,
+      order_id: orderId,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[PAYMENT] Falha no webhook do Mercado Pago:", message);
+    return json(req, { ok: false, error: message }, 500);
+  }
 }
 
 async function recordPublicChannelAudit(entry: {
@@ -1407,6 +2018,18 @@ Deno.serve(async (req) => {
       const title = url.searchParams.get("title") || "";
       if (!fileId) return json(req, { error: "file_id ausente" }, 400);
       return await proxyTelegramFile(req, fileId, title);
+    }
+
+    if (action === "checkout-create") {
+      return await handlePaymentCreate(req);
+    }
+
+    if (action === "payment-status") {
+      return await handlePaymentStatus(req);
+    }
+
+    if (action === "mercado-pago-webhook") {
+      return await handleMercadoPagoWebhook(req, url);
     }
 
     if (action === "telegram-webhook") {

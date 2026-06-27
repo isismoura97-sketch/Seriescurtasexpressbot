@@ -1,6 +1,6 @@
 /* ============================================= */
 /* SÉRIES CURTAS EXPRESS - STYLES.CSS            */
-/* Versão: 3.3 - Revisada e Corrigida            */
+/* Versão: 3.4 - Checkout com pagamento           */
 /* ============================================= */
 
 :root {
@@ -1206,6 +1206,145 @@ body.light-mode .cart-item {
     font-size: 22px;
 }
 
+.payment-methods {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.payment-chip {
+    border: 1px solid rgba(255,215,0,0.22);
+    background: rgba(255,255,255,0.05);
+    color: var(--text-main);
+    border-radius: 12px;
+    padding: 12px 10px;
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+}
+
+.payment-chip:hover,
+.payment-chip.active {
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: #000;
+    box-shadow: 0 0 18px rgba(255,215,0,0.28);
+}
+
+.payment-field {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.payment-field span {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-dim);
+}
+
+.payment-field input {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid rgba(255,215,0,0.22);
+    background: rgba(255,255,255,0.06);
+    color: var(--text-main);
+    padding: 14px 15px;
+    font-size: 15px;
+    outline: none;
+}
+
+.payment-field input::placeholder {
+    color: var(--gray);
+}
+
+.payment-summary {
+    margin-bottom: 14px;
+    padding: 15px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,215,0,0.18);
+    background: rgba(255,255,255,0.05);
+    display: grid;
+    gap: 12px;
+}
+
+.payment-summary-status {
+    display: grid;
+    gap: 4px;
+    color: var(--text-main);
+}
+
+.payment-summary-status strong {
+    font-size: 16px;
+}
+
+.payment-subtitle {
+    color: var(--text-dim);
+    font-size: 13px;
+}
+
+.payment-summary-details {
+    display: grid;
+    gap: 8px;
+}
+
+.payment-qr {
+    display: grid;
+    justify-items: center;
+    padding: 8px 0 2px;
+}
+
+.payment-qr img {
+    width: 180px;
+    height: 180px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 16px;
+    padding: 10px;
+}
+
+.payment-code textarea {
+    width: 100%;
+    min-height: 84px;
+    resize: vertical;
+    border-radius: 12px;
+    border: 1px solid rgba(255,215,0,0.22);
+    background: rgba(0,0,0,0.18);
+    color: var(--text-main);
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.payment-detail {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+.payment-detail strong {
+    color: var(--text-main);
+    text-align: right;
+}
+
+.payment-summary-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+.payment-summary-actions .btn {
+    width: 100%;
+}
+
 /* ====================== TOAST ====================== */
 .toast-container {
     position: fixed;
@@ -1300,5 +1439,9 @@ body.light-mode .cart-item {
 
     .cart-drawer {
         max-width: 100%;
+    }
+
+    .payment-methods {
+        grid-template-columns: 1fr;
     }
 }

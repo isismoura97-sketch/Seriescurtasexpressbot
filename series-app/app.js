@@ -7,15 +7,19 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260627-01';
+const BUILD_VERSION = '20260627-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
 const APP_LAUNCH_SERIE_ID = new URLSearchParams(window.location.search).get('play')
     || new URLSearchParams(window.location.search).get('serie_id')
     || '';
+const APP_LAUNCH_PAYMENT_ORDER_ID = new URLSearchParams(window.location.search).get('payment_order_id') || '';
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
 const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
+const PAYMENT_METHOD_STORAGE_KEY = 'checkout_payment_method';
+const BUYER_EMAIL_STORAGE_KEY = 'checkout_buyer_email';
+const ACTIVE_PAYMENT_ORDER_STORAGE_KEY = 'checkout_active_order';
 
 function sanitizeUserId(raw) {
     if (raw == null) return null;
@@ -33,6 +37,14 @@ let allSeries = [];
 let cart = [];
 let currentSearchTerm = '';
 let currentCategory = 'all';
+let selectedPaymentMethod = localStorage.getItem(PAYMENT_METHOD_STORAGE_KEY) || 'mercado_pago_link';
+let buyerEmail = localStorage.getItem(BUYER_EMAIL_STORAGE_KEY) || '';
+let activePaymentOrder = null;
+let paymentStatusTimer = null;
+let paymentStatusLoading = false;
+if (!['mercado_pago_link', 'pix_qr', 'telegram_checkout'].includes(selectedPaymentMethod)) {
+    selectedPaymentMethod = 'mercado_pago_link';
+}
 try {
     cart = JSON.parse(localStorage.getItem('cart_series')) || [];
 } catch (e) {
@@ -111,6 +123,14 @@ const DOM = {
     cartDrawer: document.getElementById('cartDrawer'),
     cartItems: document.getElementById('cartItems'),
     cartTotal: document.getElementById('cartTotal'),
+    checkoutBtn: document.getElementById('checkoutBtn'),
+    paymentMethods: Array.from(document.querySelectorAll('[data-payment-method]')),
+    buyerEmailField: document.getElementById('buyerEmailField'),
+    buyerEmailInput: document.getElementById('buyerEmailInput'),
+    paymentSummaryPanel: document.getElementById('paymentSummaryPanel'),
+    paymentSummaryStatus: document.getElementById('paymentSummaryStatus'),
+    paymentSummaryDetails: document.getElementById('paymentSummaryDetails'),
+    paymentSummaryActions: document.getElementById('paymentSummaryActions'),
     cartBadge: document.getElementById('cartBadge'),
     modalOverlay: document.getElementById('modalOverlay'),
     modalImg: document.getElementById('modalImg'),
@@ -320,6 +340,333 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
+function savePaymentPrefs() {
+    try {
+        localStorage.setItem(PAYMENT_METHOD_STORAGE_KEY, selectedPaymentMethod);
+        localStorage.setItem(BUYER_EMAIL_STORAGE_KEY, buyerEmail);
+    } catch (e) {
+        console.warn('[PAYMENT] Falha ao salvar preferências:', e.message);
+    }
+}
+
+function isAwaitingPayment(order) {
+    if (!order) return false;
+    const status = String(order.status || '').toLowerCase();
+    return ['created', 'pending', 'pending_payment', 'in_process', 'pending_review'].includes(status);
+}
+
+function getPaymentMethodLabel(method = selectedPaymentMethod) {
+    switch (method) {
+        case 'pix_qr':
+            return 'Pix com QR Code';
+        case 'telegram_checkout':
+            return 'Checkout no Telegram';
+        case 'mercado_pago_link':
+        default:
+            return 'Link Mercado Pago';
+    }
+}
+
+function restoreActivePaymentOrder() {
+    try {
+        const raw = localStorage.getItem(ACTIVE_PAYMENT_ORDER_STORAGE_KEY);
+        activePaymentOrder = raw ? JSON.parse(raw) : null;
+    } catch (e) {
+        console.warn('[PAYMENT] Falha ao restaurar pedido ativo:', e.message);
+        activePaymentOrder = null;
+    }
+}
+
+function saveActivePaymentOrder(order) {
+    activePaymentOrder = order || null;
+    try {
+        if (activePaymentOrder) {
+            localStorage.setItem(ACTIVE_PAYMENT_ORDER_STORAGE_KEY, JSON.stringify(activePaymentOrder));
+        } else {
+            localStorage.removeItem(ACTIVE_PAYMENT_ORDER_STORAGE_KEY);
+        }
+    } catch (e) {
+        console.warn('[PAYMENT] Falha ao salvar pedido ativo:', e.message);
+    }
+}
+
+function clearActivePaymentOrder() {
+    saveActivePaymentOrder(null);
+    stopPaymentStatusPolling();
+    renderPaymentSummary(null);
+}
+
+function stopPaymentStatusPolling() {
+    if (paymentStatusTimer) {
+        clearInterval(paymentStatusTimer);
+        paymentStatusTimer = null;
+    }
+}
+
+function startPaymentStatusPolling(orderId) {
+    stopPaymentStatusPolling();
+    if (!orderId) return;
+    paymentStatusTimer = setInterval(() => {
+        refreshPaymentStatus(orderId, false);
+    }, 7000);
+}
+
+function setCheckoutLoading(isLoading) {
+    if (!DOM.checkoutBtn) return;
+    DOM.checkoutBtn.disabled = isLoading;
+    DOM.checkoutBtn.innerHTML = isLoading
+        ? '<i class="fas fa-spinner fa-spin"></i> Processando...'
+        : isAwaitingPayment(activePaymentOrder)
+            ? '<i class="fas fa-credit-card"></i> Ver pagamento'
+            : '<i class="fas fa-check"></i> Finalizar Compra';
+}
+
+function updatePaymentMethodUI() {
+    DOM.paymentMethods?.forEach((button) => {
+        const active = (button.dataset.paymentMethod || '') === selectedPaymentMethod;
+        button.classList.toggle('active', active);
+    });
+
+    if (DOM.buyerEmailField) {
+        DOM.buyerEmailField.hidden = selectedPaymentMethod !== 'pix_qr';
+    }
+
+    if (DOM.buyerEmailInput && buyerEmail) {
+        DOM.buyerEmailInput.value = buyerEmail;
+    }
+}
+
+function sanitizeCheckoutItems(items) {
+    return items.map((item) => ({
+        id: normalizeId(item.id),
+        title: item.title || '',
+        price: Number(item.price) || 0,
+        quantity: Number(item.quantity) || 1,
+        cover_url: getCoverUrl(item),
+    }));
+}
+
+function getCartTotal() {
+    return cart.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+}
+
+function setPaymentSummaryLoading(message = 'Consultando pagamento...') {
+    if (DOM.paymentSummaryStatus) {
+        DOM.paymentSummaryStatus.textContent = message;
+    }
+}
+
+function renderPaymentSummary(order) {
+    if (!DOM.paymentSummaryPanel || !DOM.paymentSummaryDetails || !DOM.paymentSummaryActions || !DOM.paymentSummaryStatus) {
+        return;
+    }
+
+    if (!order) {
+        DOM.paymentSummaryPanel.hidden = true;
+        DOM.paymentSummaryDetails.innerHTML = '';
+        DOM.paymentSummaryActions.innerHTML = '';
+        DOM.paymentSummaryStatus.textContent = '';
+        setCheckoutLoading(false);
+        return;
+    }
+
+    const method = order.payment_method || selectedPaymentMethod;
+    const amount = Number(order.amount || 0);
+    const status = String(order.status || 'created');
+    const shortOrderId = String(order.order_id || '').slice(0, 8);
+    const statusLabel = status === 'approved'
+        ? 'Pago'
+        : status === 'pending_payment' || status === 'created'
+            ? 'Aguardando pagamento'
+            : status;
+
+    DOM.paymentSummaryPanel.hidden = false;
+    DOM.paymentSummaryStatus.innerHTML = `
+        <strong>${escapeHtml(statusLabel)}</strong>
+        <div class="payment-subtitle">${escapeHtml(getPaymentMethodLabel(method))} • Pedido ${escapeHtml(shortOrderId || '---')}</div>
+    `;
+
+    const details = [];
+    details.push(`<div class="payment-detail"><span>Total</span><strong>${escapeHtml(formatPrice(amount))}</strong></div>`);
+
+    if (order.checkout_url) {
+        details.push(`<div class="payment-detail"><span>Link</span><strong>Disponível</strong></div>`);
+    }
+
+    if (order.pix_qr_code) {
+        details.push(`<div class="payment-detail"><span>Pix</span><strong>Código gerado</strong></div>`);
+        const qrBase64 = String(order.pix_qr_code_base64 || '').trim();
+        const qrCode = String(order.pix_qr_code || '').trim();
+        if (qrBase64) {
+            details.push(`
+                <div class="payment-qr">
+                    <img src="data:image/png;base64,${qrBase64}" alt="QR Code do Pix">
+                </div>
+            `);
+        }
+        if (qrCode) {
+            details.push(`
+                <div class="payment-code">
+                    <textarea readonly>${escapeHtml(qrCode)}</textarea>
+                </div>
+            `);
+        }
+    }
+
+    DOM.paymentSummaryDetails.innerHTML = details.join('');
+    DOM.paymentSummaryActions.innerHTML = '';
+
+    const openButton = document.createElement('button');
+    openButton.className = 'btn btn-primary';
+    if (method === 'pix_qr') {
+        openButton.innerHTML = '<i class="fas fa-qrcode"></i> Copiar QR';
+        openButton.addEventListener('click', async () => {
+            if (order.pix_qr_code) {
+                await copyToClipboard(order.pix_qr_code);
+                showToast('Código Pix copiado!', 'success');
+            }
+        });
+    } else {
+        openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Abrir pagamento';
+        openButton.addEventListener('click', () => {
+            if (order.checkout_url) {
+                openExternalLink(order.checkout_url);
+            }
+        });
+    }
+
+    DOM.paymentSummaryActions.appendChild(openButton);
+
+    if (order.checkout_url) {
+        const copyLinkButton = document.createElement('button');
+        copyLinkButton.className = 'btn btn-secondary';
+        copyLinkButton.innerHTML = '<i class="fas fa-copy"></i> Copiar link';
+        copyLinkButton.addEventListener('click', async () => {
+            await copyToClipboard(order.checkout_url);
+            showToast('Link de pagamento copiado!', 'success');
+        });
+        DOM.paymentSummaryActions.appendChild(copyLinkButton);
+    }
+
+    if (order.ticket_url) {
+        const ticketButton = document.createElement('button');
+        ticketButton.className = 'btn btn-secondary';
+        ticketButton.innerHTML = '<i class="fas fa-receipt"></i> Abrir Pix';
+        ticketButton.addEventListener('click', () => openExternalLink(order.ticket_url));
+        DOM.paymentSummaryActions.appendChild(ticketButton);
+    }
+
+    setCheckoutLoading(status !== 'approved');
+}
+
+async function copyToClipboard(text) {
+    if (!text) return false;
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+        const tempInput = document.createElement('textarea');
+        tempInput.value = text;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand('copy');
+        tempInput.remove();
+        return true;
+    } catch (e) {
+        console.warn('[PAYMENT] Falha ao copiar texto:', e.message);
+        return false;
+    }
+}
+
+function openExternalLink(url) {
+    if (!url) return;
+    try {
+        if (tg && typeof tg.openLink === 'function') {
+            tg.openLink(url);
+            return;
+        }
+    } catch (e) {
+        console.warn('[PAYMENT] Falha ao abrir link no Telegram:', e.message);
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+async function requestJson(url, payload, timeout = 20000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json'
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
+        }
+        return data;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function requestPaymentCreate(payload) {
+    return await requestJson(`${API_URL}?action=checkout-create`, payload, 25000);
+}
+
+async function requestPaymentStatus(payload) {
+    return await requestJson(`${API_URL}?action=payment-status`, payload, 15000);
+}
+
+async function refreshPaymentStatus(orderId, shouldToast = true) {
+    if (!orderId || paymentStatusLoading) return;
+    paymentStatusLoading = true;
+
+    try {
+        const data = await requestPaymentStatus({
+            init_data: tg?.initData || '',
+            order_id: orderId
+        });
+
+        const order = data?.order || null;
+        if (!order) return;
+
+        saveActivePaymentOrder(order);
+        renderPaymentSummary(order);
+
+        const status = String(order.status || '');
+        if (status === 'approved') {
+            cart = [];
+            saveCart('PAYMENT_APPROVED');
+            updateCartUI();
+            showToast('Pagamento confirmado! Seu acesso está pronto.', 'success');
+            clearActivePaymentOrder();
+            toggleCart(false);
+        } else if (status === 'rejected' || status === 'cancelled' || status === 'canceled' || status === 'expired') {
+            stopPaymentStatusPolling();
+            renderPaymentSummary(order);
+            if (shouldToast) {
+                showToast('Pagamento não concluído. Você pode tentar novamente.', 'error');
+            }
+        } else if (!paymentStatusTimer) {
+            startPaymentStatusPolling(String(order.order_id || orderId || ''));
+        }
+    } catch (e) {
+        debugLog('[PAYMENT] Status ainda não disponível ou indisponível:', e.message);
+    } finally {
+        paymentStatusLoading = false;
+    }
+}
+
 // =================== FUNÇÃO CRÍTICA: OBTER URL DA CAPA ====================
 function getCoverUrl(serie) {
     if (!serie) return PLACEHOLDER_IMAGE;
@@ -367,6 +714,7 @@ function getPlaybackMode(serie) {
 async function init() {
     resolveTelegramContext();
     bindPlayerVideoEvents();
+    restoreActivePaymentOrder();
 
     if (tg) {
         tg.ready();
@@ -374,6 +722,7 @@ async function init() {
     }
 
     applyTheme();
+    updatePaymentMethodUI();
 
     if (!userId) {
         if (DOM.heroTitle) DOM.heroTitle.textContent = 'Acesso Negado';
@@ -392,6 +741,12 @@ async function init() {
         refreshCatalog();
         initHero();
         updateCartUI();
+        renderPaymentSummary(activePaymentOrder);
+
+        if (isAwaitingPayment(activePaymentOrder)) {
+            startPaymentStatusPolling(String(activePaymentOrder.order_id || ''));
+            refreshPaymentStatus(String(activePaymentOrder.order_id || ''), false);
+        }
 
         if (APP_LAUNCH_SERIE_ID) {
             const targetSerie = allSeries.find((serie) => sameId(serie.id, APP_LAUNCH_SERIE_ID));
@@ -400,6 +755,10 @@ async function init() {
                     openPlayer(targetSerie.id, targetSerie.title);
                 }, 250);
             }
+        }
+
+        if (APP_LAUNCH_PAYMENT_ORDER_ID) {
+            refreshPaymentStatus(APP_LAUNCH_PAYMENT_ORDER_ID, false);
         }
     } catch (err) {
         if (DOM.heroTitle) DOM.heroTitle.textContent = "Erro de Conexão";
@@ -422,8 +781,25 @@ function setupEventListeners() {
 
     document.getElementById('themeBtn')?.addEventListener('click', toggleTheme);
     document.getElementById('cartBtn')?.addEventListener('click', () => toggleCart(true));
+    DOM.checkoutBtn?.addEventListener('click', checkout);
     DOM.cartOverlay?.addEventListener('click', (e) => {
         if (e.target.id === 'cartOverlay') toggleCart(false);
+    });
+
+    DOM.paymentMethods?.forEach((button) => {
+        button.addEventListener('click', () => {
+            selectedPaymentMethod = button.dataset.paymentMethod || 'mercado_pago_link';
+            savePaymentPrefs();
+            updatePaymentMethodUI();
+            if (selectedPaymentMethod === 'pix_qr') {
+                DOM.buyerEmailInput?.focus();
+            }
+        });
+    });
+
+    DOM.buyerEmailInput?.addEventListener('input', (e) => {
+        buyerEmail = String(e.target.value || '').trim();
+        savePaymentPrefs();
     });
 
     DOM.searchInput?.addEventListener('input', (e) => searchSeries(e.target.value.trim()));
@@ -837,7 +1213,6 @@ function toggleCart(open) {
 
 function updateCartUI() {
     const container = DOM.cartItems;
-    let total = 0;
 
     if (DOM.cartBadge) {
         DOM.cartBadge.textContent = cart.length;
@@ -852,44 +1227,58 @@ function updateCartUI() {
                 <i class="fas fa-shopping-basket" style="font-size:48px; opacity:0.3; margin-bottom:16px"></i>
                 <p>Seu carrinho está vazio</p>
             </div>`;
-        DOM.cartTotal.textContent = 'R$ 0,00';
-        return;
+        if (DOM.cartTotal) {
+            DOM.cartTotal.textContent = 'R$ 0,00';
+        }
+    } else {
+        let total = 0;
+        container.innerHTML = '';
+        cart.forEach(item => {
+            total += parseFloat(item.price) || 0;
+            const div = document.createElement('div');
+            div.className = 'cart-item';
+
+            const cartImg = document.createElement('img');
+            cartImg.src = getCoverUrl(item);
+            cartImg.alt = item.title || '';
+            cartImg.onerror = function() { this.src = PLACEHOLDER_IMAGE; };
+            div.appendChild(cartImg);
+
+            const info = document.createElement('div');
+            info.className = 'cart-item-info';
+            const titleDiv = document.createElement('div');
+            titleDiv.className = 'cart-item-title';
+            titleDiv.textContent = item.title || '';
+            const priceDiv = document.createElement('div');
+            priceDiv.className = 'cart-item-price';
+            priceDiv.textContent = formatPrice(item.price);
+            info.appendChild(titleDiv);
+            info.appendChild(priceDiv);
+            div.appendChild(info);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'cart-item-remove';
+            removeBtn.setAttribute('aria-label', 'Remover');
+            removeBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            div.appendChild(removeBtn);
+            removeBtn.addEventListener('click', () => removeFromCart(item.id));
+            container.appendChild(div);
+        });
+
+        if (DOM.cartTotal) {
+            DOM.cartTotal.textContent = formatPrice(total);
+        }
     }
 
-    container.innerHTML = '';
-    cart.forEach(item => {
-        total += parseFloat(item.price) || 0;
-        const div = document.createElement('div');
-        div.className = 'cart-item';
+    if (DOM.checkoutBtn) {
+        const hasPendingOrder = isAwaitingPayment(activePaymentOrder);
+        DOM.checkoutBtn.disabled = !cart.length && !hasPendingOrder;
+        DOM.checkoutBtn.innerHTML = hasPendingOrder
+            ? '<i class="fas fa-credit-card"></i> Ver pagamento'
+            : '<i class="fas fa-check"></i> Finalizar Compra';
+    }
 
-        const cartImg = document.createElement('img');
-        cartImg.src = getCoverUrl(item);
-        cartImg.alt = item.title || '';
-        cartImg.onerror = function() { this.src = PLACEHOLDER_IMAGE; };
-        div.appendChild(cartImg);
-
-        const info = document.createElement('div');
-        info.className = 'cart-item-info';
-        const titleDiv = document.createElement('div');
-        titleDiv.className = 'cart-item-title';
-        titleDiv.textContent = item.title || '';
-        const priceDiv = document.createElement('div');
-        priceDiv.className = 'cart-item-price';
-        priceDiv.textContent = formatPrice(item.price);
-        info.appendChild(titleDiv);
-        info.appendChild(priceDiv);
-        div.appendChild(info);
-
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'cart-item-remove';
-        removeBtn.setAttribute('aria-label', 'Remover');
-        removeBtn.innerHTML = '<i class="fas fa-trash"></i>';
-        div.appendChild(removeBtn);
-        removeBtn.addEventListener('click', () => removeFromCart(item.id));
-        container.appendChild(div);
-    });
-
-    DOM.cartTotal.textContent = formatPrice(total);
+    renderPaymentSummary(activePaymentOrder);
 }
 
 function addToCart(serie) {
@@ -912,34 +1301,60 @@ function removeFromCart(id) {
 }
 
 function checkout() {
-    if (!cart.length) return showToast('Carrinho vazio!', 'error');
-
-    const total = cart.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
-
-    try {
-        if (!tg || typeof tg.sendData !== 'function') {
-            throw new Error('Telegram WebApp não disponível');
-        }
-        tg.sendData(JSON.stringify({
-            action: 'checkout_cart',
-            items: cart,
-            total: total,
-            user_id: userId
-        }));
-    } catch (err) {
-        console.error('[CHECKOUT] Falha ao enviar dados ao Telegram:', err.message);
-        showToast('Erro ao finalizar compra. Tente novamente.', 'error');
+    if (isAwaitingPayment(activePaymentOrder)) {
+        showToast('Você já tem um pagamento em aberto. Consulte o painel abaixo.', 'info');
+        toggleCart(true);
         return;
     }
 
-    showToast('Finalizando compra...', 'success');
-    setTimeout(() => {
+    if (!cart.length) return showToast('Carrinho vazio!', 'error');
+
+    const checkoutItems = sanitizeCheckoutItems(cart);
+    const buyerEmailValue = String(DOM.buyerEmailInput?.value || buyerEmail || '').trim();
+
+    if (selectedPaymentMethod === 'pix_qr' && !buyerEmailValue) {
+        showToast('Informe um e-mail válido para gerar o Pix.', 'error');
+        DOM.buyerEmailInput?.focus();
+        return;
+    }
+
+    buyerEmail = buyerEmailValue;
+    savePaymentPrefs();
+    setCheckoutLoading(true);
+
+    requestPaymentCreate({
+        init_data: tg?.initData || '',
+        payment_method: selectedPaymentMethod,
+        buyer_email: buyerEmail || '',
+        buyer_name: tg?.initDataUnsafe?.user?.first_name || '',
+        items: checkoutItems,
+        total: getCartTotal(),
+    }).then((data) => {
+        const order = data?.order || null;
+        if (!order) {
+            throw new Error('Pedido não retornado');
+        }
+
+        saveActivePaymentOrder(order);
+        renderPaymentSummary(order);
+        if (order.status && String(order.status) !== 'approved') {
+            startPaymentStatusPolling(String(order.order_id || ''));
+            refreshPaymentStatus(String(order.order_id || ''), false);
+        }
         cart = [];
         saveCart('CHECKOUT');
         updateCartUI();
-        toggleCart(false);
-        if (tg && typeof tg.close === 'function') tg.close();
-    }, 1500);
+        showToast('Pedido criado. Acompanhe o pagamento abaixo.', 'success');
+
+        if (selectedPaymentMethod !== 'pix_qr' && order.checkout_url) {
+            openExternalLink(order.checkout_url);
+        }
+    }).catch((err) => {
+        console.error('[CHECKOUT] Falha ao criar pedido:', err.message);
+        showToast(err.message || 'Erro ao finalizar compra. Tente novamente.', 'error');
+    }).finally(() => {
+        setCheckoutLoading(false);
+    });
 }
 
 // ==================== FILTROS ====================

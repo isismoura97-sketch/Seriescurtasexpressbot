@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="styles.css?v=20260627-01">
+    <link rel="stylesheet" href="styles.css?v=20260627-02">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
@@ -108,7 +108,27 @@
                 <span>Total:</span>
                 <span id="cartTotal">R$ 0,00</span>
             </div>
-            <button class="btn btn-primary" onclick="checkout()">
+            <div class="payment-methods" aria-label="Métodos de pagamento">
+                <button type="button" class="payment-chip active" data-payment-method="mercado_pago_link">
+                    <i class="fas fa-link"></i> Link Mercado Pago
+                </button>
+                <button type="button" class="payment-chip" data-payment-method="pix_qr">
+                    <i class="fas fa-qrcode"></i> Pix com QR Code
+                </button>
+                <button type="button" class="payment-chip" data-payment-method="telegram_checkout">
+                    <i class="fab fa-telegram"></i> Checkout no Telegram
+                </button>
+            </div>
+            <label class="payment-field" id="buyerEmailField" hidden>
+                <span>E-mail para o Pix</span>
+                <input type="email" id="buyerEmailInput" placeholder="seu@email.com" autocomplete="email" inputmode="email">
+            </label>
+            <div class="payment-summary" id="paymentSummaryPanel" hidden>
+                <div class="payment-summary-status" id="paymentSummaryStatus"></div>
+                <div class="payment-summary-details" id="paymentSummaryDetails"></div>
+                <div class="payment-summary-actions" id="paymentSummaryActions"></div>
+            </div>
+            <button class="btn btn-primary" id="checkoutBtn" type="button">
                 <i class="fas fa-check"></i> Finalizar Compra
             </button>
         </div>
@@ -243,6 +263,6 @@
     <script defer src="/_vercel/speed-insights/script.js"></script>
 
     <!-- Script Principal -->
-    <script defer src="app.js?v=20260627-01"></script>
+    <script defer src="app.js?v=20260627-02"></script>
 </body>
 </html>
