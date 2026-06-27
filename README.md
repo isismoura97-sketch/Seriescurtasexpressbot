@@ -119,6 +119,8 @@ Use `--json` se quiser a saída estruturada.
 
 Observação importante: entradas antigas só aparecerão se o bot já estivesse recebendo o evento `chat_member` e gravando a auditoria naquele momento. Se isso ainda não estava ativo, a primeira linha histórica começa a partir desta versão.
 
+A migration que cria a tabela está em `supabase/migrations/20260627212449_public_channel_audit_log.sql`. Aplique-a no Supabase SQL Editor ou com `supabase db push` quando o projeto estiver linkado ao seu ambiente local.
+
 ## Auditoria de playback
 
 Se quiser revisar rapidamente quais séries já têm URL direta e quais ainda dependem do Telegram, rode:
