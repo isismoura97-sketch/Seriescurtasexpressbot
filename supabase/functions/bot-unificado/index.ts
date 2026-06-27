@@ -12,6 +12,7 @@ const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
 const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID") ?? "";
 const PUBLIC_CHANNEL_AUTO_BAN = (Deno.env.get("PUBLIC_CHANNEL_AUTO_BAN") ?? "true").toLowerCase() !== "false";
 const PUBLIC_CHANNEL_STRICTNESS = (Deno.env.get("PUBLIC_CHANNEL_STRICTNESS") ?? "conservative").toLowerCase();
+const PUBLIC_CHANNEL_AUDIT_TABLE = Deno.env.get("PUBLIC_CHANNEL_AUDIT_TABLE") ?? "public_channel_member_audit";
 const PUBLIC_CHANNEL_ALLOWLIST_USER_IDS = new Set(
   (Deno.env.get("PUBLIC_CHANNEL_ALLOWLIST_USER_IDS") ?? "")
     .split(",")
@@ -204,6 +205,101 @@ async function getTelegramUserProfilePhotoCount(userId: string | number) {
   }) as { total_count?: number };
 
   return Number(result?.total_count ?? 0);
+}
+
+function stringifyJson(value: unknown) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "{}";
+  }
+}
+
+async function supabaseRestRequest(path: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
+  }
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: init.method ?? "GET",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      accept: "application/json",
+      ...(init.headers || {}),
+    },
+    body: init.body,
+  });
+
+  const text = await res.text();
+  let data: unknown = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // keep raw text
+  }
+
+  if (!res.ok) {
+    const error = new Error(
+      typeof data === "object" && data && "message" in data
+        ? String((data as { message?: string }).message)
+        : `Supabase request failed (${res.status})`,
+    ) as Error & { status?: number; body?: unknown };
+    error.status = res.status;
+    error.body = data;
+    throw error;
+  }
+
+  return data;
+}
+
+async function recordPublicChannelAudit(entry: {
+  chatId: string | number;
+  chatUsername?: string | null;
+  chatTitle?: string | null;
+  userId: string | number;
+  username?: string | null;
+  displayName?: string | null;
+  isBot: boolean;
+  joined: boolean;
+  decision: string;
+  analysisMode?: string | null;
+  score?: number | null;
+  reasons?: string[];
+  strongSignals?: string[];
+  profilePhotos?: number | null;
+  rawUpdate: Record<string, unknown>;
+}) {
+  try {
+    await supabaseRestRequest(PUBLIC_CHANNEL_AUDIT_TABLE, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        prefer: "return=minimal",
+      },
+      body: stringifyJson([
+        {
+          chat_id: String(entry.chatId),
+          chat_username: entry.chatUsername ?? null,
+          chat_title: entry.chatTitle ?? null,
+          user_id: String(entry.userId),
+          username: entry.username ?? null,
+          display_name: entry.displayName ?? null,
+          is_bot: entry.isBot,
+          joined: entry.joined,
+          decision: entry.decision,
+          analysis_mode: entry.analysisMode ?? null,
+          score: entry.score ?? null,
+          reasons: entry.reasons ?? [],
+          strong_signals: entry.strongSignals ?? [],
+          profile_photos: entry.profilePhotos ?? null,
+          raw_update: entry.rawUpdate,
+        },
+      ]),
+    });
+  } catch (error) {
+    console.error("[AUDIT] Falha ao registrar entrada do canal público:", error);
+  }
 }
 
 async function analyzePublicChannelJoin(user: Record<string, unknown>) {
@@ -844,6 +940,23 @@ async function handleTelegramWebhook(req: Request) {
     }
 
     if (isPublicChannelAllowlisted(chatMemberUpdate.user)) {
+      await recordPublicChannelAudit({
+        chatId: chatMemberUpdate.chatId,
+        chatUsername: typeof chatMemberUpdate.chat.username === "string" ? chatMemberUpdate.chat.username : null,
+        chatTitle: typeof chatMemberUpdate.chat.title === "string" ? chatMemberUpdate.chat.title : null,
+        userId: chatMemberUpdate.userId,
+        username: chatMemberUpdate.userName || null,
+        displayName: chatMemberUpdate.displayName || null,
+        isBot: chatMemberUpdate.user.is_bot === true,
+        joined: chatMemberUpdate.joined,
+        decision: "allowlisted",
+        analysisMode: null,
+        score: null,
+        reasons: [],
+        strongSignals: [],
+        profilePhotos: null,
+        rawUpdate: update,
+      });
       return json(req, {
         ok: true,
         action: "allowlisted",
@@ -857,6 +970,11 @@ async function handleTelegramWebhook(req: Request) {
       (analysis.score >= analysis.policy.banThreshold && analysis.strongSignals.length >= 2) ||
       (analysis.score >= analysis.policy.banThreshold + 15 && analysis.strongSignals.length >= 1);
     const safeName = chatMemberUpdate.displayName || chatMemberUpdate.userName || String(chatMemberUpdate.userId);
+    const decision = shouldBan && PUBLIC_CHANNEL_AUTO_BAN
+      ? "auto_banned"
+      : analysis.score >= analysis.policy.alertThreshold
+      ? "alerted"
+      : "monitored";
 
     if (shouldBan && PUBLIC_CHANNEL_AUTO_BAN) {
       try {
@@ -870,6 +988,23 @@ async function handleTelegramWebhook(req: Request) {
             `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
           ].join("\n"),
         );
+        await recordPublicChannelAudit({
+          chatId: chatMemberUpdate.chatId,
+          chatUsername: typeof chatMemberUpdate.chat.username === "string" ? chatMemberUpdate.chat.username : null,
+          chatTitle: typeof chatMemberUpdate.chat.title === "string" ? chatMemberUpdate.chat.title : null,
+          userId: chatMemberUpdate.userId,
+          username: chatMemberUpdate.userName || null,
+          displayName: chatMemberUpdate.displayName || null,
+          isBot: analysis.isBot,
+          joined: chatMemberUpdate.joined,
+          decision: "auto_banned",
+          analysisMode: analysis.policy.mode,
+          score: analysis.score,
+          reasons: analysis.reasons,
+          strongSignals: analysis.strongSignals,
+          profilePhotos: analysis.profilePhotos,
+          rawUpdate: update,
+        });
         return json(req, {
           ok: true,
           action: "auto_banned",
@@ -887,6 +1022,23 @@ async function handleTelegramWebhook(req: Request) {
             `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
           ].join("\n"),
         );
+        await recordPublicChannelAudit({
+          chatId: chatMemberUpdate.chatId,
+          chatUsername: typeof chatMemberUpdate.chat.username === "string" ? chatMemberUpdate.chat.username : null,
+          chatTitle: typeof chatMemberUpdate.chat.title === "string" ? chatMemberUpdate.chat.title : null,
+          userId: chatMemberUpdate.userId,
+          username: chatMemberUpdate.userName || null,
+          displayName: chatMemberUpdate.displayName || null,
+          isBot: analysis.isBot,
+          joined: chatMemberUpdate.joined,
+          decision: "ban_failed",
+          analysisMode: analysis.policy.mode,
+          score: analysis.score,
+          reasons: analysis.reasons,
+          strongSignals: analysis.strongSignals,
+          profilePhotos: analysis.profilePhotos,
+          rawUpdate: update,
+        });
         return json(req, {
           ok: true,
           action: "ban_failed",
@@ -907,6 +1059,24 @@ async function handleTelegramWebhook(req: Request) {
         ].join("\n"),
       );
     }
+
+    await recordPublicChannelAudit({
+      chatId: chatMemberUpdate.chatId,
+      chatUsername: typeof chatMemberUpdate.chat.username === "string" ? chatMemberUpdate.chat.username : null,
+      chatTitle: typeof chatMemberUpdate.chat.title === "string" ? chatMemberUpdate.chat.title : null,
+      userId: chatMemberUpdate.userId,
+      username: chatMemberUpdate.userName || null,
+      displayName: chatMemberUpdate.displayName || null,
+      isBot: analysis.isBot,
+      joined: chatMemberUpdate.joined,
+      decision,
+      analysisMode: analysis.policy.mode,
+      score: analysis.score,
+      reasons: analysis.reasons,
+      strongSignals: analysis.strongSignals,
+      profilePhotos: analysis.profilePhotos,
+      rawUpdate: update,
+    });
 
     return json(req, {
       ok: true,
@@ -1032,38 +1202,7 @@ async function handleCaptchaVerify(req: Request) {
 }
 
 async function supabaseFetch(path: string) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
-  }
-
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      accept: "application/json",
-    },
-  });
-
-  const text = await res.text();
-  let data: unknown = text;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    // keep raw text
-  }
-
-  if (!res.ok) {
-    const error = new Error(
-      typeof data === "object" && data && "message" in data
-        ? String((data as { message?: string }).message)
-        : `Supabase request failed (${res.status})`,
-    ) as Error & { status?: number; body?: unknown };
-    error.status = res.status;
-    error.body = data;
-    throw error;
-  }
-
-  return data;
+  return await supabaseRestRequest(path);
 }
 
 async function getSeriesList() {
