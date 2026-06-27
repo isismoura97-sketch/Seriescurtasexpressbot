@@ -111,6 +111,10 @@ function isPublicChannelAllowlisted(user: Record<string, unknown>) {
 function isTargetPublicChannel(chat: Record<string, unknown> | undefined) {
   if (!chat || chat.type !== "channel") return false;
 
+  if (!PUBLIC_CHANNEL_ID && !PUBLIC_CHANNEL_USERNAME) {
+    return true;
+  }
+
   if (PUBLIC_CHANNEL_ID && String(chat.id) === PUBLIC_CHANNEL_ID) {
     return true;
   }
