@@ -13,6 +13,7 @@ const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID"
 const PUBLIC_CHANNEL_AUTO_BAN = (Deno.env.get("PUBLIC_CHANNEL_AUTO_BAN") ?? "true").toLowerCase() !== "false";
 const PUBLIC_CHANNEL_STRICTNESS = (Deno.env.get("PUBLIC_CHANNEL_STRICTNESS") ?? "conservative").toLowerCase();
 const PUBLIC_CHANNEL_AUDIT_TABLE = Deno.env.get("PUBLIC_CHANNEL_AUDIT_TABLE") ?? "public_channel_member_audit";
+const PUBLIC_CHANNEL_POST_AUDIT_TABLE = Deno.env.get("PUBLIC_CHANNEL_POST_AUDIT_TABLE") ?? "public_channel_post_audit";
 const PUBLIC_CHANNEL_ALLOWLIST_USER_IDS = new Set(
   (Deno.env.get("PUBLIC_CHANNEL_ALLOWLIST_USER_IDS") ?? "")
     .split(",")
@@ -299,6 +300,45 @@ async function recordPublicChannelAudit(entry: {
     });
   } catch (error) {
     console.error("[AUDIT] Falha ao registrar entrada do canal público:", error);
+  }
+}
+
+async function recordPublicChannelPost(entry: {
+  channelId: string | number;
+  channelUsername?: string | null;
+  channelTitle?: string | null;
+  messageId: string | number;
+  date?: number | null;
+  authorSignature?: string | null;
+  messageType?: string | null;
+  text?: string | null;
+  caption?: string | null;
+  rawUpdate: Record<string, unknown>;
+}) {
+  try {
+    await supabaseRestRequest(PUBLIC_CHANNEL_POST_AUDIT_TABLE, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        prefer: "return=minimal",
+      },
+      body: stringifyJson([
+        {
+          channel_id: String(entry.channelId),
+          channel_username: entry.channelUsername ?? null,
+          channel_title: entry.channelTitle ?? null,
+          message_id: String(entry.messageId),
+          message_date: entry.date ? new Date(entry.date * 1000).toISOString() : null,
+          author_signature: entry.authorSignature ?? null,
+          message_type: entry.messageType ?? null,
+          text: entry.text ?? null,
+          caption: entry.caption ?? null,
+          raw_update: entry.rawUpdate,
+        },
+      ]),
+    });
+  } catch (error) {
+    console.error("[AUDIT] Falha ao registrar post do canal público:", error);
   }
 }
 
@@ -862,6 +902,30 @@ function getUpdateMessage(update: Record<string, unknown>) {
   return editedMessage ?? null;
 }
 
+function getUpdateChannelPost(update: Record<string, unknown>) {
+  const channelPost = update.channel_post as Record<string, unknown> | undefined;
+  if (channelPost) return { message: channelPost, edited: false };
+
+  const editedChannelPost = update.edited_channel_post as Record<string, unknown> | undefined;
+  if (editedChannelPost) return { message: editedChannelPost, edited: true };
+
+  return null;
+}
+
+function getMessageType(message: Record<string, unknown>) {
+  if (typeof message.text === "string" && message.text.trim()) return "text";
+  if (typeof message.caption === "string" && message.caption.trim()) return "caption";
+  if (Array.isArray(message.photo) && message.photo.length > 0) return "photo";
+  if (message.video) return "video";
+  if (message.document) return "document";
+  if (message.animation) return "animation";
+  if (message.audio) return "audio";
+  if (message.voice) return "voice";
+  if (message.video_note) return "video_note";
+  if (message.sticker) return "sticker";
+  return "unknown";
+}
+
 function parseAppPayload(rawValue: string) {
   try {
     const payload = JSON.parse(rawValue) as Record<string, unknown>;
@@ -926,6 +990,25 @@ async function handleTelegramWebhook(req: Request) {
   const update = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!update) {
     return json(req, { ok: false, error: "Update inválido" }, 400);
+  }
+
+  const channelPostUpdate = getUpdateChannelPost(update);
+  if (channelPostUpdate) {
+    const channel = channelPostUpdate.message.chat as Record<string, unknown> | undefined;
+    if (channel && isTargetPublicChannel(channel)) {
+      await recordPublicChannelPost({
+        channelId: channel.id as string | number,
+        channelUsername: typeof channel.username === "string" ? channel.username : null,
+        channelTitle: typeof channel.title === "string" ? channel.title : null,
+        messageId: channelPostUpdate.message.message_id as string | number,
+        date: typeof channelPostUpdate.message.date === "number" ? channelPostUpdate.message.date : null,
+        authorSignature: typeof channelPostUpdate.message.author_signature === "string" ? channelPostUpdate.message.author_signature : null,
+        messageType: getMessageType(channelPostUpdate.message),
+        text: typeof channelPostUpdate.message.text === "string" ? channelPostUpdate.message.text : null,
+        caption: typeof channelPostUpdate.message.caption === "string" ? channelPostUpdate.message.caption : null,
+        rawUpdate: update,
+      });
+    }
   }
 
   const joinRequest = getUpdateChatJoinRequest(update);

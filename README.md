@@ -76,6 +76,7 @@ https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api?action=t
 - `PUBLIC_CHANNEL_ALLOWLIST_USER_IDS` com IDs de usuários confiáveis separados por vírgula
 - `PUBLIC_CHANNEL_ALLOWLIST_USERNAMES` com `@usernames` confiáveis separados por vírgula
 - `PUBLIC_CHANNEL_AUDIT_TABLE` com o nome da tabela de auditoria, padrão `public_channel_member_audit`
+- `PUBLIC_CHANNEL_POST_AUDIT_TABLE` com o nome da tabela de posts do canal, padrão `public_channel_post_audit`
 
 O bot precisa ser administrador do canal com permissão para banir membros. Sem isso ele consegue detectar, mas não consegue expulsar.
 
@@ -100,6 +101,8 @@ O CAPTCHA continua disponível como opção complementar para fluxos de convite 
 
 Quando o bot recebe o comando do mini app para reproduzir uma série, ele responde com um botão que reabre o app direto no título escolhido. Isso evita o fluxo silencioso em que o Telegram recebia o comando, mas não mostrava nenhuma ação visível para o usuário.
 
+Se o `@RellshortsGratuitoBot` estiver publicando conteúdo no canal, o bot consegue registrar os `channel_post` daqui para frente. O que não dá para fazer é ler o conteúdo interno/privado desse outro bot ou recuperar histórico que ele não publicou no canal.
+
 ### Auditoria de entradas
 
 A partir desta atualização, cada nova entrada no canal público passa a ser registrada em `public_channel_member_audit`. Isso permite consultar:
@@ -120,6 +123,8 @@ Use `--json` se quiser a saída estruturada.
 Observação importante: entradas antigas só aparecerão se o bot já estivesse recebendo o evento `chat_member` e gravando a auditoria naquele momento. Se isso ainda não estava ativo, a primeira linha histórica começa a partir desta versão.
 
 A migration que cria a tabela está em `supabase/migrations/20260627212449_public_channel_audit_log.sql`. Aplique-a no Supabase SQL Editor ou com `supabase db push` quando o projeto estiver linkado ao seu ambiente local.
+
+A migration que cria a tabela de posts do canal está em `supabase/migrations/20260627213733_public_channel_post_audit.sql`.
 
 ## Auditoria de playback
 
