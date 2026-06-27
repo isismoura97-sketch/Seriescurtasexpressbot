@@ -58,3 +58,17 @@ node scripts/playback-audit.mjs
 ```
 
 Use `--json` para obter um relatório estruturado e `--plan` para gerar um plano de migração em Markdown.
+
+Para gerar uma planilha CSV com os títulos que ainda precisam de atenção:
+
+```bash
+node scripts/export-migration-template.mjs --output outputs/migration-template.csv
+```
+
+Depois de preencher o CSV, você pode testar o que seria aplicado sem gravar nada:
+
+```bash
+node scripts/import-migration-template.mjs --input outputs/migration-template.csv
+```
+
+Para enviar as alterações ao Supabase, adicione `--apply` e configure `SUPABASE_SERVICE_ROLE_KEY`.
