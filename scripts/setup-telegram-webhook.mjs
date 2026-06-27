@@ -14,6 +14,8 @@ if (SECRET_TOKEN) {
   params.set('secret_token', SECRET_TOKEN);
 }
 
+params.set('allowed_updates', JSON.stringify(['chat_member', 'chat_join_request', 'my_chat_member']));
+
 const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {
   method: 'POST',
   headers: {

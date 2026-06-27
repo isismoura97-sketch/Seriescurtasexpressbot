@@ -6,6 +6,11 @@ const CAPTCHA_SECRET = Deno.env.get("TELEGRAM_CAPTCHA_SECRET") ?? TELEGRAM_BOT_T
 const CAPTCHA_WEBAPP_URL = Deno.env.get("CAPTCHA_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/verify.html";
 const CAPTCHA_MAX_AGE_SECONDS = Number(Deno.env.get("CAPTCHA_MAX_AGE_SECONDS") ?? "600");
 const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? "600");
+const PUBLIC_CHANNEL_USERNAME = Deno.env.get("PUBLIC_CHANNEL_USERNAME") ?? "";
+const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
+const PUBLIC_CHANNEL_MIN_SCORE = Number(Deno.env.get("PUBLIC_CHANNEL_MIN_SCORE") ?? "80");
+const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID") ?? "";
+const PUBLIC_CHANNEL_AUTO_BAN = (Deno.env.get("PUBLIC_CHANNEL_AUTO_BAN") ?? "true").toLowerCase() !== "false";
 const FUNCTION_NAME = "bot-unificado";
 const SERIES_TABLE = Deno.env.get("SERIES_TABLE") ?? "series";
 const SERIES_ID_COLUMN = Deno.env.get("SERIES_ID_COLUMN") ?? "id";
@@ -66,6 +71,145 @@ function buildPlaybackUrl(req: Request, fileId: string, title = "") {
 
 function telegramApiUrl(path: string) {
   return `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${path}`;
+}
+
+function normalizeHandle(value: unknown) {
+  return String(value || "").trim().replace(/^@/, "").toLowerCase();
+}
+
+function isTargetPublicChannel(chat: Record<string, unknown> | undefined) {
+  if (!chat || chat.type !== "channel") return false;
+
+  if (PUBLIC_CHANNEL_ID && String(chat.id) === PUBLIC_CHANNEL_ID) {
+    return true;
+  }
+
+  if (PUBLIC_CHANNEL_USERNAME && normalizeHandle(chat.username) === normalizeHandle(PUBLIC_CHANNEL_USERNAME)) {
+    return true;
+  }
+
+  return false;
+}
+
+function looksRandomText(text: string) {
+  const cleaned = text.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (cleaned.length < 8) return false;
+  const vowels = cleaned.match(/[aeiou]/g)?.length ?? 0;
+  const consonants = cleaned.match(/[bcdfghjklmnpqrstvwxyz]/g)?.length ?? 0;
+  const digitGroups = cleaned.match(/\d+/g)?.length ?? 0;
+  return consonants >= vowels * 2 && consonants >= 6 && digitGroups <= 1;
+}
+
+async function sendModerationAlert(message: string) {
+  if (!PUBLIC_CHANNEL_ALERT_CHAT_ID) return;
+  try {
+    await telegramRequest("sendMessage", {
+      chat_id: PUBLIC_CHANNEL_ALERT_CHAT_ID,
+      text: message,
+      disable_web_page_preview: true,
+    });
+  } catch {
+    // best effort
+  }
+}
+
+async function banPublicChannelMember(chatId: string | number, userId: string | number) {
+  return await telegramRequest("banChatMember", {
+    chat_id: chatId,
+    user_id: userId,
+  });
+}
+
+async function getTelegramUserProfilePhotoCount(userId: string | number) {
+  const result = await telegramRequest("getUserProfilePhotos", {
+    user_id: userId,
+    limit: 1,
+  }) as { total_count?: number };
+
+  return Number(result?.total_count ?? 0);
+}
+
+async function analyzePublicChannelJoin(user: Record<string, unknown>) {
+  const reasons: string[] = [];
+  let score = 0;
+
+  const isBot = user.is_bot === true;
+  const username = normalizeHandle(user.username);
+  const firstName = typeof user.first_name === "string" ? user.first_name.trim() : "";
+  const lastName = typeof user.last_name === "string" ? user.last_name.trim() : "";
+  const displayName = `${firstName} ${lastName}`.trim();
+  const languageCode = typeof user.language_code === "string" ? user.language_code.trim() : "";
+  let profilePhotos = 0;
+
+  if (isBot) {
+    score += 100;
+    reasons.push("Conta marcada como bot pelo Telegram");
+  }
+
+  if (!username) {
+    score += 8;
+    reasons.push("Sem @username");
+  } else {
+    if (username.length < 5 || username.length > 24) {
+      score += 12;
+      reasons.push("Username fora do padrão comum");
+    }
+
+    if (looksRandomText(username)) {
+      score += 18;
+      reasons.push("Username parece gerado automaticamente");
+    }
+
+    if (/(.)\1{3,}/.test(username)) {
+      score += 12;
+      reasons.push("Username com repetição excessiva");
+    }
+  }
+
+  if (displayName) {
+    if (displayName.length < 6) {
+      score += 8;
+      reasons.push("Nome muito curto");
+    }
+
+    if (looksRandomText(displayName.replace(/\s+/g, ""))) {
+      score += 14;
+      reasons.push("Nome parece aleatório");
+    }
+  } else {
+    score += 10;
+    reasons.push("Sem nome exibido");
+  }
+
+  if (!languageCode) {
+    score += 4;
+    reasons.push("Sem código de idioma");
+  }
+
+  try {
+    profilePhotos = await getTelegramUserProfilePhotoCount(user.id as string | number);
+    if (profilePhotos === 0) {
+      score += 10;
+      reasons.push("Sem foto de perfil");
+    }
+  } catch {
+    score += 5;
+    reasons.push("Não foi possível verificar foto de perfil");
+  }
+
+  if (firstName && lastName && looksRandomText(`${firstName}${lastName}`)) {
+    score += 12;
+    reasons.push("Nome completo parece aleatório");
+  }
+
+  return {
+    score,
+    reasons,
+    isBot,
+    profilePhotos,
+    username: username || null,
+    displayName: displayName || null,
+  };
 }
 
 async function telegramRequest(method: string, payload: Record<string, string | number | boolean>) {
@@ -437,6 +581,46 @@ function getUpdateChatJoinRequest(update: Record<string, unknown>): {
   };
 }
 
+function getUpdateChatMember(update: Record<string, unknown>) {
+  const chatMember = update.chat_member as Record<string, unknown> | undefined;
+  if (!chatMember) return null;
+
+  const chat = chatMember.chat as Record<string, unknown> | undefined;
+  const oldChatMember = chatMember.old_chat_member as Record<string, unknown> | undefined;
+  const newChatMember = chatMember.new_chat_member as Record<string, unknown> | undefined;
+  const oldStatus = typeof oldChatMember?.status === "string" ? oldChatMember.status : "";
+  const newStatus = typeof newChatMember?.status === "string" ? newChatMember.status : "";
+  const oldUser = oldChatMember?.user as Record<string, unknown> | undefined;
+  const newUser = newChatMember?.user as Record<string, unknown> | undefined;
+
+  if (!chat || !newUser || !isTargetPublicChannel(chat)) {
+    return null;
+  }
+
+  const chatId = chat.id as string | number | undefined;
+  const userId = newUser.id as string | number | undefined;
+  if (chatId == null || userId == null) {
+    return null;
+  }
+
+  const joined =
+    (oldStatus === "left" || oldStatus === "kicked" || oldStatus === "") &&
+    (newStatus === "member" || newStatus === "administrator" || newStatus === "creator");
+
+  return {
+    chat,
+    chatId,
+    oldStatus,
+    newStatus,
+    joined,
+    user: newUser,
+    userId,
+    userName: typeof newUser.username === "string" ? newUser.username : "",
+    displayName: [newUser.first_name, newUser.last_name].filter((value) => typeof value === "string" && value.trim()).join(" "),
+    oldUserId: oldUser?.id as string | number | undefined,
+  };
+}
+
 async function handleTelegramWebhook(req: Request) {
   if (!TELEGRAM_BOT_TOKEN) {
     return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
@@ -456,7 +640,50 @@ async function handleTelegramWebhook(req: Request) {
 
   const joinRequest = getUpdateChatJoinRequest(update);
   if (!joinRequest) {
-    return json(req, { ok: true, ignored: true });
+    const chatMemberUpdate = getUpdateChatMember(update);
+    if (!chatMemberUpdate) {
+      return json(req, { ok: true, ignored: true });
+    }
+
+    if (!chatMemberUpdate.joined) {
+      return json(req, { ok: true, ignored: true });
+    }
+
+    const analysis = await analyzePublicChannelJoin(chatMemberUpdate.user);
+    const shouldBan = analysis.isBot || analysis.score >= PUBLIC_CHANNEL_MIN_SCORE;
+    const safeName = chatMemberUpdate.displayName || chatMemberUpdate.userName || String(chatMemberUpdate.userId);
+
+    if (shouldBan && PUBLIC_CHANNEL_AUTO_BAN) {
+      await banPublicChannelMember(chatMemberUpdate.chatId, chatMemberUpdate.userId);
+      await sendModerationAlert(
+        [
+          `Expulsão automática no canal público: ${safeName}`,
+          `Score: ${analysis.score}`,
+          `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
+        ].join("\n"),
+      );
+      return json(req, {
+        ok: true,
+        action: "auto_banned",
+        score: analysis.score,
+      });
+    }
+
+    if (analysis.score >= Math.max(50, PUBLIC_CHANNEL_MIN_SCORE - 20)) {
+      await sendModerationAlert(
+        [
+          `Novo inscrito suspeito no canal público: ${safeName}`,
+          `Score: ${analysis.score}`,
+          `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
+        ].join("\n"),
+      );
+    }
+
+    return json(req, {
+      ok: true,
+      action: "monitored",
+      score: analysis.score,
+    });
   }
 
   const challenge = await buildCaptchaToken({

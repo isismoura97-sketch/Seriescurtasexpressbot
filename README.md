@@ -49,38 +49,41 @@ Secrets necessários no Supabase:
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
 
-## Verificação anti-bot no canal
+## Canal público e anti-bot
 
-Para usar o CAPTCHA de entrada, o canal precisa aceitar inscrições por convite com aprovação de entrada. Em canal público, qualquer pessoa pode entrar por link direto e o CAPTCHA não consegue bloquear antes da entrada.
+O canal público pode continuar sendo a vitrine do projeto. Nesse modo, o bot não bloqueia a entrada antes do usuário entrar pelo `@username`, então a defesa passa a ser monitoramento e expulsão automática dos casos mais suspeitos.
 
-Passos recomendados:
+Fluxo recomendado:
 
-1. Configure o canal como privado ou use links de convite com `creates_join_request=true`.
-2. Aponte o webhook do bot para a function:
+1. Mantenha o canal público para divulgação.
+2. Configure o bot como administrador com permissão para banir membros.
+3. Aponte o webhook do bot para a function:
 
 ```bash
 https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api?action=telegram-webhook
 ```
 
-3. Defina os secrets opcionais:
+4. Defina estes secrets/variáveis:
 
 - `TELEGRAM_WEBHOOK_SECRET` para validar o webhook do Telegram
-- `TELEGRAM_CAPTCHA_SECRET` para assinar o desafio
-- `CAPTCHA_WEBAPP_URL` para a Mini App de verificação
+- `PUBLIC_CHANNEL_USERNAME` com o `@username` do canal público
+- `PUBLIC_CHANNEL_ID` se você preferir validar pelo ID numérico
+- `PUBLIC_CHANNEL_ALERT_CHAT_ID` para receber alertas de suspeitos
+- `PUBLIC_CHANNEL_MIN_SCORE` para ajustar a agressividade da expulsão
+- `PUBLIC_CHANNEL_AUTO_BAN=true` para banir automaticamente
+- `PUBLIC_CHANNEL_AUTO_BAN=false` se você quiser começar só em modo de alerta
 
-4. Use a página de verificação hospedada em:
+O bot precisa ser administrador do canal com permissão para banir membros. Sem isso ele consegue detectar, mas não consegue expulsar.
 
-```bash
-https://seriescurtasexpressbot.vercel.app/verify.html
-```
-
-Quando um usuário solicitar entrada, o bot abre a verificação humana e só aprova após a resposta correta.
-
-Se quiser registrar o webhook automaticamente, rode:
+5. Use o script de webhook com atualização de eventos:
 
 ```bash
 TELEGRAM_BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRET=... node scripts/setup-telegram-webhook.mjs
 ```
+
+O script registra `chat_member` no webhook, que é o evento usado para detectar novas entradas no canal público.
+
+O CAPTCHA continua disponível como opção complementar para fluxos de convite controlado, mas no canal público a proteção principal passa a ser a expulsão automática de contas claramente suspeitas.
 
 ## Auditoria de playback
 
