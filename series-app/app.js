@@ -7,10 +7,13 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-13';
+const BUILD_VERSION = '20260627-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
+const APP_LAUNCH_SERIE_ID = new URLSearchParams(window.location.search).get('play')
+    || new URLSearchParams(window.location.search).get('serie_id')
+    || '';
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
 const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 
@@ -389,6 +392,15 @@ async function init() {
         refreshCatalog();
         initHero();
         updateCartUI();
+
+        if (APP_LAUNCH_SERIE_ID) {
+            const targetSerie = allSeries.find((serie) => sameId(serie.id, APP_LAUNCH_SERIE_ID));
+            if (targetSerie) {
+                setTimeout(() => {
+                    openPlayer(targetSerie.id, targetSerie.title);
+                }, 250);
+            }
+        }
     } catch (err) {
         if (DOM.heroTitle) DOM.heroTitle.textContent = "Erro de Conexão";
         if (DOM.heroDesc) DOM.heroDesc.textContent = "Não foi possível carregar o catálogo.";

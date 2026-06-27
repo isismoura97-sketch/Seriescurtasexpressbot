@@ -24,6 +24,7 @@
     /* Textos */
     --text-main: #FFFFFF;
     --text-dim: #B8C5D6;
+    --text-secondary: #B8C5D6;
     --gray: #8892A4;
     
     /* Acentos */
@@ -82,6 +83,7 @@ body.light-mode {
     --hover: #E2E8F0;
     --text-main: #1A202C;
     --text-dim: #4A5568;
+    --text-secondary: #4A5568;
     --gray: #718096;
     --skeleton: #E2E8F0;
     

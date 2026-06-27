@@ -6,6 +6,7 @@ const CAPTCHA_SECRET = Deno.env.get("TELEGRAM_CAPTCHA_SECRET") ?? TELEGRAM_BOT_T
 const CAPTCHA_WEBAPP_URL = Deno.env.get("CAPTCHA_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/verify.html";
 const CAPTCHA_MAX_AGE_SECONDS = Number(Deno.env.get("CAPTCHA_MAX_AGE_SECONDS") ?? "600");
 const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? "600");
+const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
 const PUBLIC_CHANNEL_USERNAME = Deno.env.get("PUBLIC_CHANNEL_USERNAME") ?? "";
 const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
 const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID") ?? "";
@@ -66,6 +67,12 @@ function buildPlaybackUrl(req: Request, fileId: string, title = "") {
   url.searchParams.set("action", "playback");
   url.searchParams.set("file_id", fileId);
   if (title) url.searchParams.set("title", title);
+  return url.toString();
+}
+
+function buildSeriesLaunchUrl(seriesId: string) {
+  const url = new URL(SERIES_WEBAPP_URL);
+  url.searchParams.set("play", seriesId);
   return url.toString();
 }
 
@@ -508,6 +515,58 @@ async function declineChatJoinRequest(chatId: string | number, userId: string | 
   });
 }
 
+async function handleTelegramUserMessage(req: Request, update: Record<string, unknown>) {
+  const message = getUpdateMessage(update);
+  if (!message) {
+    return json(req, { ok: true, ignored: true });
+  }
+
+  const chat = message.chat as Record<string, unknown> | undefined;
+  const chatId = chat?.id as string | number | undefined;
+  if (chatId == null) {
+    return json(req, { ok: true, ignored: true });
+  }
+
+  const webAppData = message.web_app_data as Record<string, unknown> | undefined;
+  const webAppDataRaw = typeof webAppData?.data === "string" ? webAppData.data.trim() : "";
+  if (webAppDataRaw) {
+    const payload = parseAppPayload(webAppDataRaw);
+    if (payload?.action === "play_video") {
+      const serieId = String(payload.serie_id ?? "").trim();
+      const title = String(payload.title ?? "").trim();
+      if (serieId) {
+        await sendSeriesLaunchPrompt(chatId, serieId, await resolveSeriesTitle(serieId, title));
+        return json(req, { ok: true, action: "web_app_playback_received" });
+      }
+    }
+
+    if (payload?.action === "checkout_cart") {
+      const rawItems = payload.items;
+      const itemCount = Array.isArray(rawItems) ? rawItems.length : Number(payload.item_count ?? 0);
+      const totalValue = Number(payload.total ?? 0);
+      const total = Number.isFinite(totalValue)
+        ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(totalValue)
+        : String(payload.total ?? "R$ 0,00");
+      await sendCheckoutAck(chatId, Number.isFinite(itemCount) && itemCount > 0 ? itemCount : 0, total);
+      return json(req, { ok: true, action: "checkout_received" });
+    }
+  }
+
+  const text = typeof message.text === "string" ? message.text.trim() : "";
+  if (text.startsWith("/start")) {
+    const startPayload = text.replace(/^\/start(?:@\w+)?\s*/i, "").trim();
+    if (startPayload.startsWith("play_")) {
+      const serieId = startPayload.slice("play_".length).trim();
+      if (serieId) {
+        await sendSeriesLaunchPrompt(chatId, serieId, await resolveSeriesTitle(serieId));
+        return json(req, { ok: true, action: "start_playback_received" });
+      }
+    }
+  }
+
+  return json(req, { ok: true, ignored: true });
+}
+
 async function proxyTelegramFile(req: Request, fileId: string, title = "") {
   if (!TELEGRAM_BOT_TOKEN) {
     return json(req, { error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
@@ -656,6 +715,63 @@ function getUpdateChatMember(update: Record<string, unknown>) {
   };
 }
 
+function getUpdateMessage(update: Record<string, unknown>) {
+  const message = update.message as Record<string, unknown> | undefined;
+  if (message) return message;
+
+  const editedMessage = update.edited_message as Record<string, unknown> | undefined;
+  return editedMessage ?? null;
+}
+
+function parseAppPayload(rawValue: string) {
+  try {
+    const payload = JSON.parse(rawValue) as Record<string, unknown>;
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveSeriesTitle(serieId: string, fallbackTitle = "") {
+  try {
+    const row = await getSeriesById(serieId);
+    if (!row) return fallbackTitle;
+
+    const title = String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? "").trim();
+    return title || fallbackTitle;
+  } catch {
+    return fallbackTitle;
+  }
+}
+
+async function sendSeriesLaunchPrompt(chatId: string | number, serieId: string, title: string) {
+  return await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: title
+      ? `Abrindo "${title}" no mini app.`
+      : "Abrindo a série no mini app.",
+    reply_markup: JSON.stringify({
+      inline_keyboard: [[{
+        text: "Abrir a série",
+        web_app: { url: buildSeriesLaunchUrl(serieId) },
+      }]],
+    }),
+  });
+}
+
+async function sendCheckoutAck(chatId: string | number, itemCount: number, total: string) {
+  return await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: `Recebemos seu carrinho com ${itemCount} item${itemCount === 1 ? "" : "s"} no total de ${total}.`,
+    reply_markup: JSON.stringify({
+      inline_keyboard: [[{
+        text: "Abrir catálogo",
+        web_app: { url: SERIES_WEBAPP_URL },
+      }]],
+    }),
+  });
+}
+
 async function handleTelegramWebhook(req: Request) {
   if (!TELEGRAM_BOT_TOKEN) {
     return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
@@ -677,7 +793,7 @@ async function handleTelegramWebhook(req: Request) {
   if (!joinRequest) {
     const chatMemberUpdate = getUpdateChatMember(update);
     if (!chatMemberUpdate) {
-      return json(req, { ok: true, ignored: true });
+      return await handleTelegramUserMessage(req, update);
     }
 
     if (!chatMemberUpdate.joined) {
@@ -689,21 +805,41 @@ async function handleTelegramWebhook(req: Request) {
     const safeName = chatMemberUpdate.displayName || chatMemberUpdate.userName || String(chatMemberUpdate.userId);
 
     if (shouldBan && PUBLIC_CHANNEL_AUTO_BAN) {
-      await banPublicChannelMember(chatMemberUpdate.chatId, chatMemberUpdate.userId);
-      await sendModerationAlert(
-        [
-          `Modo: ${analysis.policy.mode}`,
-          `Expulsão automática no canal público: ${safeName}`,
-          `Score: ${analysis.score}`,
-          `Limite de banimento: ${analysis.policy.banThreshold}`,
-          `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
-        ].join("\n"),
-      );
-      return json(req, {
-        ok: true,
-        action: "auto_banned",
-        score: analysis.score,
-      });
+      try {
+        await banPublicChannelMember(chatMemberUpdate.chatId, chatMemberUpdate.userId);
+        await sendModerationAlert(
+          [
+            `Modo: ${analysis.policy.mode}`,
+            `Expulsão automática no canal público: ${safeName}`,
+            `Score: ${analysis.score}`,
+            `Limite de banimento: ${analysis.policy.banThreshold}`,
+            `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
+          ].join("\n"),
+        );
+        return json(req, {
+          ok: true,
+          action: "auto_banned",
+          score: analysis.score,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await sendModerationAlert(
+          [
+            `Modo: ${analysis.policy.mode}`,
+            `Falha ao expulsar membro suspeito no canal público: ${safeName}`,
+            `Score: ${analysis.score}`,
+            `Limite de banimento: ${analysis.policy.banThreshold}`,
+            `Erro: ${message}`,
+            `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
+          ].join("\n"),
+        );
+        return json(req, {
+          ok: true,
+          action: "ban_failed",
+          score: analysis.score,
+          error: message,
+        });
+      }
     }
 
     if (analysis.score >= analysis.policy.alertThreshold) {

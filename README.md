@@ -41,6 +41,7 @@ Secrets necessários no Supabase:
 - `TELEGRAM_BOT_TOKEN`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `SERIES_WEBAPP_URL` com a URL principal do mini app, por exemplo `https://seriescurtasexpressbot.vercel.app/`
 - `SERIES_TABLE` se o nome da tabela não for `series`
 - `SERIES_ID_COLUMN` se o identificador não for `id`
 - `SERIES_TITLE_COLUMN` se o título não estiver em `title`
@@ -90,6 +91,8 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRET=... node scripts/setup-telegram-w
 O script registra `chat_member` no webhook, que é o evento usado para detectar novas entradas no canal público.
 
 O CAPTCHA continua disponível como opção complementar para fluxos de convite controlado, mas no canal público a proteção principal passa a ser a expulsão automática de contas claramente suspeitas.
+
+Quando o bot recebe o comando do mini app para reproduzir uma série, ele responde com um botão que reabre o app direto no título escolhido. Isso evita o fluxo silencioso em que o Telegram recebia o comando, mas não mostrava nenhuma ação visível para o usuário.
 
 ## Auditoria de playback
 
