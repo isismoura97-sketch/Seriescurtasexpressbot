@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-10';
+const BUILD_VERSION = '20260626-11';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
@@ -76,8 +76,26 @@ function resetVideo() {
 }
 
 function handleSeriesClick(serie) {
+    const playbackMode = getPlaybackMode(serie);
+
     if (isFree(serie)) {
-        openPlayer(serie.id, serie.title);
+        if (playbackMode === 'direct') {
+            openPlayer(serie.id, serie.title);
+            return;
+        }
+
+        if (playbackMode === 'telegram') {
+            const telegramFileId = getTelegramFileId(serie);
+            if (telegramFileId) {
+                openTelegramPlayback(serie.id, serie.title, telegramFileId);
+                return;
+            }
+            openPlayer(serie.id, serie.title);
+            return;
+        }
+
+        showToast('Essa série ainda não possui vídeo disponível', 'info');
+        openModal(serie);
     } else {
         openModal(serie);
     }
@@ -316,6 +334,32 @@ function getCoverUrl(serie) {
     return safe || PLACEHOLDER_IMAGE;
 }
 
+function hasDirectPlaybackUrl(serie) {
+    if (!serie) return false;
+
+    return ['video_url', 'stream_url', 'media_url', 'url'].some(key => {
+        const value = serie[key];
+        return typeof value === 'string' && value.trim() && sanitizeUrl(value.trim());
+    });
+}
+
+function getTelegramFileId(serie) {
+    if (!serie) return '';
+
+    for (const key of ['video_file_id', 'file_id', 'telegram_file_id']) {
+        const value = serie[key];
+        if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+
+    return '';
+}
+
+function getPlaybackMode(serie) {
+    if (hasDirectPlaybackUrl(serie)) return 'direct';
+    if (getTelegramFileId(serie)) return 'telegram';
+    return 'missing';
+}
+
 // ==================== INICIALIZAÇÃO ====================
 async function init() {
     resolveTelegramContext();
@@ -503,7 +547,17 @@ function createCard(serie, isNetflix = false) {
     card.className = isNetflix ? 'netflix-card' : 'card';
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
-    card.setAttribute('aria-label', `Abrir ${serie.title || 'série'}`);
+    const playbackMode = getPlaybackMode(serie);
+    const telegramOnly = playbackMode === 'telegram';
+    const missingPlayback = playbackMode === 'missing';
+    card.setAttribute(
+        'aria-label',
+        missingPlayback
+            ? `Abrir ${serie.title || 'série'} - vídeo indisponível`
+            : telegramOnly
+            ? `Abrir ${serie.title || 'série'} - reprodução via Telegram`
+            : `Abrir ${serie.title || 'série'}`
+    );
 
     const free = isFree(serie);
     const coverUrl = getCoverUrl(serie);
@@ -514,6 +568,20 @@ function createCard(serie, isNetflix = false) {
         const badge = document.createElement('div');
         badge.className = 'badge-gratis-landscape';
         badge.innerHTML = '<i class="fas fa-gift"></i> GRÁTIS';
+        cover.appendChild(badge);
+    }
+
+    if (telegramOnly) {
+        const badge = document.createElement('div');
+        badge.className = 'badge-telegram-landscape';
+        badge.innerHTML = '<i class="fab fa-telegram"></i> TELEGRAM';
+        cover.appendChild(badge);
+    }
+
+    if (missingPlayback) {
+        const badge = document.createElement('div');
+        badge.className = 'badge-unavailable-landscape';
+        badge.innerHTML = '<i class="fas fa-ban"></i> SEM VÍDEO';
         cover.appendChild(badge);
     }
 
@@ -652,6 +720,7 @@ function openModal(serie) {
     DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
     
     const free = isFree(serie);
+    const playbackMode = getPlaybackMode(serie);
     DOM.modalPrice.innerHTML = free 
         ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
         : `<span>${formatPrice(serie.price)}</span>`;
@@ -659,14 +728,36 @@ function openModal(serie) {
     DOM.modalActions.innerHTML = '';
     const btn = document.createElement('button');
     btn.className = free ? 'btn btn-free' : 'btn btn-primary';
-    btn.innerHTML = free 
-        ? '<i class="fas fa-play"></i> ASSISTIR AGORA'
-        : '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
+
+    if (free && playbackMode === 'direct') {
+        btn.className = 'btn btn-free';
+        btn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
+    } else if (free && playbackMode === 'telegram') {
+        btn.className = 'btn btn-telegram';
+        btn.innerHTML = '<i class="fab fa-telegram"></i> ABRIR NO TELEGRAM';
+    } else if (free) {
+        btn.className = 'btn btn-secondary';
+        btn.innerHTML = '<i class="fas fa-ban"></i> VÍDEO INDISPONÍVEL';
+    } else {
+        btn.innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
+    }
     
     btn.onclick = () => {
         closeModal();
-        if (free) { openPlayer(serie.id, serie.title); }
-        else { addToCart(serie); }
+        if (free && playbackMode === 'direct') {
+            openPlayer(serie.id, serie.title);
+        } else if (free && playbackMode === 'telegram') {
+            const telegramFileId = getTelegramFileId(serie);
+            if (telegramFileId) {
+                openTelegramPlayback(serie.id, serie.title, telegramFileId);
+            } else {
+                openPlayer(serie.id, serie.title);
+            }
+        } else if (free) {
+            showToast('Essa série ainda não possui vídeo disponível', 'info');
+        } else {
+            addToCart(serie);
+        }
     };
     
     DOM.modalActions.appendChild(btn);

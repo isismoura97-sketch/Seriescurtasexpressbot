@@ -495,6 +495,25 @@ body.light-mode .hero h1 {
     box-shadow: 0 15px 30px rgba(0,0,0,0.25);
 }
 
+.btn-telegram {
+    background: linear-gradient(135deg, #2AABEE, #1D84B5);
+    color: #fff;
+    font-weight: 800;
+    box-shadow: 0 0 20px rgba(42,171,238,0.35);
+}
+
+.btn-telegram:hover {
+    box-shadow: 0 0 30px rgba(42,171,238,0.55);
+    transform: translateY(-3px);
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
 .loading-player.active,
 .player-error.active {
     display: flex;
@@ -921,6 +940,46 @@ body.light-mode .card-info {
     gap: 5px;
     z-index: 10;
     box-shadow: 0 0 15px rgba(255,215,0,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+}
+
+.badge-telegram-landscape {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: linear-gradient(135deg, #2AABEE, #1D84B5);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    z-index: 10;
+    box-shadow: 0 0 15px rgba(42,171,238,0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+}
+
+.badge-unavailable-landscape {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: linear-gradient(135deg, #FF5C5C, #C93838);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    z-index: 10;
+    box-shadow: 0 0 15px rgba(255,92,92,0.35);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     pointer-events: none;

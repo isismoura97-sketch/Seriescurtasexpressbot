@@ -48,3 +48,13 @@ Secrets necessários no Supabase:
 - `SERIES_VIDEO_FILE_ID_COLUMNS` com uma lista separada por vírgulas para IDs do Telegram
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
+
+## Auditoria de playback
+
+Se quiser revisar rapidamente quais séries já têm URL direta e quais ainda dependem do Telegram, rode:
+
+```bash
+node scripts/playback-audit.mjs
+```
+
+Use `--json` para obter um relatório estruturado.
