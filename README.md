@@ -69,11 +69,17 @@ https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api?action=t
 - `PUBLIC_CHANNEL_USERNAME` com o `@username` do canal público
 - `PUBLIC_CHANNEL_ID` se você preferir validar pelo ID numérico
 - `PUBLIC_CHANNEL_ALERT_CHAT_ID` para receber alertas de suspeitos
-- `PUBLIC_CHANNEL_MIN_SCORE` para ajustar a agressividade da expulsão
+- `PUBLIC_CHANNEL_STRICTNESS` para ajustar a agressividade da heurística (`conservative`, `balanced` ou `strict`)
 - `PUBLIC_CHANNEL_AUTO_BAN=true` para banir automaticamente
 - `PUBLIC_CHANNEL_AUTO_BAN=false` se você quiser começar só em modo de alerta
 
 O bot precisa ser administrador do canal com permissão para banir membros. Sem isso ele consegue detectar, mas não consegue expulsar.
+
+Sugestão prática:
+
+- `conservative` para reduzir falsos positivos
+- `balanced` para um meio-termo
+- `strict` para expulsar mais agressivamente contas suspeitas
 
 5. Use o script de webhook com atualização de eventos:
 

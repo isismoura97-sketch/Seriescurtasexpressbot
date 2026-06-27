@@ -8,9 +8,9 @@ const CAPTCHA_MAX_AGE_SECONDS = Number(Deno.env.get("CAPTCHA_MAX_AGE_SECONDS") ?
 const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? "600");
 const PUBLIC_CHANNEL_USERNAME = Deno.env.get("PUBLIC_CHANNEL_USERNAME") ?? "";
 const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
-const PUBLIC_CHANNEL_MIN_SCORE = Number(Deno.env.get("PUBLIC_CHANNEL_MIN_SCORE") ?? "80");
 const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID") ?? "";
 const PUBLIC_CHANNEL_AUTO_BAN = (Deno.env.get("PUBLIC_CHANNEL_AUTO_BAN") ?? "true").toLowerCase() !== "false";
+const PUBLIC_CHANNEL_STRICTNESS = (Deno.env.get("PUBLIC_CHANNEL_STRICTNESS") ?? "balanced").toLowerCase();
 const FUNCTION_NAME = "bot-unificado";
 const SERIES_TABLE = Deno.env.get("SERIES_TABLE") ?? "series";
 const SERIES_ID_COLUMN = Deno.env.get("SERIES_ID_COLUMN") ?? "id";
@@ -100,6 +100,39 @@ function looksRandomText(text: string) {
   return consonants >= vowels * 2 && consonants >= 6 && digitGroups <= 1;
 }
 
+function getPublicChannelPolicy(mode = PUBLIC_CHANNEL_STRICTNESS) {
+  switch (mode) {
+    case "strict":
+      return {
+        mode: "strict",
+        banThreshold: 65,
+        alertThreshold: 45,
+        photoPenalty: 14,
+        noUsernamePenalty: 12,
+        randomTextPenalty: 20,
+      };
+    case "conservative":
+      return {
+        mode: "conservative",
+        banThreshold: 95,
+        alertThreshold: 75,
+        photoPenalty: 6,
+        noUsernamePenalty: 4,
+        randomTextPenalty: 10,
+      };
+    case "balanced":
+    default:
+      return {
+        mode: "balanced",
+        banThreshold: 80,
+        alertThreshold: 60,
+        photoPenalty: 10,
+        noUsernamePenalty: 8,
+        randomTextPenalty: 18,
+      };
+  }
+}
+
 async function sendModerationAlert(message: string) {
   if (!PUBLIC_CHANNEL_ALERT_CHAT_ID) return;
   try {
@@ -130,6 +163,7 @@ async function getTelegramUserProfilePhotoCount(userId: string | number) {
 }
 
 async function analyzePublicChannelJoin(user: Record<string, unknown>) {
+  const policy = getPublicChannelPolicy();
   const reasons: string[] = [];
   let score = 0;
 
@@ -147,7 +181,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
   }
 
   if (!username) {
-    score += 8;
+    score += policy.noUsernamePenalty;
     reasons.push("Sem @username");
   } else {
     if (username.length < 5 || username.length > 24) {
@@ -156,7 +190,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
     }
 
     if (looksRandomText(username)) {
-      score += 18;
+      score += policy.randomTextPenalty;
       reasons.push("Username parece gerado automaticamente");
     }
 
@@ -189,7 +223,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
   try {
     profilePhotos = await getTelegramUserProfilePhotoCount(user.id as string | number);
     if (profilePhotos === 0) {
-      score += 10;
+      score += policy.photoPenalty;
       reasons.push("Sem foto de perfil");
     }
   } catch {
@@ -209,6 +243,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
     profilePhotos,
     username: username || null,
     displayName: displayName || null,
+    policy,
   };
 }
 
@@ -650,15 +685,17 @@ async function handleTelegramWebhook(req: Request) {
     }
 
     const analysis = await analyzePublicChannelJoin(chatMemberUpdate.user);
-    const shouldBan = analysis.isBot || analysis.score >= PUBLIC_CHANNEL_MIN_SCORE;
+    const shouldBan = analysis.isBot || analysis.score >= analysis.policy.banThreshold;
     const safeName = chatMemberUpdate.displayName || chatMemberUpdate.userName || String(chatMemberUpdate.userId);
 
     if (shouldBan && PUBLIC_CHANNEL_AUTO_BAN) {
       await banPublicChannelMember(chatMemberUpdate.chatId, chatMemberUpdate.userId);
       await sendModerationAlert(
         [
+          `Modo: ${analysis.policy.mode}`,
           `Expulsão automática no canal público: ${safeName}`,
           `Score: ${analysis.score}`,
+          `Limite de banimento: ${analysis.policy.banThreshold}`,
           `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
         ].join("\n"),
       );
@@ -669,11 +706,13 @@ async function handleTelegramWebhook(req: Request) {
       });
     }
 
-    if (analysis.score >= Math.max(50, PUBLIC_CHANNEL_MIN_SCORE - 20)) {
+    if (analysis.score >= analysis.policy.alertThreshold) {
       await sendModerationAlert(
         [
+          `Modo: ${analysis.policy.mode}`,
           `Novo inscrito suspeito no canal público: ${safeName}`,
           `Score: ${analysis.score}`,
+          `Limite de alerta: ${analysis.policy.alertThreshold}`,
           `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
         ].join("\n"),
       );
