@@ -20,7 +20,7 @@ function corsHeaders(req: Request) {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET,OPTIONS",
-    "access-control-allow-headers": "authorization,apikey,content-type,x-client-info",
+    "access-control-allow-headers": "authorization,apikey,content-type,x-client-info,range",
     "access-control-allow-credentials": "true",
     "access-control-max-age": "86400",
     "vary": "Origin",
@@ -177,11 +177,14 @@ async function supabaseFetch(path: string) {
   }
 
   if (!res.ok) {
-    throw new Error(
+    const error = new Error(
       typeof data === "object" && data && "message" in data
         ? String((data as { message?: string }).message)
         : `Supabase request failed (${res.status})`,
-    );
+    ) as Error & { status?: number; body?: unknown };
+    error.status = res.status;
+    error.body = data;
+    throw error;
   }
 
   return data;
@@ -194,12 +197,24 @@ async function getSeriesList() {
 
 async function getSeriesById(seriesId: string) {
   const idColumns = [SERIES_ID_COLUMN, "id", "serie_id"].filter((value, index, arr) => arr.indexOf(value) === index);
+  let lastError: unknown = null;
+  let hadSuccessfulQuery = false;
 
   for (const column of idColumns) {
-    const data = await supabaseFetch(
-      `${SERIES_TABLE}?select=*&${column}=eq.${encodeURIComponent(seriesId)}&limit=1`,
-    );
-    if (Array.isArray(data) && data.length > 0) return data[0];
+    try {
+      const data = await supabaseFetch(
+        `${SERIES_TABLE}?select=*&${column}=eq.${encodeURIComponent(seriesId)}&limit=1`,
+      );
+      hadSuccessfulQuery = true;
+      lastError = null;
+      if (Array.isArray(data) && data.length > 0) return data[0];
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (!hadSuccessfulQuery && lastError) {
+    throw lastError;
   }
 
   return null;
