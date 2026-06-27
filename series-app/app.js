@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-11';
+const BUILD_VERSION = '20260626-12';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
@@ -127,6 +127,9 @@ const DOM = {
     heroPlayBtn: document.getElementById('heroPlayBtn'),
     catalogGrid: document.getElementById('catalogGrid'),
     netflixScroll: document.getElementById('netflixScroll'),
+    telegramScroll: document.getElementById('telegramScroll'),
+    telegramRow: document.getElementById('telegramRow'),
+    telegramRowCount: document.getElementById('telegramRowCount'),
     searchInput: document.getElementById('searchInput'),
     toastContainer: document.getElementById('toastContainer'),
     header: document.getElementById('header'),
@@ -386,7 +389,7 @@ async function init() {
         debugLog(`[INIT] ${allSeries.length} éries carregadas`);
 
         renderNetflixRow(allSeries);
-        renderGrid(getVisibleSeries());
+        refreshCatalog();
         initHero();
         updateCartUI();
     } catch (err) {
@@ -416,11 +419,11 @@ function setupEventListeners() {
 
     DOM.searchInput?.addEventListener('input', (e) => searchSeries(e.target.value.trim()));
 
-    document.querySelectorAll('.category-chip').forEach((chip, index) => {
+    document.querySelectorAll('.category-chip').forEach((chip) => {
         chip.addEventListener('click', () => {
             document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
             chip.classList.add('active');
-            const category = index === 0 ? 'all' : chip.textContent.trim().toLowerCase();
+            const category = chip.dataset.category || 'all';
             filterCategory(category);
         });
     });
@@ -513,6 +516,26 @@ function renderNetflixRow(series) {
     row.style.display = 'block';
 }
 
+function renderTelegramRow(series) {
+    const container = DOM.telegramScroll;
+    const row = DOM.telegramRow;
+    if (!container || !row) return;
+
+    const telegramSeries = series.filter(item => getPlaybackMode(item) === 'telegram');
+    container.innerHTML = '';
+
+    if (!telegramSeries.length) {
+        row.style.display = 'none';
+        return;
+    }
+
+    telegramSeries.slice(0, 6).forEach(s => container.appendChild(createCard(s, true)));
+    if (DOM.telegramRowCount) {
+        DOM.telegramRowCount.textContent = `${telegramSeries.length} título${telegramSeries.length === 1 ? '' : 's'}`;
+    }
+    row.style.display = 'block';
+}
+
 function renderGrid(series) {
     const grid = DOM.catalogGrid;
     if (!grid) return;
@@ -527,7 +550,9 @@ function renderGrid(series) {
 function getVisibleSeries() {
     let filtered = allSeries.slice();
 
-    if (currentCategory !== 'all') {
+    if (currentCategory === 'telegram') {
+        filtered = filtered.filter(s => getPlaybackMode(s) === 'telegram');
+    } else if (currentCategory !== 'all') {
         filtered = filtered.filter(s => s.category?.toLowerCase() === currentCategory);
     }
 
@@ -540,6 +565,7 @@ function getVisibleSeries() {
 
 function refreshCatalog() {
     renderGrid(getVisibleSeries());
+    renderTelegramRow(getVisibleSeries());
 }
 
 function createCard(serie, isNetflix = false) {

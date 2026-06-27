@@ -790,6 +790,38 @@ body.light-mode .modal-title {
     color: var(--primary);
 }
 
+.telegram-row {
+    padding-top: 6px;
+}
+
+.telegram-row-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.telegram-row-note {
+    margin-top: 6px;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.45;
+    max-width: 60ch;
+}
+
+.telegram-row-count {
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(42,171,238,0.14);
+    border: 1px solid rgba(42,171,238,0.25);
+    color: #8fd8ff;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 .netflix-scroll {
     display: flex;
     gap: 16px;

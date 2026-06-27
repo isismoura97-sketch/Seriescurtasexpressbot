@@ -57,4 +57,4 @@ Se quiser revisar rapidamente quais séries já têm URL direta e quais ainda de
 node scripts/playback-audit.mjs
 ```
 
-Use `--json` para obter um relatório estruturado.
+Use `--json` para obter um relatório estruturado e `--plan` para gerar um plano de migração em Markdown.

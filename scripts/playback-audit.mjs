@@ -28,8 +28,48 @@ function classify(row) {
   return 'missing';
 }
 
+function buildPlanMarkdown(report, summary) {
+  const telegramItems = report.filter((row) => row.playback === 'telegram');
+  const missingItems = report.filter((row) => row.playback === 'missing');
+
+  const lines = [
+    '# Plano de migração de playback',
+    '',
+    '## Resumo',
+    '',
+    `- Séries com URL direta: ${summary.direct}`,
+    `- Séries que dependem do Telegram: ${summary.telegram}`,
+    `- Séries sem mídia identificada: ${summary.missing}`,
+    '',
+    '## Prioridade 1: títulos que já dependem do Telegram',
+    '',
+    'Esses títulos funcionam via abertura no bot e devem ser tratados primeiro se a meta for reduzir atrito no navegador.',
+    '',
+    '| Título | Categoria | Ação recomendada |',
+    '| --- | --- | --- |',
+    ...telegramItems.map((row) => `| ${row.title.replaceAll('|', '\\|')} | ${String(row.category ?? 'sem categoria').replaceAll('|', '\\|')} | Manter no Telegram ou migrar para URL direta quando houver arquivo fonte |`),
+    '',
+    '## Prioridade 2: títulos sem mídia identificada',
+    '',
+    'Esses itens precisam de uma origem de vídeo antes de reproduzir no app.',
+    '',
+    '| Título | Categoria | Ação recomendada |',
+    '| --- | --- | --- |',
+    ...missingItems.map((row) => `| ${row.title.replaceAll('|', '\\|')} | ${String(row.category ?? 'sem categoria').replaceAll('|', '\\|')} | Localizar o arquivo original e preencher ` + '`video_url`' + ` ou ` + '`video_file_id`' + ` |`),
+    '',
+    '## Próximos passos sugeridos',
+    '',
+    '1. Escolher os 3 primeiros títulos da lista `missing` e localizar o arquivo original.',
+    '2. Decidir, para cada um, se a reprodução ficará em URL direta ou via Telegram.',
+    '3. Reexecutar `node scripts/playback-audit.mjs --json` depois de atualizar o catálogo.',
+  ];
+
+  return lines.join('\n');
+}
+
 const apiUrl = getArg('--api', DEFAULT_API_URL);
 const asJson = process.argv.includes('--json');
+const asPlan = process.argv.includes('--plan');
 
 const res = await fetch(`${apiUrl}?action=series`);
 if (!res.ok) {
@@ -51,7 +91,9 @@ const summary = report.reduce((acc, row) => {
   return acc;
 }, { direct: 0, telegram: 0, missing: 0 });
 
-if (asJson) {
+if (asPlan) {
+  process.stdout.write(buildPlanMarkdown(report, summary));
+} else if (asJson) {
   process.stdout.write(JSON.stringify({ summary, items: report }, null, 2));
 } else {
   console.log('Resumo do playback:');
