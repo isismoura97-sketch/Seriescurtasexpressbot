@@ -1,6 +1,11 @@
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const TELEGRAM_WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") ?? "";
+const CAPTCHA_SECRET = Deno.env.get("TELEGRAM_CAPTCHA_SECRET") ?? TELEGRAM_BOT_TOKEN;
+const CAPTCHA_WEBAPP_URL = Deno.env.get("CAPTCHA_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/verify.html";
+const CAPTCHA_MAX_AGE_SECONDS = Number(Deno.env.get("CAPTCHA_MAX_AGE_SECONDS") ?? "600");
+const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? "600");
 const FUNCTION_NAME = "bot-unificado";
 const SERIES_TABLE = Deno.env.get("SERIES_TABLE") ?? "series";
 const SERIES_ID_COLUMN = Deno.env.get("SERIES_ID_COLUMN") ?? "id";
@@ -63,6 +68,207 @@ function telegramApiUrl(path: string) {
   return `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${path}`;
 }
 
+async function telegramRequest(method: string, payload: Record<string, string | number | boolean>) {
+  const res = await fetch(telegramApiUrl(method), {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+    },
+    body: new URLSearchParams(
+      Object.entries(payload).reduce<Record<string, string>>((acc, [key, value]) => {
+        acc[key] = String(value);
+        return acc;
+      }, {}),
+    ),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.ok) {
+    throw new Error(data?.description || `${method} failed (${res.status})`);
+  }
+
+  return data.result;
+}
+
+function base64UrlEncode(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value: string) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function textEncode(value: string) {
+  return new TextEncoder().encode(value);
+}
+
+function textDecode(value: Uint8Array) {
+  return new TextDecoder().decode(value);
+}
+
+function constantTimeEqual(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    mismatch |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+async function deriveAesKey(secret: string) {
+  const digest = await crypto.subtle.digest("SHA-256", textEncode(secret));
+  return await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function encryptChallenge(secret: string, payload: Record<string, unknown>) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveAesKey(secret);
+  const encoded = textEncode(JSON.stringify(payload));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded));
+  return `${base64UrlEncode(iv)}.${base64UrlEncode(cipher)}`;
+}
+
+async function decryptChallenge(secret: string, token: string) {
+  const [ivPart, cipherPart] = token.split(".");
+  if (!ivPart || !cipherPart) {
+    throw new Error("Token de desafio inválido");
+  }
+
+  const iv = base64UrlDecode(ivPart);
+  const cipher = base64UrlDecode(cipherPart);
+  const key = await deriveAesKey(secret);
+  const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher));
+  return JSON.parse(textDecode(plain)) as Record<string, unknown>;
+}
+
+function buildCaptchaQuestion() {
+  const operators = [
+    { label: "+", compute: (a: number, b: number) => a + b },
+    { label: "-", compute: (a: number, b: number) => a - b },
+    { label: "×", compute: (a: number, b: number) => a * b },
+  ];
+
+  const a = Math.floor(Math.random() * 8) + 2;
+  const b = Math.floor(Math.random() * 8) + 2;
+  const operator = operators[Math.floor(Math.random() * operators.length)];
+  const left = operator.label === "-" && a < b ? b : a;
+  const right = operator.label === "-" && a < b ? a : b;
+  const answer = String(operator.compute(left, right));
+  const question = `Quanto é ${left} ${operator.label} ${right}?`;
+
+  return { question, answer };
+}
+
+async function buildCaptchaToken(update: {
+  query_id: string;
+  user_id: number | string;
+  chat_id: number | string;
+  title?: string;
+}) {
+  const { question, answer } = buildCaptchaQuestion();
+  const expiresAt = Math.floor(Date.now() / 1000) + CAPTCHA_MAX_AGE_SECONDS;
+  const payload = {
+    v: 1,
+    query_id: update.query_id,
+    user_id: String(update.user_id),
+    chat_id: String(update.chat_id),
+    title: update.title ?? "",
+    answer,
+    expires_at: expiresAt,
+  };
+  const token = await encryptChallenge(CAPTCHA_SECRET, payload);
+
+  return {
+    token: base64UrlEncode(textEncode(JSON.stringify({
+      v: 1,
+      q: question,
+      exp: expiresAt,
+      u: String(update.user_id),
+      c: token,
+    }))),
+    question,
+  };
+}
+
+function parseWebAppInitData(initData: string) {
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash") || "";
+  params.delete("hash");
+
+  const checkString = [...params.entries()]
+    .sort(([aKey, aValue], [bKey, bValue]) => (aKey === bKey ? aValue.localeCompare(bValue) : aKey.localeCompare(bKey)))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+
+  return { hash, checkString, params };
+}
+
+async function validateWebAppInitData(initData: string) {
+  if (!initData) {
+    throw new Error("Dados do Telegram ausentes");
+  }
+
+  const { hash, checkString, params } = parseWebAppInitData(initData);
+  if (!hash) {
+    throw new Error("Hash ausente");
+  }
+
+  const secretKey = await crypto.subtle.importKey(
+    "raw",
+    textEncode(TELEGRAM_BOT_TOKEN),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const derivedKey = await crypto.subtle.sign("HMAC", secretKey, textEncode("WebAppData"));
+  const signingKey = await crypto.subtle.importKey(
+    "raw",
+    derivedKey,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const expectedHashBytes = new Uint8Array(await crypto.subtle.sign("HMAC", signingKey, textEncode(checkString)));
+  const expectedHash = Array.from(expectedHashBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+  if (!constantTimeEqual(hash, expectedHash)) {
+    throw new Error("Dados do Telegram inválidos");
+  }
+
+  const authDate = Number(params.get("auth_date") || "0");
+  if (!authDate || Number.isNaN(authDate)) {
+    throw new Error("auth_date ausente");
+  }
+
+  const age = Math.floor(Date.now() / 1000) - authDate;
+  if (age < 0 || age > WEBAPP_MAX_AGE_SECONDS) {
+    throw new Error("Sessão do Telegram expirada");
+  }
+
+  const userRaw = params.get("user");
+  if (!userRaw) {
+    throw new Error("Usuário do Telegram ausente");
+  }
+
+  const user = JSON.parse(userRaw) as { id?: number | string; is_bot?: boolean };
+  if (!user?.id || user.is_bot) {
+    throw new Error("Usuário do Telegram inválido");
+  }
+
+  return { userId: String(user.id), user, authDate };
+}
+
 async function telegramGetFile(fileId: string) {
   const url = new URL(telegramApiUrl("getFile"));
   url.searchParams.set("file_id", fileId);
@@ -75,6 +281,23 @@ async function telegramGetFile(fileId: string) {
   }
 
   return payload.result as { file_path: string };
+}
+
+async function sendChatJoinRequestWebApp(chatJoinRequestQueryId: string, webAppUrl: string) {
+  return await telegramRequest("sendChatJoinRequestWebApp", {
+    chat_join_request_query_id: chatJoinRequestQueryId,
+    web_app_url: webAppUrl,
+  });
+}
+
+async function answerChatJoinRequestQuery(
+  chatJoinRequestQueryId: string,
+  result: "approve" | "decline" | "queue",
+) {
+  return await telegramRequest("answerChatJoinRequestQuery", {
+    chat_join_request_query_id: chatJoinRequestQueryId,
+    result,
+  });
 }
 
 async function proxyTelegramFile(req: Request, fileId: string, title = "") {
@@ -153,6 +376,153 @@ async function proxyTelegramFile(req: Request, fileId: string, title = "") {
     status: upstream.status,
     headers,
   });
+}
+
+function getUpdateChatJoinRequest(update: Record<string, unknown>) {
+  const chatJoinRequest = update.chat_join_request as Record<string, unknown> | undefined;
+  if (!chatJoinRequest) return null;
+
+  const chat = chatJoinRequest.chat as Record<string, unknown> | undefined;
+  const user = chatJoinRequest.from as Record<string, unknown> | undefined;
+  const queryId = typeof chatJoinRequest.query_id === "string" ? chatJoinRequest.query_id : "";
+  const chatId = chat?.id;
+  const userId = user?.id;
+
+  if (!queryId || chatId == null || userId == null) {
+    return null;
+  }
+
+  return {
+    queryId,
+    chatId,
+    userId,
+    title: typeof chat?.title === "string" ? chat.title : typeof chat?.username === "string" ? chat.username : "",
+  };
+}
+
+async function handleTelegramWebhook(req: Request) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
+  }
+
+  if (TELEGRAM_WEBHOOK_SECRET) {
+    const secretToken = req.headers.get("x-telegram-bot-api-secret-token") || "";
+    if (!constantTimeEqual(secretToken, TELEGRAM_WEBHOOK_SECRET)) {
+      return json(req, { ok: false, error: "Webhook inválido" }, 403);
+    }
+  }
+
+  const update = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!update) {
+    return json(req, { ok: false, error: "Update inválido" }, 400);
+  }
+
+  const joinRequest = getUpdateChatJoinRequest(update);
+  if (!joinRequest) {
+    return json(req, { ok: true, ignored: true });
+  }
+
+  if (!CAPTCHA_WEBAPP_URL) {
+    await answerChatJoinRequestQuery(joinRequest.queryId, "queue");
+    return json(req, { ok: true, action: "queued" });
+  }
+
+  const challenge = await buildCaptchaToken({
+    query_id: joinRequest.queryId,
+    user_id: joinRequest.userId,
+    chat_id: joinRequest.chatId,
+    title: joinRequest.title,
+  });
+
+  const webAppUrl = new URL(CAPTCHA_WEBAPP_URL);
+  webAppUrl.searchParams.set("token", challenge.token);
+
+  await sendChatJoinRequestWebApp(joinRequest.queryId, webAppUrl.toString());
+  return json(req, { ok: true, action: "captcha_sent" });
+}
+
+async function handleCaptchaVerify(req: Request) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
+  }
+
+  const body = (await req.json().catch(() => null)) as {
+    token?: string;
+    answer?: string;
+    initData?: string;
+  } | null;
+
+  if (!body?.token || !body?.answer) {
+    return json(req, { ok: false, error: "Dados incompletos" }, 400);
+  }
+
+  let telegramUserId = "";
+  try {
+    const webAppData = await validateWebAppInitData(body.initData || "");
+    telegramUserId = webAppData.userId;
+  } catch (error) {
+    return json(
+      req,
+      { ok: false, error: error instanceof Error ? error.message : "Dados do Telegram inválidos" },
+      403,
+    );
+  }
+
+  let publicPayload: Record<string, unknown>;
+  try {
+    publicPayload = JSON.parse(textDecode(base64UrlDecode(body.token))) as Record<string, unknown>;
+  } catch {
+    return json(req, { ok: false, error: "Token da verificação inválido" }, 400);
+  }
+
+  const challengeToken = typeof publicPayload.c === "string" ? publicPayload.c : "";
+  const publicUserId = typeof publicPayload.u === "string" ? publicPayload.u : "";
+
+  if (!challengeToken || !publicUserId || !constantTimeEqual(publicUserId, telegramUserId)) {
+    return json(req, { ok: false, error: "Usuário não corresponde ao desafio" }, 403);
+  }
+
+  let privatePayload: Record<string, unknown>;
+  try {
+    privatePayload = await decryptChallenge(CAPTCHA_SECRET, challengeToken);
+  } catch {
+    return json(req, { ok: false, error: "Desafio expirado ou corrompido" }, 400);
+  }
+
+  const expectedAnswer = String(privatePayload.answer ?? "");
+  const expiresAt = Number(privatePayload.expires_at ?? 0);
+  const queryId = String(privatePayload.query_id ?? "");
+  const userId = String(privatePayload.user_id ?? "");
+  const answer = String(body.answer || "").trim();
+
+  if (!queryId || !userId || !expectedAnswer) {
+    return json(req, { ok: false, error: "Desafio incompleto" }, 400);
+  }
+
+  if (!constantTimeEqual(userId, telegramUserId)) {
+    return json(req, { ok: false, error: "Conta inválida para este desafio" }, 403);
+  }
+
+  if (!expiresAt || Math.floor(Date.now() / 1000) > expiresAt) {
+    try {
+      await answerChatJoinRequestQuery(queryId, "decline");
+    } catch {
+      // ignore
+    }
+    return json(req, { ok: false, error: "Desafio expirado" }, 410);
+  }
+
+  if (!constantTimeEqual(answer, expectedAnswer)) {
+    try {
+      await answerChatJoinRequestQuery(queryId, "decline");
+    } catch {
+      // ignore
+    }
+    return json(req, { ok: false, error: "Resposta incorreta" }, 400);
+  }
+
+  await answerChatJoinRequestQuery(queryId, "approve");
+  return json(req, { ok: true, approved: true });
 }
 
 async function supabaseFetch(path: string) {
@@ -305,6 +675,14 @@ Deno.serve(async (req) => {
       const title = url.searchParams.get("title") || "";
       if (!fileId) return json(req, { error: "file_id ausente" }, 400);
       return await proxyTelegramFile(req, fileId, title);
+    }
+
+    if (action === "telegram-webhook") {
+      return await handleTelegramWebhook(req);
+    }
+
+    if (action === "captcha-verify") {
+      return await handleCaptchaVerify(req);
     }
 
     return json(req, { error: "Ação inválida" }, 400);

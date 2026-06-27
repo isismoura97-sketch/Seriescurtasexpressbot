@@ -49,6 +49,33 @@ Secrets necessários no Supabase:
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
 
+## Verificação anti-bot no canal
+
+Para usar o CAPTCHA de entrada, o canal precisa aceitar inscrições por convite com aprovação de entrada. Em canal público, qualquer pessoa pode entrar por link direto e o CAPTCHA não consegue bloquear antes da entrada.
+
+Passos recomendados:
+
+1. Configure o canal como privado ou use links de convite com `creates_join_request=true`.
+2. Aponte o webhook do bot para a function:
+
+```bash
+https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api?action=telegram-webhook
+```
+
+3. Defina os secrets opcionais:
+
+- `TELEGRAM_WEBHOOK_SECRET` para validar o webhook do Telegram
+- `TELEGRAM_CAPTCHA_SECRET` para assinar o desafio
+- `CAPTCHA_WEBAPP_URL` para a Mini App de verificação
+
+4. Use a página de verificação hospedada em:
+
+```bash
+https://seriescurtasexpressbot.vercel.app/verify.html
+```
+
+Quando um usuário solicitar entrada, o bot abre a verificação humana e só aprova após a resposta correta.
+
 ## Auditoria de playback
 
 Se quiser revisar rapidamente quais séries já têm URL direta e quais ainda dependem do Telegram, rode:
