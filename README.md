@@ -72,3 +72,4 @@ node scripts/import-migration-template.mjs --input outputs/migration-template.cs
 ```
 
 Para enviar as alterações ao Supabase, adicione `--apply` e configure `SUPABASE_SERVICE_ROLE_KEY`.
+Se a coluna da chave primária não for `id`, passe `--id-column` com o nome correto.

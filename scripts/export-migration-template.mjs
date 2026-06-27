@@ -99,7 +99,7 @@ const csv = toCsv(rows);
 
 if (outputPath) {
   const { writeFile } = await import('node:fs/promises');
-  await writeFile(outputPath, `${csv}\n`, 'utf8');
+  await writeFile(outputPath, `\ufeff${csv}\n`, 'utf8');
   console.log(`Template salvo em ${outputPath}`);
   console.log(`Linhas exportadas: ${rows.length}`);
 } else {

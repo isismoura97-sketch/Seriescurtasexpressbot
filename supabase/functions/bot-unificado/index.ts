@@ -82,13 +82,57 @@ async function proxyTelegramFile(req: Request, fileId: string, title = "") {
     return json(req, { error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
   }
 
-  const { file_path } = await telegramGetFile(fileId);
+  let file_path = "";
+  try {
+    ({ file_path } = await telegramGetFile(fileId));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(
+      req,
+      {
+        error: message,
+        type: "telegram_file",
+        file_id: fileId,
+        title,
+      },
+      message.toLowerCase().includes("file is too big") ? 422 : 500,
+    );
+  }
   const upstreamUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${file_path}`;
   const range = req.headers.get("range");
 
-  const upstream = await fetch(upstreamUrl, {
-    headers: range ? { Range: range } : undefined,
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(upstreamUrl, {
+      headers: range ? { Range: range } : undefined,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(
+      req,
+      {
+        error: message || "Telegram file fetch failed",
+        type: "telegram_file",
+        file_id: fileId,
+        title,
+      },
+      502,
+    );
+  }
+
+  if (!upstream.ok) {
+    const detail = await upstream.text().catch(() => "");
+    return json(
+      req,
+      {
+        error: detail || `Telegram file request failed (${upstream.status})`,
+        type: "telegram_file",
+        file_id: fileId,
+        title,
+      },
+      upstream.status,
+    );
+  }
 
   const headers = new Headers(corsHeaders(req));
   headers.set("cache-control", "no-store");

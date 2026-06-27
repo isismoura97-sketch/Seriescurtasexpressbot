@@ -1,6 +1,7 @@
 const DEFAULT_INPUT = 'outputs/migration-template.csv';
 const DEFAULT_API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 const DEFAULT_TABLE = 'series';
+const DEFAULT_ID_COLUMN = 'id';
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -67,6 +68,11 @@ function parseCsv(text) {
   const [headers, ...dataRows] = rows;
   if (!headers || headers.length === 0) return [];
 
+  headers[0] = headers[0].replace(/^\uFEFF/, '').trim();
+  for (let i = 1; i < headers.length; i += 1) {
+    headers[i] = headers[i].trim();
+  }
+
   return dataRows
     .filter((values) => values.some((value) => value !== ''))
     .map((values) => {
@@ -96,6 +102,7 @@ function formatRow(row) {
 const inputPath = getArg('--input', DEFAULT_INPUT);
 const apiUrl = getArg('--api', DEFAULT_API_URL);
 const table = getArg('--table', DEFAULT_TABLE);
+const idColumn = getArg('--id-column', DEFAULT_ID_COLUMN);
 const applyChanges = hasFlag('--apply');
 const dryRun = !applyChanges;
 
@@ -103,8 +110,11 @@ const { readFile } = await import('node:fs/promises');
 const input = await readFile(inputPath, 'utf8');
 const rows = parseCsv(input);
 
+const invalidIdRows = rows.filter((row) => (row.playback === 'telegram' || row.playback === 'missing') && !(typeof row.id === 'string' && row.id.trim().length > 0));
+
 const actionable = rows
   .filter((row) => row.playback === 'telegram' || row.playback === 'missing')
+  .filter((row) => typeof row.id === 'string' && row.id.trim().length > 0)
   .map((row) => ({
     ...row,
     update: buildUpdate(row),
@@ -117,9 +127,18 @@ console.log(`Linhas lidas: ${rows.length}`);
 console.log(`Prontas para aplicar: ${readyToApply.length}`);
 console.log(`Ainda vazias: ${pending.length}`);
 
+if (invalidIdRows.length) {
+  console.log(`Linhas ignoradas por falta de id: ${invalidIdRows.length}`);
+}
+
 if (pending.length) {
   console.log('\nPendentes:');
   pending.forEach((row) => console.log(`- ${formatRow(row)}`));
+}
+
+if (invalidIdRows.length) {
+  console.log('\nSem id válido:');
+  invalidIdRows.forEach((row) => console.log(`- ${row.title || '(sem título)'}`));
 }
 
 if (dryRun) {
@@ -133,7 +152,7 @@ if (dryRun) {
 
   for (const row of readyToApply) {
     const endpoint = new URL(`/rest/v1/${table}`, apiUrl);
-    endpoint.searchParams.set('id', `eq.${row.id}`);
+    endpoint.searchParams.set(idColumn, `eq.${row.id}`);
 
     const res = await fetch(endpoint.toString(), {
       method: 'PATCH',
