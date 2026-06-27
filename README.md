@@ -76,6 +76,12 @@ https://seriescurtasexpressbot.vercel.app/verify.html
 
 Quando um usuário solicitar entrada, o bot abre a verificação humana e só aprova após a resposta correta.
 
+Se quiser registrar o webhook automaticamente, rode:
+
+```bash
+TELEGRAM_BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRET=... node scripts/setup-telegram-webhook.mjs
+```
+
 ## Auditoria de playback
 
 Se quiser revisar rapidamente quais séries já têm URL direta e quais ainda dependem do Telegram, rode:

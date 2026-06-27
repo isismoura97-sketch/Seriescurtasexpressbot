@@ -224,17 +224,17 @@ async function validateWebAppInitData(initData: string) {
     throw new Error("Hash ausente");
   }
 
-  const secretKey = await crypto.subtle.importKey(
+  const webAppKey = await crypto.subtle.importKey(
     "raw",
-    textEncode(TELEGRAM_BOT_TOKEN),
+    textEncode("WebAppData"),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
   );
-  const derivedKey = await crypto.subtle.sign("HMAC", secretKey, textEncode("WebAppData"));
+  const derivedKeyBytes = await crypto.subtle.sign("HMAC", webAppKey, textEncode(TELEGRAM_BOT_TOKEN));
   const signingKey = await crypto.subtle.importKey(
     "raw",
-    derivedKey,
+    derivedKeyBytes,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"],
