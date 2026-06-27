@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-9';
+const BUILD_VERSION = '20260626-10';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
@@ -585,12 +585,13 @@ async function openPlayer(serieId, title) {
             }
         } else if ((data.type === 'telegram_file' || data.file_id) && data.file_id) {
             playerRetryData = { id: serieId, title, telegramFileId: data.file_id };
+            const telegramDescription = data.reason || 'Este título usa um arquivo do Telegram. Abra no bot para continuar a reprodução.';
             DOM.mainVideo.style.display = 'none';
             setPlayerErrorView({
                 iconClass: 'fab fa-telegram',
                 iconColor: '#2AABEE',
                 title: 'Reprodução via Telegram',
-                description: 'Este título usa um arquivo do Telegram. Abra no bot para continuar a reprodução.',
+                description: telegramDescription,
                 buttonHtml: '<i class="fab fa-telegram"></i> Abrir no Telegram',
                 buttonHandler: () => openTelegramPlayback(serieId, title, data.file_id)
             });

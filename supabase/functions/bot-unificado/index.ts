@@ -1,6 +1,7 @@
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const FUNCTION_NAME = "bot-unificado";
 const SERIES_TABLE = Deno.env.get("SERIES_TABLE") ?? "series";
 const SERIES_ID_COLUMN = Deno.env.get("SERIES_ID_COLUMN") ?? "id";
 const SERIES_TITLE_COLUMN = Deno.env.get("SERIES_TITLE_COLUMN") ?? "title";
@@ -47,7 +48,11 @@ function safeFilename(name: string) {
 }
 
 function buildPlaybackUrl(req: Request, fileId: string, title = "") {
-  const url = new URL(req.url);
+  const baseUrl = SUPABASE_URL
+    ? new URL(`/functions/v1/${FUNCTION_NAME}/api`, SUPABASE_URL)
+    : new URL(req.url);
+
+  const url = baseUrl;
   url.searchParams.set("action", "playback");
   url.searchParams.set("file_id", fileId);
   if (title) url.searchParams.set("title", title);
@@ -192,6 +197,21 @@ async function handleStream(req: Request, url: URL) {
 
   const fileId = extractTelegramFileId(row as Record<string, unknown>);
   if (fileId) {
+    try {
+      await telegramGetFile(fileId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.toLowerCase().includes("file is too big")) {
+        return json(req, {
+          type: "telegram_file",
+          file_id: fileId,
+          title: (row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title,
+          reason: "Este vídeo é grande demais para o player do navegador. Abra no Telegram para assistir.",
+        });
+      }
+      throw error;
+    }
+
     return json(req, {
       url: buildPlaybackUrl(req, fileId, String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title)),
       type: "telegram_proxy",
