@@ -650,11 +650,59 @@ body.light-mode .modal-title {
     box-shadow: 0 0 20px rgba(255,215,0,0.4);
 }
 
+.telegram-badge {
+    background: linear-gradient(135deg, #2AABEE, #1D84B5);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 30px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 0 20px rgba(42,171,238,0.35);
+}
+
 .modal-desc {
     color: var(--text-dim);
     line-height: 1.7;
     margin-bottom: 30px;
     font-size: 15.5px;
+}
+
+.telegram-guide {
+    margin: 0 0 22px;
+    padding: 18px 18px 16px;
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(42,171,238,0.14), rgba(42,171,238,0.06));
+    border: 1px solid rgba(42,171,238,0.2);
+}
+
+.telegram-guide-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #8fd8ff;
+    font-size: 15px;
+    font-weight: 800;
+    margin-bottom: 10px;
+}
+
+.telegram-guide-title i {
+    color: #2AABEE;
+}
+
+.telegram-guide-steps {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--text-main);
+    display: grid;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.telegram-guide-steps li strong {
+    color: #8fd8ff;
 }
 
 .modal-actions {

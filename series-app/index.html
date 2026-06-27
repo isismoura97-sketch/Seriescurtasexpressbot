@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="styles.css?v=20260626-12">
+    <link rel="stylesheet" href="styles.css?v=20260626-13">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
@@ -127,6 +127,17 @@
                 <h2 class="modal-title" id="modalTitle">Título da Série</h2>
                 <div class="modal-price" id="modalPrice"></div>
                 <p class="modal-desc" id="modalDesc">Descrição da série...</p>
+                <div class="telegram-guide" id="telegramGuide" hidden>
+                    <div class="telegram-guide-title">
+                        <i class="fab fa-telegram"></i>
+                        Como assistir no Telegram
+                    </div>
+                    <ol class="telegram-guide-steps">
+                        <li>Toque em <strong>Abrir no Telegram</strong>.</li>
+                        <li>O bot vai abrir já no título certo.</li>
+                        <li>Depois volte para o app quando terminar.</li>
+                    </ol>
+                </div>
                 <div class="modal-actions" id="modalActions"></div>
             </div>
         </div>
@@ -232,6 +243,6 @@
     <script defer src="/_vercel/speed-insights/script.js"></script>
 
     <!-- Script Principal -->
-    <script defer src="app.js?v=20260626-12"></script>
+    <script defer src="app.js?v=20260626-13"></script>
 </body>
 </html>

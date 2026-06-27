@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260626-12';
+const BUILD_VERSION = '20260626-13';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
@@ -85,12 +85,7 @@ function handleSeriesClick(serie) {
         }
 
         if (playbackMode === 'telegram') {
-            const telegramFileId = getTelegramFileId(serie);
-            if (telegramFileId) {
-                openTelegramPlayback(serie.id, serie.title, telegramFileId);
-                return;
-            }
-            openPlayer(serie.id, serie.title);
+            openModal(serie);
             return;
         }
 
@@ -119,6 +114,7 @@ const DOM = {
     modalTitle: document.getElementById('modalTitle'),
     modalPrice: document.getElementById('modalPrice'),
     modalDesc: document.getElementById('modalDesc'),
+    telegramGuide: document.getElementById('telegramGuide'),
     modalActions: document.getElementById('modalActions'),
     heroImg: document.getElementById('heroImg'),
     heroTitle: document.getElementById('heroTitle'),
@@ -187,6 +183,7 @@ function setPlayerErrorView({ iconClass, iconColor, title, description, buttonHt
 }
 
 function openTelegramPlayback(serieId, title, telegramFileId) {
+    const safeTitle = title || 'esta série';
     const payload = JSON.stringify({
         action: 'play_video',
         serie_id: serieId,
@@ -197,7 +194,7 @@ function openTelegramPlayback(serieId, title, telegramFileId) {
     try {
         if (tg && typeof tg.sendData === 'function') {
             tg.sendData(payload);
-            showToast('Solicitando a reprodução no Telegram...', 'success');
+            showToast(`Enviando "${safeTitle}" para o Telegram...`, 'success');
             closePlayer();
             return true;
         }
@@ -214,7 +211,7 @@ function openTelegramPlayback(serieId, title, telegramFileId) {
         } else {
             window.open(deepLink, '_blank', 'noopener,noreferrer');
         }
-        showToast('Abrindo o Telegram para reproduzir o vídeo...', 'info');
+        showToast(`Abrindo "${safeTitle}" no Telegram...`, 'info');
         closePlayer();
         return true;
     } catch (err) {
@@ -743,13 +740,26 @@ function openModal(serie) {
     }
     DOM.modalImg.src = getCoverUrl(serie);
     DOM.modalTitle.textContent = serie.title || 'Série';
-    DOM.modalDesc.textContent = serie.description || 'Sem descrição disponível.';
     
     const free = isFree(serie);
     const playbackMode = getPlaybackMode(serie);
-    DOM.modalPrice.innerHTML = free 
-        ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
-        : `<span>${formatPrice(serie.price)}</span>`;
+    const telegramFileId = getTelegramFileId(serie);
+    if (DOM.telegramGuide) {
+        DOM.telegramGuide.hidden = playbackMode !== 'telegram';
+    }
+
+    const baseDescription = serie.description || 'Sem descrição disponível.';
+    DOM.modalDesc.textContent = playbackMode === 'telegram'
+        ? `${baseDescription} Este título é grande demais para tocar no navegador, então vamos abrir no Telegram.`
+        : baseDescription;
+
+    if (free && playbackMode === 'telegram') {
+        DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> ASSISTIR NO TELEGRAM</span>';
+    } else {
+        DOM.modalPrice.innerHTML = free 
+            ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
+            : `<span>${formatPrice(serie.price)}</span>`;
+    }
 
     DOM.modalActions.innerHTML = '';
     const btn = document.createElement('button');
@@ -773,10 +783,10 @@ function openModal(serie) {
         if (free && playbackMode === 'direct') {
             openPlayer(serie.id, serie.title);
         } else if (free && playbackMode === 'telegram') {
-            const telegramFileId = getTelegramFileId(serie);
             if (telegramFileId) {
                 openTelegramPlayback(serie.id, serie.title, telegramFileId);
             } else {
+                showToast('Este título será encaminhado ao Telegram para abrir o bot correto.', 'info');
                 openPlayer(serie.id, serie.title);
             }
         } else if (free) {
