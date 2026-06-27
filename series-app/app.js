@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260627-02';
+const BUILD_VERSION = '20260627-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
@@ -20,6 +20,7 @@ const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 const PAYMENT_METHOD_STORAGE_KEY = 'checkout_payment_method';
 const BUYER_EMAIL_STORAGE_KEY = 'checkout_buyer_email';
 const ACTIVE_PAYMENT_ORDER_STORAGE_KEY = 'checkout_active_order';
+const STATIC_PIX_QR_IMAGE_URL = `assets/pix-qr.png?v=${BUILD_VERSION}`;
 
 function sanitizeUserId(raw) {
     if (raw == null) return null;
@@ -497,10 +498,17 @@ function renderPaymentSummary(order) {
         details.push(`<div class="payment-detail"><span>Pix</span><strong>Código gerado</strong></div>`);
         const qrBase64 = String(order.pix_qr_code_base64 || '').trim();
         const qrCode = String(order.pix_qr_code || '').trim();
+        const qrImageUrl = String(order.pix_qr_image_url || '').trim() || STATIC_PIX_QR_IMAGE_URL;
         if (qrBase64) {
             details.push(`
                 <div class="payment-qr">
                     <img src="data:image/png;base64,${qrBase64}" alt="QR Code do Pix">
+                </div>
+            `);
+        } else if (qrImageUrl) {
+            details.push(`
+                <div class="payment-qr">
+                    <img src="${escapeHtml(qrImageUrl)}" alt="QR Code do Pix">
                 </div>
             `);
         }

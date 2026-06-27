@@ -43,6 +43,9 @@ Secrets necessários no Supabase:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `MERCADO_PAGO_ACCESS_TOKEN` para criar link de pagamento e Pix
 - `MERCADO_PAGO_WEBHOOK_SECRET` se você quiser validar eventos do provedor no futuro
+- `MERCADO_PAGO_PIX_KEY` para fallback do Pix estático
+- `MERCADO_PAGO_PIX_COPY` com o código "copia e cola" do Pix
+- `MERCADO_PAGO_PIX_QR_CODE_BASE64` com o QR Code em base64, caso você queira mostrar o mesmo QR no mini app
 - `SERIES_WEBAPP_URL` com a URL principal do mini app, por exemplo `https://seriescurtasexpressbot.vercel.app/`
 - `PAYMENT_ORDERS_TABLE` com o nome da tabela de pedidos, padrão `payment_orders`
 - `SERIES_TABLE` se o nome da tabela não for `series`

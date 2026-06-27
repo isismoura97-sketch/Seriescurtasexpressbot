@@ -9,6 +9,9 @@ const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? 
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
 const MERCADO_PAGO_WEBHOOK_SECRET = Deno.env.get("MERCADO_PAGO_WEBHOOK_SECRET") ?? "";
+const MERCADO_PAGO_PIX_KEY = Deno.env.get("MERCADO_PAGO_PIX_KEY") ?? "";
+const MERCADO_PAGO_PIX_COPY = Deno.env.get("MERCADO_PAGO_PIX_COPY") ?? "";
+const MERCADO_PAGO_PIX_QR_CODE_BASE64 = Deno.env.get("MERCADO_PAGO_PIX_QR_CODE_BASE64") ?? "";
 const PAYMENT_ORDERS_TABLE = Deno.env.get("PAYMENT_ORDERS_TABLE") ?? "payment_orders";
 const PUBLIC_CHANNEL_USERNAME = Deno.env.get("PUBLIC_CHANNEL_USERNAME") ?? "";
 const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
@@ -510,40 +513,67 @@ async function createMercadoPagoPixPayment(order: {
   buyerEmail: string;
   buyerName?: string | null;
 }) {
-  const response = await mercadoPagoRequest("/v1/payments", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: stringifyJson({
-      transaction_amount: Number(order.amount.toFixed(2)),
-      description: order.description,
-      payment_method_id: "pix",
-      payer: {
-        email: order.buyerEmail,
-        first_name: order.buyerName ?? undefined,
+  try {
+    const response = await mercadoPagoRequest("/v1/payments", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
       },
-      external_reference: order.orderId,
-      metadata: {
-        order_id: order.orderId,
-        user_id: order.userId,
-        payment_method: "pix_qr",
-      },
-      notification_url: buildPaymentNotificationUrl(),
-    }),
-  }) as Record<string, unknown>;
+      body: stringifyJson({
+        transaction_amount: Number(order.amount.toFixed(2)),
+        description: order.description,
+        payment_method_id: "pix",
+        payer: {
+          email: order.buyerEmail,
+          first_name: order.buyerName ?? undefined,
+        },
+        external_reference: order.orderId,
+        metadata: {
+          order_id: order.orderId,
+          user_id: order.userId,
+          payment_method: "pix_qr",
+        },
+        notification_url: buildPaymentNotificationUrl(),
+      }),
+    }) as Record<string, unknown>;
 
-  const interaction = response.point_of_interaction as Record<string, unknown> | undefined;
-  const transactionData = interaction?.transaction_data as Record<string, unknown> | undefined;
+    const interaction = response.point_of_interaction as Record<string, unknown> | undefined;
+    const transactionData = interaction?.transaction_data as Record<string, unknown> | undefined;
 
-  return {
-    paymentId: typeof response.id === "string" ? response.id : String(response.id ?? ""),
-    status: typeof response.status === "string" ? response.status : "pending",
-    qrCode: typeof transactionData?.qr_code === "string" ? transactionData.qr_code : "",
-    qrCodeBase64: typeof transactionData?.qr_code_base64 === "string" ? transactionData.qr_code_base64 : "",
-    ticketUrl: typeof transactionData?.ticket_url === "string" ? transactionData.ticket_url : "",
-    response,
-  };
+    return {
+      paymentId: typeof response.id === "string" ? response.id : String(response.id ?? ""),
+      status: typeof response.status === "string" ? response.status : "pending",
+      qrCode:
+        typeof transactionData?.qr_code === "string" && transactionData.qr_code
+          ? transactionData.qr_code
+          : MERCADO_PAGO_PIX_COPY || MERCADO_PAGO_PIX_KEY,
+      qrCodeBase64:
+        typeof transactionData?.qr_code_base64 === "string" && transactionData.qr_code_base64
+          ? transactionData.qr_code_base64
+          : MERCADO_PAGO_PIX_QR_CODE_BASE64,
+      ticketUrl: typeof transactionData?.ticket_url === "string" ? transactionData.ticket_url : "",
+      response,
+      fallback: false,
+    };
+  } catch (error) {
+    if (MERCADO_PAGO_PIX_COPY || MERCADO_PAGO_PIX_KEY || MERCADO_PAGO_PIX_QR_CODE_BASE64) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        paymentId: "",
+        status: "pending",
+        qrCode: MERCADO_PAGO_PIX_COPY || MERCADO_PAGO_PIX_KEY,
+        qrCodeBase64: MERCADO_PAGO_PIX_QR_CODE_BASE64,
+        ticketUrl: "",
+        response: {
+          fallback: true,
+          error: message,
+        },
+        fallback: true,
+      };
+    }
+
+    throw error;
+  }
 }
 
 async function fetchMercadoPagoPayment(paymentId: string) {
