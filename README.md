@@ -51,10 +51,26 @@ Secrets necessários no Supabase:
 - `SERIES_TABLE` se o nome da tabela não for `series`
 - `SERIES_ID_COLUMN` se o identificador não for `id`
 - `SERIES_TITLE_COLUMN` se o título não estiver em `title`
+- `EPISODES_TABLE` com a tabela de episódios, padrão `episodes`
+- `EPISODE_SERIES_COLUMN` com a coluna que liga episódio à série, padrão `series_id`
+- `EPISODE_VIDEO_FILE_ID_COLUMNS` com colunas de File_ID nos episódios, padrão `file_id,video_file_id,telegram_file_id`
 - `SERIES_VIDEO_URL_COLUMNS` com uma lista separada por vírgulas para URLs diretas
 - `SERIES_VIDEO_FILE_ID_COLUMNS` com uma lista separada por vírgulas para IDs do Telegram
+- `OWNER_TELEGRAM_USER_ID` com o ID do proprietário, padrão `1048601631`
+- `OWNER_AREA_PASSWORD` ou `OWNER_AREA_PASSWORD_SHA256` para a senha da área do proprietário
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
+
+## Área do proprietário
+
+O mini app mostra um botão de coroa apenas para o Telegram ID configurado em `OWNER_TELEGRAM_USER_ID`.
+
+O acesso exige duas validações no backend:
+
+1. `initData` válido do Telegram WebApp
+2. senha definida em `OWNER_AREA_PASSWORD` ou hash SHA-256 em `OWNER_AREA_PASSWORD_SHA256`
+
+Se a senha própria ainda não estiver definida, a function usa `TELEGRAM_WEBHOOK_SECRET` como fallback temporário. Recomenda-se configurar `OWNER_AREA_PASSWORD` separado para produção.
 
 ## Pagamentos
 
@@ -62,7 +78,7 @@ O checkout agora suporta três caminhos:
 
 - `Pix` com QR Code, agora como opção padrão do checkout
 - `Mercado Pago` com link de pagamento
-- `Checkout no Telegram`, que mantém a jornada dentro do mini app e confirma automaticamente pelo webhook
+- `Checkout no Telegram`, que mantém a jornada no mini app usando a preferência do Mercado Pago e confirma automaticamente pelo webhook
 
 O mini app envia o carrinho para a Edge Function `bot-unificado`, que:
 

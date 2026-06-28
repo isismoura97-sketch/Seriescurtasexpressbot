@@ -239,6 +239,14 @@ body.light-mode .header.scrolled {
     box-shadow: 0 0 20px rgba(255,215,0,0.4);
 }
 
+.owner-btn {
+    background: linear-gradient(135deg, rgba(255,215,0,0.24), rgba(42,171,238,0.16));
+}
+
+.owner-btn[hidden] {
+    display: none;
+}
+
 /* ====================== HERO ====================== */
 .hero {
     position: relative;
@@ -1353,6 +1361,152 @@ body.light-mode .cart-item {
     width: 100%;
 }
 
+/* ====================== OWNER AREA ====================== */
+.owner-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.72);
+    z-index: 10050;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    backdrop-filter: blur(12px);
+}
+
+.owner-overlay.active {
+    display: flex;
+}
+
+.owner-panel {
+    width: min(760px, 100%);
+    max-height: 92vh;
+    overflow-y: auto;
+    background:
+        radial-gradient(circle at top left, rgba(255,215,0,0.16), transparent 35%),
+        linear-gradient(145deg, rgba(11,24,43,0.98), rgba(22,18,64,0.98));
+    border: 1px solid rgba(255,215,0,0.24);
+    border-radius: 24px;
+    box-shadow: 0 28px 80px rgba(0,0,0,0.65);
+    padding: 28px;
+}
+
+.owner-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 22px;
+}
+
+.owner-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--primary);
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+
+.owner-panel h2 {
+    color: var(--text-main);
+    font-size: clamp(1.6rem, 4vw, 2.4rem);
+    margin-bottom: 8px;
+}
+
+.owner-panel p {
+    color: var(--text-dim);
+}
+
+.owner-login {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    align-items: end;
+    margin-bottom: 18px;
+}
+
+.owner-status {
+    min-height: 22px;
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-bottom: 14px;
+}
+
+.owner-status.error {
+    color: #ff9b9b;
+}
+
+.owner-status.success {
+    color: #98f5b1;
+}
+
+.owner-dashboard {
+    display: grid;
+    gap: 18px;
+}
+
+.owner-dashboard[hidden] {
+    display: none;
+}
+
+.owner-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.owner-card {
+    border: 1px solid rgba(255,215,0,0.16);
+    border-radius: 18px;
+    padding: 16px;
+    background: rgba(255,255,255,0.06);
+}
+
+.owner-card span {
+    display: block;
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.owner-card strong {
+    color: var(--primary);
+    font-size: 28px;
+}
+
+.owner-section {
+    border: 1px solid rgba(255,215,0,0.14);
+    border-radius: 18px;
+    padding: 16px;
+    background: rgba(0,0,0,0.16);
+}
+
+.owner-section h3 {
+    color: var(--text-main);
+    margin-bottom: 12px;
+}
+
+.owner-list {
+    display: grid;
+    gap: 8px;
+}
+
+.owner-list-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    color: var(--text-dim);
+    font-size: 14px;
+}
+
+.owner-list-row strong {
+    color: var(--text-main);
+}
+
 /* ====================== TOAST ====================== */
 .toast-container {
     position: fixed;
@@ -1450,6 +1604,15 @@ body.light-mode .cart-item {
     }
 
     .payment-methods {
+        grid-template-columns: 1fr;
+    }
+
+    .owner-panel {
+        padding: 20px;
+    }
+
+    .owner-login,
+    .owner-metrics {
         grid-template-columns: 1fr;
     }
 }

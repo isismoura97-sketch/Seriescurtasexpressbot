@@ -55,6 +55,16 @@ const fixtureSeries = [
     telegram_file_id: 'TG_ONLY',
   },
   {
+    id: 'episode-video',
+    title: 'Video em Episodio',
+    description: 'Serie com file_id vindo de episodes.',
+    category: 'Drama',
+    price: 0,
+    cover_url: '',
+    episode_file_id: 'TG_EPISODE',
+    playable_episode_count: 1,
+  },
+  {
     id: 'missing-video',
     title: 'Sem Video',
     description: 'Sem midia cadastrada.',
@@ -167,6 +177,14 @@ async function installRoutes(page) {
         return;
       }
 
+      if (serieId === 'episode-video') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4', type: 'telegram_proxy' }),
+        });
+        return;
+      }
+
       await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Video indisponivel' }) });
       return;
     }
@@ -197,6 +215,30 @@ async function installRoutes(page) {
             status: 'pending',
             payment_method: 'pix_qr',
             pix_qr_code: '000201TESTEPIX',
+          },
+        }),
+      });
+      return;
+    }
+
+    if (action === 'owner-dashboard') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          catalog: {
+            series_total: 6,
+            playable_series: 5,
+            missing_playback: 1,
+            episodes_total: 1,
+            playable_episodes: 1,
+            series_with_episode_files: 1,
+          },
+          payments: {
+            orders_total: 1,
+            approved_amount: 19.9,
+            status_counts: { approved: 1 },
+            recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 19.9 }],
           },
         }),
       });
@@ -255,13 +297,22 @@ async function main() {
     }));
 
     await page.locator('#catalogGrid .card[data-id="telegram-only"]').click();
-    await page.waitForSelector('#modalOverlay.active', { timeout: 10000 });
-    const telegramModal = await page.evaluate(() => ({
-      guideHidden: document.querySelector('#telegramGuide')?.hidden,
-      action: document.querySelector('#modalActions button')?.textContent?.trim(),
+    await page.waitForSelector('#playerError.active', { timeout: 10000 });
+    const telegramPlayer = await page.evaluate(() => ({
+      title: document.querySelector('#playerErrorTitle')?.textContent?.trim(),
+      action: document.querySelector('#playerErrorAction')?.textContent?.trim(),
     }));
-    await page.locator('#modalActions button').click();
+    await page.locator('#playerErrorAction').click();
     const telegramSent = await page.evaluate(() => window.__sentData || '');
+
+    await page.locator('#catalogGrid .card[data-id="episode-video"]').click();
+    await page.waitForFunction(() => document.querySelector('#mainVideo')?.style.display === 'block', null, { timeout: 10000 });
+    const episodePlayer = await page.evaluate(() => ({
+      overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
+      videoDisplay: document.querySelector('#mainVideo')?.style.display,
+      playerError: document.querySelector('#playerError')?.classList.contains('active'),
+    }));
+    await page.evaluate(() => window.closePlayer());
 
     await page.locator('#catalogGrid .card[data-id="missing-video"]').click();
     await page.waitForSelector('#modalOverlay.active', { timeout: 10000 });
@@ -282,18 +333,30 @@ async function main() {
       summaryText: document.querySelector('#paymentSummaryPanel')?.textContent?.replace(/\s+/g, ' ').trim(),
     }));
 
+    await page.evaluate(() => window.toggleCart(false));
+    await page.locator('#ownerBtn').click();
+    await page.fill('#ownerPasswordInput', 'owner-test');
+    await page.locator('#ownerLoginBtn').click();
+    await page.waitForFunction(() => document.querySelector('#ownerDashboard')?.hidden === false, null, { timeout: 10000 });
+    const ownerState = await page.evaluate(() => ({
+      visible: document.querySelector('#ownerOverlay')?.classList.contains('active'),
+      text: document.querySelector('#ownerDashboard')?.textContent?.replace(/\s+/g, ' ').trim(),
+    }));
+
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260628-01')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260628-02')) failures.push('cache version not updated');
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError) failures.push('direct player failed');
     if (fallbackBeforeClick.title !== 'Abra no Telegram') failures.push('fallback title failed');
     if (!fallbackAfterClick.sent.includes('TG_FALLBACK')) failures.push('fallback telegram send failed');
-    if (telegramModal.guideHidden !== false || !telegramModal.action.includes('ABRIR NO TELEGRAM')) failures.push('telegram modal failed');
+    if (!['Reprodução via Telegram', 'Abra no Telegram'].includes(telegramPlayer.title)) failures.push('telegram player fallback failed');
     if (!telegramSent.includes('TG_ONLY')) failures.push('telegram modal send failed');
+    if (!episodePlayer.overlay || episodePlayer.videoDisplay !== 'block' || episodePlayer.playerError) failures.push('episode file player failed');
     const normalizedMissingAction = (missingModal.action || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (!normalizedMissingAction.includes('VIDEO INDISPONIVEL')) failures.push('missing video state failed');
     if (checkoutState.summaryHidden !== false || !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
+    if (!ownerState.visible || !ownerState.text.includes('Series no catalogo') && !ownerState.text.includes('Séries no catálogo')) failures.push('owner area failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
 
     const result = {
@@ -304,10 +367,12 @@ async function main() {
         directState,
         fallbackBeforeClick,
         fallbackAfterClick,
-        telegramModal,
+        telegramPlayer,
         telegramSent: Boolean(telegramSent),
+        episodePlayer,
         missingModal,
         checkoutState,
+        ownerState,
       },
     };
 

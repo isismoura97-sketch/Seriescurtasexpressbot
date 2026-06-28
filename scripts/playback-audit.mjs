@@ -13,7 +13,9 @@ function hasDirectPlaybackUrl(row) {
 }
 
 function hasTelegramFile(row) {
-  return ['video_file_id', 'file_id', 'telegram_file_id'].some((key) => {
+  if (Number(row?.playable_episode_count || 0) > 0) return true;
+
+  return ['video_file_id', 'file_id', 'telegram_file_id', 'episode_file_id'].some((key) => {
     const value = row?.[key];
     return typeof value === 'string' && value.trim().length > 0;
   });

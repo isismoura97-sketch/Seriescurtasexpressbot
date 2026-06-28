@@ -13,6 +13,9 @@ const MERCADO_PAGO_PIX_KEY = Deno.env.get("MERCADO_PAGO_PIX_KEY") ?? "";
 const MERCADO_PAGO_PIX_COPY = Deno.env.get("MERCADO_PAGO_PIX_COPY") ?? "";
 const MERCADO_PAGO_PIX_QR_CODE_BASE64 = Deno.env.get("MERCADO_PAGO_PIX_QR_CODE_BASE64") ?? "";
 const PAYMENT_ORDERS_TABLE = Deno.env.get("PAYMENT_ORDERS_TABLE") ?? "payment_orders";
+const OWNER_TELEGRAM_USER_ID = Deno.env.get("OWNER_TELEGRAM_USER_ID") ?? "1048601631";
+const OWNER_AREA_PASSWORD = Deno.env.get("OWNER_AREA_PASSWORD") ?? "";
+const OWNER_AREA_PASSWORD_SHA256 = Deno.env.get("OWNER_AREA_PASSWORD_SHA256") ?? "";
 const PUBLIC_CHANNEL_USERNAME = Deno.env.get("PUBLIC_CHANNEL_USERNAME") ?? "";
 const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
 const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID") ?? "";
@@ -36,11 +39,19 @@ const FUNCTION_NAME = "bot-unificado";
 const SERIES_TABLE = Deno.env.get("SERIES_TABLE") ?? "series";
 const SERIES_ID_COLUMN = Deno.env.get("SERIES_ID_COLUMN") ?? "id";
 const SERIES_TITLE_COLUMN = Deno.env.get("SERIES_TITLE_COLUMN") ?? "title";
+const EPISODES_TABLE = Deno.env.get("EPISODES_TABLE") ?? "episodes";
+const EPISODE_SERIES_COLUMN = Deno.env.get("EPISODE_SERIES_COLUMN") ?? "series_id";
+const EPISODE_TITLE_COLUMN = Deno.env.get("EPISODE_TITLE_COLUMN") ?? "title";
+const EPISODE_NUMBER_COLUMN = Deno.env.get("EPISODE_NUMBER_COLUMN") ?? "episode_number";
 const SERIES_VIDEO_URL_COLUMNS = (Deno.env.get("SERIES_VIDEO_URL_COLUMNS") ?? "video_url,stream_url,media_url,url")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 const SERIES_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("SERIES_VIDEO_FILE_ID_COLUMNS") ?? "video_file_id,file_id,telegram_file_id")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const EPISODE_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("EPISODE_VIDEO_FILE_ID_COLUMNS") ?? "file_id,video_file_id,telegram_file_id")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -1275,6 +1286,26 @@ function constantTimeEqual(left: string, right: string) {
   return mismatch === 0;
 }
 
+async function sha256Hex(value: string) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", textEncode(value)));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function validateOwnerPassword(password: string) {
+  const submitted = String(password ?? "");
+  if (!submitted) return false;
+
+  const configuredHash = OWNER_AREA_PASSWORD_SHA256.trim().toLowerCase();
+  if (configuredHash) {
+    return constantTimeEqual(await sha256Hex(submitted), configuredHash);
+  }
+
+  const configuredPassword = OWNER_AREA_PASSWORD || TELEGRAM_WEBHOOK_SECRET;
+  if (!configuredPassword) return false;
+
+  return constantTimeEqual(submitted, configuredPassword);
+}
+
 async function deriveAesKey(secret: string) {
   const digest = await crypto.subtle.digest("SHA-256", textEncode(secret));
   return await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
@@ -2072,9 +2103,69 @@ async function supabaseFetch(path: string) {
   return await supabaseRestRequest(path);
 }
 
+function getEpisodeFileId(row: Record<string, unknown>) {
+  for (const key of EPISODE_VIDEO_FILE_ID_COLUMNS) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function sortEpisodes(a: Record<string, unknown>, b: Record<string, unknown>) {
+  const aNumber = Number(a[EPISODE_NUMBER_COLUMN] ?? Number.MAX_SAFE_INTEGER);
+  const bNumber = Number(b[EPISODE_NUMBER_COLUMN] ?? Number.MAX_SAFE_INTEGER);
+  if (Number.isFinite(aNumber) && Number.isFinite(bNumber) && aNumber !== bNumber) {
+    return aNumber - bNumber;
+  }
+
+  return String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""));
+}
+
+async function getEpisodesList(seriesId = "") {
+  const filter = seriesId
+    ? `&${EPISODE_SERIES_COLUMN}=eq.${encodeURIComponent(seriesId)}`
+    : "";
+  const data = await supabaseFetch(`${EPISODES_TABLE}?select=*${filter}`);
+  return Array.isArray(data) ? data as Record<string, unknown>[] : [];
+}
+
+function getPlayableEpisodesForSeries(episodes: Record<string, unknown>[], seriesId: string) {
+  return episodes
+    .filter((episode) => String(episode[EPISODE_SERIES_COLUMN] ?? "") === seriesId && getEpisodeFileId(episode))
+    .sort(sortEpisodes);
+}
+
+function buildEpisodeAugmentation(episodes: Record<string, unknown>[], seriesId: string) {
+  const seriesEpisodes = episodes
+    .filter((episode) => String(episode[EPISODE_SERIES_COLUMN] ?? "") === seriesId)
+    .sort(sortEpisodes);
+  const playableEpisodes = seriesEpisodes.filter((episode) => getEpisodeFileId(episode));
+  const firstPlayable = playableEpisodes[0] || null;
+
+  return {
+    episode_count: seriesEpisodes.length,
+    playable_episode_count: playableEpisodes.length,
+    episode_file_id: firstPlayable ? getEpisodeFileId(firstPlayable) : null,
+    episode_title: firstPlayable ? String(firstPlayable[EPISODE_TITLE_COLUMN] ?? "") : null,
+    episode_number: firstPlayable?.[EPISODE_NUMBER_COLUMN] ?? null,
+  };
+}
+
 async function getSeriesList() {
   const data = await supabaseFetch(`${SERIES_TABLE}?select=*`);
-  return Array.isArray(data) ? data : [];
+  const series = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+
+  let episodes: Record<string, unknown>[] = [];
+  try {
+    episodes = await getEpisodesList();
+  } catch {
+    episodes = [];
+  }
+
+  return series.map((row) => ({
+    ...row,
+    ...buildEpisodeAugmentation(episodes, String(row[SERIES_ID_COLUMN] ?? row.id ?? "")),
+  }));
 }
 
 async function getSeriesById(seriesId: string) {
@@ -2115,7 +2206,45 @@ function extractTelegramFileId(row: Record<string, unknown>) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
+  const episodeFileId = row.episode_file_id;
+  if (typeof episodeFileId === "string" && episodeFileId.trim()) return episodeFileId.trim();
   return null;
+}
+
+async function getFirstEpisodeFileForSeries(seriesId: string) {
+  const episodes = await getEpisodesList(seriesId);
+  const playableEpisodes = getPlayableEpisodesForSeries(episodes, seriesId);
+  const firstPlayable = playableEpisodes[0] || null;
+  if (!firstPlayable) return null;
+
+  return {
+    fileId: getEpisodeFileId(firstPlayable),
+    title: String(firstPlayable[EPISODE_TITLE_COLUMN] ?? ""),
+    episodeNumber: firstPlayable[EPISODE_NUMBER_COLUMN] ?? null,
+  };
+}
+
+async function resolveTelegramPlayback(req: Request, fileId: string, title: string) {
+  try {
+    await telegramGetFile(fileId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.toLowerCase().includes("file is too big")) {
+      return json(req, {
+        type: "telegram_file",
+        file_id: fileId,
+        title,
+        reason: "Este vÃ­deo Ã© grande demais para o player do navegador. Abra no Telegram para assistir.",
+      });
+    }
+    throw error;
+  }
+
+  return json(req, {
+    url: buildPlaybackUrl(req, fileId, title),
+    type: "telegram_proxy",
+    title,
+  });
 }
 
 async function handleStream(req: Request, url: URL) {
@@ -2163,6 +2292,135 @@ async function handleStream(req: Request, url: URL) {
   return json(req, { error: "Vídeo não disponível" }, 404);
 }
 
+async function handleStreamV2(req: Request, url: URL) {
+  const serieId = url.searchParams.get("serie_id") || "";
+  const title = url.searchParams.get("title") || "";
+
+  if (!serieId) {
+    return json(req, { error: "serie_id ausente" }, 400);
+  }
+
+  const row = await getSeriesById(serieId);
+  if (!row) {
+    return json(req, { error: "Serie nao encontrada" }, 404);
+  }
+
+  const seriesTitle = String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title);
+  const directUrl = extractDirectUrl(row as Record<string, unknown>);
+  if (directUrl) {
+    return json(req, { url: directUrl, type: "direct", title: seriesTitle });
+  }
+
+  const fileId = extractTelegramFileId(row as Record<string, unknown>);
+  if (fileId) {
+    return await resolveTelegramPlayback(req, fileId, seriesTitle);
+  }
+
+  const episode = await getFirstEpisodeFileForSeries(serieId);
+  if (episode?.fileId) {
+    const episodeTitle = episode.title ? `${seriesTitle} - ${episode.title}` : seriesTitle;
+    return await resolveTelegramPlayback(req, episode.fileId, episodeTitle);
+  }
+
+  return json(req, { error: "Video nao disponivel" }, 404);
+}
+
+function countByStatus(rows: Record<string, unknown>[]) {
+  return rows.reduce((acc, row) => {
+    const status = String(row.status ?? "unknown").trim().toLowerCase() || "unknown";
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+}
+
+function sumApprovedPayments(rows: Record<string, unknown>[]) {
+  return Number(
+    rows
+      .filter((row) => String(row.status ?? "").toLowerCase() === "approved")
+      .reduce((sum, row) => sum + (Number(row.amount ?? 0) || 0), 0)
+      .toFixed(2),
+  );
+}
+
+async function getOwnerPaymentRows() {
+  try {
+    const data = await supabaseFetch(
+      `${PAYMENT_ORDERS_TABLE}?select=order_id,status,payment_method,amount,created_at,confirmed_at&order=created_at.desc&limit=100`,
+    );
+    return Array.isArray(data) ? data as Record<string, unknown>[] : [];
+  } catch {
+    return [];
+  }
+}
+
+async function handleOwnerDashboard(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  let validated: { userId: string };
+  try {
+    validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(req, { error: message }, 401);
+  }
+
+  if (String(validated.userId) !== String(OWNER_TELEGRAM_USER_ID)) {
+    return json(req, { error: "Acesso restrito ao proprietario" }, 403);
+  }
+
+  const hasPasswordConfigured = Boolean(OWNER_AREA_PASSWORD_SHA256 || OWNER_AREA_PASSWORD || TELEGRAM_WEBHOOK_SECRET);
+  if (!hasPasswordConfigured) {
+    return json(req, { error: "Senha do proprietario nao configurada" }, 503);
+  }
+
+  const passwordOk = await validateOwnerPassword(String(body.password ?? ""));
+  if (!passwordOk) {
+    return json(req, { error: "Senha invalida" }, 403);
+  }
+
+  const [series, episodes, payments] = await Promise.all([
+    getSeriesList() as Promise<Record<string, unknown>[]>,
+    getEpisodesList().catch(() => [] as Record<string, unknown>[]),
+    getOwnerPaymentRows(),
+  ]);
+
+  const playableSeries = series.filter((row) => extractDirectUrl(row) || extractTelegramFileId(row));
+  const missingPlayback = series.filter((row) => !extractDirectUrl(row) && !extractTelegramFileId(row));
+  const playableEpisodes = episodes.filter((row) => getEpisodeFileId(row));
+  const statusCounts = countByStatus(payments);
+
+  return json(req, {
+    ok: true,
+    owner: {
+      telegram_user_id: validated.userId,
+    },
+    catalog: {
+      series_total: series.length,
+      playable_series: playableSeries.length,
+      missing_playback: missingPlayback.length,
+      episodes_total: episodes.length,
+      playable_episodes: playableEpisodes.length,
+      series_with_episode_files: new Set(playableEpisodes.map((row) => String(row[EPISODE_SERIES_COLUMN] ?? ""))).size,
+    },
+    payments: {
+      orders_total: payments.length,
+      status_counts: statusCounts,
+      approved_amount: sumApprovedPayments(payments),
+      recent_orders: payments.slice(0, 8).map((row) => ({
+        order_id: String(row.order_id ?? "").slice(0, 8),
+        status: row.status ?? null,
+        payment_method: row.payment_method ?? null,
+        amount: Number(row.amount ?? 0) || 0,
+        created_at: row.created_at ?? null,
+        confirmed_at: row.confirmed_at ?? null,
+      })),
+    },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(req) });
@@ -2179,7 +2437,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "stream") {
-      return await handleStream(req, url);
+      return await handleStreamV2(req, url);
     }
 
     if (action === "playback") {
@@ -2195,6 +2453,10 @@ Deno.serve(async (req) => {
 
     if (action === "payment-status") {
       return await handlePaymentStatus(req);
+    }
+
+    if (action === "owner-dashboard") {
+      return await handleOwnerDashboard(req);
     }
 
     if (action === "mercado-pago-webhook") {

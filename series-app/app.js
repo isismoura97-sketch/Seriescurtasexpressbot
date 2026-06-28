@@ -7,8 +7,9 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260628-01';
+const BUILD_VERSION = '20260628-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
+const OWNER_TELEGRAM_USER_ID = '1048601631';
 let tg = null;
 let userId = null;
 const APP_LAUNCH_SERIE_ID = new URLSearchParams(window.location.search).get('play')
@@ -101,7 +102,7 @@ function handleSeriesClick(serie) {
         }
 
         if (playbackMode === 'telegram') {
-            openModal(serie);
+            openPlayer(serie.id, serie.title);
             return;
         }
 
@@ -153,7 +154,15 @@ const DOM = {
     searchInput: document.getElementById('searchInput'),
     toastContainer: document.getElementById('toastContainer'),
     header: document.getElementById('header'),
-    themeIcon: document.getElementById('themeIcon')
+    themeIcon: document.getElementById('themeIcon'),
+    ownerBtn: document.getElementById('ownerBtn'),
+    ownerOverlay: document.getElementById('ownerOverlay'),
+    ownerCloseBtn: document.getElementById('ownerCloseBtn'),
+    ownerLoginForm: document.getElementById('ownerLoginForm'),
+    ownerPasswordInput: document.getElementById('ownerPasswordInput'),
+    ownerLoginBtn: document.getElementById('ownerLoginBtn'),
+    ownerStatus: document.getElementById('ownerStatus'),
+    ownerDashboard: document.getElementById('ownerDashboard')
 };
 
 // ==================== UTILITIES ====================
@@ -639,6 +648,148 @@ async function requestPaymentStatus(payload) {
     return await requestJson(`${API_URL}?action=payment-status`, payload, 15000);
 }
 
+async function requestOwnerDashboard(password) {
+    return await requestJson(`${API_URL}?action=owner-dashboard`, {
+        init_data: tg?.initData || '',
+        password
+    }, 20000);
+}
+
+function isOwnerUser() {
+    return normalizeId(userId) === OWNER_TELEGRAM_USER_ID;
+}
+
+function updateOwnerVisibility() {
+    if (DOM.ownerBtn) {
+        DOM.ownerBtn.hidden = !isOwnerUser();
+    }
+}
+
+function setOwnerStatus(message = '', type = '') {
+    if (!DOM.ownerStatus) return;
+    DOM.ownerStatus.textContent = message;
+    DOM.ownerStatus.className = `owner-status ${type}`.trim();
+}
+
+function openOwnerArea() {
+    if (!isOwnerUser()) {
+        showToast('Área restrita ao proprietário', 'error');
+        return;
+    }
+
+    DOM.ownerOverlay?.classList.add('active');
+    document.body.classList.add('modal-open');
+    setOwnerStatus('Digite a senha para carregar os dados.', '');
+    DOM.ownerPasswordInput?.focus();
+}
+
+function closeOwnerArea() {
+    DOM.ownerOverlay?.classList.remove('active');
+    if (!DOM.cartDrawer?.classList.contains('active') && !DOM.modalOverlay?.classList.contains('active')) {
+        document.body.classList.remove('modal-open');
+    }
+}
+
+function formatOwnerCurrency(value) {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0);
+}
+
+function renderOwnerDashboard(data) {
+    if (!DOM.ownerDashboard) return;
+
+    const catalog = data?.catalog || {};
+    const payments = data?.payments || {};
+    const statusCounts = payments.status_counts || {};
+    const recentOrders = Array.isArray(payments.recent_orders) ? payments.recent_orders : [];
+
+    const statusRows = Object.entries(statusCounts)
+        .map(([status, count]) => `
+            <div class="owner-list-row">
+                <span>${escapeHtml(status)}</span>
+                <strong>${escapeHtml(String(count))}</strong>
+            </div>
+        `)
+        .join('') || '<div class="owner-list-row"><span>Nenhum pedido registrado</span><strong>0</strong></div>';
+
+    const recentRows = recentOrders
+        .map((order) => `
+            <div class="owner-list-row">
+                <span>${escapeHtml(order.order_id || '---')} • ${escapeHtml(order.payment_method || '---')} • ${escapeHtml(order.status || '---')}</span>
+                <strong>${escapeHtml(formatOwnerCurrency(order.amount))}</strong>
+            </div>
+        `)
+        .join('') || '<div class="owner-list-row"><span>Nenhum pedido recente</span><strong>-</strong></div>';
+
+    DOM.ownerDashboard.innerHTML = `
+        <div class="owner-metrics">
+            <div class="owner-card">
+                <span>Séries no catálogo</span>
+                <strong>${escapeHtml(String(catalog.series_total ?? 0))}</strong>
+            </div>
+            <div class="owner-card">
+                <span>Séries com player</span>
+                <strong>${escapeHtml(String(catalog.playable_series ?? 0))}</strong>
+            </div>
+            <div class="owner-card">
+                <span>Episódios com File_ID</span>
+                <strong>${escapeHtml(String(catalog.playable_episodes ?? 0))}</strong>
+            </div>
+        </div>
+        <div class="owner-section">
+            <h3>Saúde do Catálogo</h3>
+            <div class="owner-list">
+                <div class="owner-list-row"><span>Séries sem player</span><strong>${escapeHtml(String(catalog.missing_playback ?? 0))}</strong></div>
+                <div class="owner-list-row"><span>Episódios cadastrados</span><strong>${escapeHtml(String(catalog.episodes_total ?? 0))}</strong></div>
+                <div class="owner-list-row"><span>Séries com episódios em vídeo</span><strong>${escapeHtml(String(catalog.series_with_episode_files ?? 0))}</strong></div>
+            </div>
+        </div>
+        <div class="owner-section">
+            <h3>Pagamentos</h3>
+            <div class="owner-list">
+                <div class="owner-list-row"><span>Pedidos registrados</span><strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong></div>
+                <div class="owner-list-row"><span>Total aprovado</span><strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong></div>
+                ${statusRows}
+            </div>
+        </div>
+        <div class="owner-section">
+            <h3>Pedidos Recentes</h3>
+            <div class="owner-list">${recentRows}</div>
+        </div>
+    `;
+    DOM.ownerDashboard.hidden = false;
+}
+
+async function submitOwnerLogin(event) {
+    event?.preventDefault();
+    if (!isOwnerUser()) return;
+
+    const password = String(DOM.ownerPasswordInput?.value || '');
+    if (!password) {
+        setOwnerStatus('Informe a senha.', 'error');
+        return;
+    }
+
+    if (DOM.ownerLoginBtn) {
+        DOM.ownerLoginBtn.disabled = true;
+        DOM.ownerLoginBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Entrando...';
+    }
+    setOwnerStatus('Validando acesso...', '');
+
+    try {
+        const data = await requestOwnerDashboard(password);
+        renderOwnerDashboard(data);
+        setOwnerStatus('Acesso validado.', 'success');
+    } catch (error) {
+        DOM.ownerDashboard.hidden = true;
+        setOwnerStatus(error.message || 'Não foi possível abrir a área do proprietário.', 'error');
+    } finally {
+        if (DOM.ownerLoginBtn) {
+            DOM.ownerLoginBtn.disabled = false;
+            DOM.ownerLoginBtn.innerHTML = '<i class="fas fa-lock-open"></i> Entrar';
+        }
+    }
+}
+
 async function refreshPaymentStatus(orderId, shouldToast = true) {
     if (!orderId || paymentStatusLoading) return;
     paymentStatusLoading = true;
@@ -708,7 +859,7 @@ function hasDirectPlaybackUrl(serie) {
 function getTelegramFileId(serie) {
     if (!serie) return '';
 
-    for (const key of ['video_file_id', 'file_id', 'telegram_file_id']) {
+    for (const key of ['video_file_id', 'file_id', 'telegram_file_id', 'episode_file_id']) {
         const value = serie[key];
         if (typeof value === 'string' && value.trim()) return value.trim();
     }
@@ -739,6 +890,7 @@ async function init() {
 
     applyTheme();
     updatePaymentMethodUI();
+    updateOwnerVisibility();
 
     if (!userId) {
         if (DOM.heroTitle) DOM.heroTitle.textContent = 'Acesso Negado';
@@ -796,6 +948,12 @@ function setupEventListeners() {
     });
 
     document.getElementById('themeBtn')?.addEventListener('click', toggleTheme);
+    DOM.ownerBtn?.addEventListener('click', openOwnerArea);
+    DOM.ownerCloseBtn?.addEventListener('click', closeOwnerArea);
+    DOM.ownerLoginForm?.addEventListener('submit', submitOwnerLogin);
+    DOM.ownerOverlay?.addEventListener('click', (e) => {
+        if (e.target.id === 'ownerOverlay') closeOwnerArea();
+    });
     document.getElementById('cartBtn')?.addEventListener('click', () => toggleCart(true));
     DOM.checkoutBtn?.addEventListener('click', checkout);
     DOM.cartOverlay?.addEventListener('click', (e) => {
@@ -841,6 +999,7 @@ function setupEventListeners() {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             if (DOM.playerOverlay?.classList.contains('active')) closePlayer();
+            else if (DOM.ownerOverlay?.classList.contains('active')) closeOwnerArea();
             else if (DOM.modalOverlay?.classList.contains('active')) closeModal();
             else if (DOM.cartDrawer?.classList.contains('active')) toggleCart(false);
         }

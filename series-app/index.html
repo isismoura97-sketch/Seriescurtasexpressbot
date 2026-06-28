@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="styles.css?v=20260628-01">
+    <link rel="stylesheet" href="styles.css?v=20260628-02">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
@@ -166,6 +166,35 @@
     <!-- ==================== TOAST ==================== -->
     <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
+    <!-- ==================== OWNER AREA ==================== -->
+    <div class="owner-overlay" id="ownerOverlay" role="dialog" aria-modal="true" aria-labelledby="ownerTitle">
+        <div class="owner-panel">
+            <div class="owner-panel-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-shield-halved"></i> Área Restrita</span>
+                    <h2 id="ownerTitle">Área do Proprietário</h2>
+                    <p>Visão rápida do catálogo, player e pagamentos.</p>
+                </div>
+                <button class="icon-btn" id="ownerCloseBtn" type="button" aria-label="Fechar área do proprietário">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <form class="owner-login" id="ownerLoginForm">
+                <label class="payment-field">
+                    <span>Senha do proprietário</span>
+                    <input type="password" id="ownerPasswordInput" placeholder="Digite sua senha" autocomplete="current-password" required>
+                </label>
+                <button class="btn btn-primary" id="ownerLoginBtn" type="submit">
+                    <i class="fas fa-lock-open"></i> Entrar
+                </button>
+            </form>
+
+            <div class="owner-status" id="ownerStatus"></div>
+            <div class="owner-dashboard" id="ownerDashboard" hidden></div>
+        </div>
+    </div>
+
     <!-- ==================== HEADER ==================== -->
     <header class="header" id="header" role="banner">
         <a href="#" class="logo" aria-label="Início">
@@ -173,6 +202,9 @@
             <span>SÉRIES EXPRESS</span>
         </a>
         <nav class="header-actions">
+            <button id="ownerBtn" class="icon-btn owner-btn" title="Área do proprietário" aria-label="Abrir área do proprietário" hidden>
+                <i class="fas fa-crown"></i>
+            </button>
             <button id="themeBtn" class="icon-btn" title="Alternar tema claro/escuro">
                 <i class="fas fa-moon" id="themeIcon"></i>
             </button>
@@ -263,6 +295,6 @@
     <script defer src="/_vercel/speed-insights/script.js"></script>
 
     <!-- Script Principal -->
-    <script defer src="app.js?v=20260628-01"></script>
+    <script defer src="app.js?v=20260628-02"></script>
 </body>
 </html>
