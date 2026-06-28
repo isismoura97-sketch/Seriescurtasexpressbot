@@ -636,6 +636,9 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
     await telegramRequest("sendMessage", {
       chat_id: chatId,
       text: baseLines.join("\n"),
+      reply_markup: JSON.stringify({
+        inline_keyboard: [[{ text: "Abrir mini app", web_app: { url: SERIES_WEBAPP_URL } }]],
+      }),
     });
     return;
   }
@@ -644,6 +647,9 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
   await telegramRequest("sendMessage", {
     chat_id: chatId,
     text: baseLines.join("\n"),
+    reply_markup: JSON.stringify({
+      inline_keyboard: [[{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]],
+    }),
   });
 }
 
@@ -656,6 +662,13 @@ async function sendPaymentConfirmationMessage(order: Record<string, unknown>, pa
   const amountText = formatCurrencyBRL(amount);
   const shortOrderId = String(order.order_id ?? "").slice(0, 8);
   const statusDetail = typeof payment.status_detail === "string" ? payment.status_detail : "";
+  const items = Array.isArray(order.items) ? (order.items as Record<string, unknown>[]) : [];
+  const primarySeriesId = items.length
+    ? String(items[0].id ?? items[0].serie_id ?? items[0].series_id ?? "").trim()
+    : "";
+  const primarySeriesTitle = items.length
+    ? String(items[0].title ?? items[0].name ?? "").trim()
+    : "";
   const lines = [
     "Pagamento confirmado com sucesso.",
     `Pedido: ${shortOrderId}`,
@@ -667,9 +680,19 @@ async function sendPaymentConfirmationMessage(order: Record<string, unknown>, pa
     lines.push(`Detalhe: ${statusDetail}`);
   }
 
+  const buttons: Array<Array<{ text: string; url?: string; web_app?: { url: string } }>> = [];
+  if (primarySeriesId) {
+    buttons.push([{
+      text: primarySeriesTitle ? `Assistir ${primarySeriesTitle}` : "Abrir série",
+      web_app: { url: buildSeriesLaunchUrl(primarySeriesId) },
+    }]);
+  }
+  buttons.push([{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]);
+
   await telegramRequest("sendMessage", {
     chat_id: chatId,
     text: lines.join("\n"),
+    reply_markup: JSON.stringify({ inline_keyboard: buttons }),
   });
 }
 
@@ -1585,6 +1608,13 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
         return json(req, { ok: true, action: "start_playback_received" });
       }
     }
+    await sendBotWelcomeMessage(chatId);
+    return json(req, { ok: true, action: "start_welcome_sent" });
+  }
+
+  if (/^(?:\/menu|menu|\/catalogo|catalogo|\/catálogo|catálogo|\/ajuda|ajuda|\/help|help)$/i.test(text)) {
+    await sendBotWelcomeMessage(chatId);
+    return json(req, { ok: true, action: "menu_sent" });
   }
 
   return json(req, { ok: true, ignored: true });
@@ -1815,6 +1845,20 @@ async function sendCheckoutAck(chatId: string | number, itemCount: number, total
         text: "Abrir catálogo",
         web_app: { url: SERIES_WEBAPP_URL },
       }]],
+    }),
+  });
+}
+
+async function sendBotWelcomeMessage(chatId: string | number) {
+  return await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: [
+      "Bem-vindo ao Séries Express.",
+      "Abra o catálogo para ver as séries gratuitas e as séries com liberação por pagamento.",
+      "Se você já começou uma série, também pode reabri-la pelo mini app.",
+    ].join("\n"),
+    reply_markup: JSON.stringify({
+      inline_keyboard: [[{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]],
     }),
   });
 }

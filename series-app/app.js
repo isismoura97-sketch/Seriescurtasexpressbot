@@ -558,12 +558,17 @@ function renderPaymentSummary(order) {
     const openButton = document.createElement('button');
     openButton.className = 'btn btn-primary';
     if (method === 'pix_qr') {
-        openButton.innerHTML = '<i class="fas fa-qrcode"></i> Copiar QR';
+        openButton.innerHTML = '<i class="fas fa-qrcode"></i> Copiar código Pix';
         openButton.addEventListener('click', async () => {
             if (order.pix_qr_code) {
                 await copyToClipboard(order.pix_qr_code);
                 showToast('Código Pix copiado!', 'success');
             }
+        });
+    } else if (method === 'telegram_checkout') {
+        openButton.innerHTML = '<i class="fab fa-telegram"></i> Abrir bot';
+        openButton.addEventListener('click', () => {
+            openTelegramBotLink(`https://t.me/${TELEGRAM_BOT_USERNAME}`);
         });
     } else {
         openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Abrir pagamento';
@@ -590,7 +595,7 @@ function renderPaymentSummary(order) {
     if (order.ticket_url) {
         const ticketButton = document.createElement('button');
         ticketButton.className = 'btn btn-secondary';
-        ticketButton.innerHTML = '<i class="fas fa-receipt"></i> Abrir Pix';
+        ticketButton.innerHTML = '<i class="fas fa-receipt"></i> Abrir comprovante';
         ticketButton.addEventListener('click', () => openExternalLink(order.ticket_url));
         DOM.paymentSummaryActions.appendChild(ticketButton);
     }
@@ -627,6 +632,20 @@ function openExternalLink(url) {
         }
     } catch (e) {
         console.warn('[PAYMENT] Falha ao abrir link no Telegram:', e.message);
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function openTelegramBotLink(url) {
+    if (!url) return;
+    try {
+        if (tg && typeof tg.openTelegramLink === 'function') {
+            tg.openTelegramLink(url);
+            return;
+        }
+    } catch (e) {
+        console.warn('[PAYMENT] Falha ao abrir link do Telegram:', e.message);
     }
 
     window.open(url, '_blank', 'noopener,noreferrer');
