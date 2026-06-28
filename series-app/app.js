@@ -716,6 +716,10 @@ function getTelegramFileId(serie) {
     return '';
 }
 
+function findSeriesById(serieId) {
+    return allSeries.find((serie) => sameId(serie.id, serieId)) || null;
+}
+
 function getPlaybackMode(serie) {
     if (hasDirectPlaybackUrl(serie)) return 'direct';
     if (getTelegramFileId(serie)) return 'telegram';
@@ -1043,7 +1047,12 @@ async function openPlayer(serieId, title) {
         return;
     }
 
-    playerRetryData = { id: serieId, title };
+    const sourceSerie = findSeriesById(serieId);
+    playerRetryData = {
+        id: serieId,
+        title: title || sourceSerie?.title || 'Reproduzir',
+        telegramFileId: getTelegramFileId(sourceSerie),
+    };
     DOM.playerOverlay.classList.add('active');
     DOM.playerLoading.classList.add('active');
     DOM.playerError.classList.remove('active');
@@ -1075,7 +1084,7 @@ async function openPlayer(serieId, title) {
                 });
             }
         } else if ((data.type === 'telegram_file' || data.file_id) && data.file_id) {
-            playerRetryData = { id: serieId, title, telegramFileId: data.file_id };
+            playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: data.file_id };
             const telegramDescription = data.reason || 'Este título usa um arquivo do Telegram. Abra no bot para continuar a reprodução.';
             DOM.mainVideo.style.display = 'none';
             setPlayerErrorView({
@@ -1101,13 +1110,21 @@ async function openPlayer(serieId, title) {
 function showPlayerError() {
     DOM.playerLoading.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
+    const telegramFileId = playerRetryData?.telegramFileId || '';
+    const canFallbackToTelegram = Boolean(telegramFileId);
     setPlayerErrorView({
         iconClass: 'fas fa-exclamation-triangle',
         iconColor: '#ff4444',
-        title: 'Erro ao reproduzir o vídeo',
-        description: 'Tente novamente. Se o erro persistir, o player pode depender de abertura no Telegram.',
-        buttonHtml: '<i class="fas fa-redo"></i> Tentar Novamente',
-        buttonHandler: retryPlayer
+        title: canFallbackToTelegram ? 'Abra no Telegram' : 'Erro ao reproduzir o vídeo',
+        description: canFallbackToTelegram
+            ? 'A reprodução direta falhou, mas este título pode continuar no Telegram.'
+            : 'Tente novamente. Se o erro persistir, o player pode depender de abertura no Telegram.',
+        buttonHtml: canFallbackToTelegram
+            ? '<i class="fab fa-telegram"></i> Abrir no Telegram'
+            : '<i class="fas fa-redo"></i> Tentar Novamente',
+        buttonHandler: canFallbackToTelegram
+            ? () => openTelegramPlayback(playerRetryData.id, playerRetryData.title, telegramFileId)
+            : retryPlayer
     });
     DOM.playerError.classList.add('active');
 }

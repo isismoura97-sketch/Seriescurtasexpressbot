@@ -932,6 +932,10 @@ body.light-mode .modal-title {
     border-radius: 0 0 10px 10px;
     border-top: 1px solid rgba(255, 215, 0, 0.08);
     backdrop-filter: blur(6px);
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .netflix-title {
@@ -986,6 +990,10 @@ body.light-mode .modal-title {
     border-radius: 0 0 10px 10px;
     border-top: 1px solid rgba(255, 215, 0, 0.08);
     backdrop-filter: blur(6px);
+    min-height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .card-title {
