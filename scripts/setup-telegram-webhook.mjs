@@ -15,9 +15,12 @@ if (SECRET_TOKEN) {
 }
 
 params.set('allowed_updates', JSON.stringify([
+  'message',
+  'edited_message',
   'chat_member',
   'chat_join_request',
   'my_chat_member',
+  'callback_query',
   'channel_post',
   'edited_channel_post',
 ]));
