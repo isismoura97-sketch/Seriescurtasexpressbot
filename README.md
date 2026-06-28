@@ -178,6 +178,7 @@ node scripts/playback-audit.mjs
 ```
 
 Use `--json` para obter um relatório estruturado e `--plan` para gerar um plano de migração em Markdown.
+Se quiser a leitura completa do catálogo, incluindo séries pagas que o endpoint público pode ocultar, use `--linked`.
 
 Para gerar uma planilha CSV com os títulos que ainda precisam de atenção:
 

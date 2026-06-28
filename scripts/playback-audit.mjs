@@ -1,4 +1,10 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 const DEFAULT_API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
+const SUPABASE_CLI = 'supabase';
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -28,6 +34,98 @@ function classify(row) {
   if (direct) return 'direct';
   if (telegram) return 'telegram';
   return 'missing';
+}
+
+function parseJsonOutput(stdout, context) {
+  try {
+    const parsed = JSON.parse(stdout);
+    return Array.isArray(parsed?.rows) ? parsed.rows : Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    throw new Error(`Falha ao interpretar resposta JSON de ${context}: ${error.message}`);
+  }
+}
+
+function runSupabaseQuery(sql) {
+  const tempDir = mkdtempSync(join(tmpdir(), 'playback-audit-'));
+  const tempSqlPath = join(tempDir, 'query.sql');
+  writeFileSync(tempSqlPath, sql, 'utf8');
+
+  const result = spawnSync(
+    SUPABASE_CLI,
+    ['db', 'query', '--linked', '--output', 'json', '-f', tempSqlPath],
+    {
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+
+  try {
+    unlinkSync(tempSqlPath);
+  } catch {}
+  try {
+    rmSync(tempDir, { recursive: true, force: true });
+  } catch {}
+
+  if (result.error) {
+    throw new Error(`Falha ao executar Supabase CLI: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    const stderr = (result.stderr || '').trim();
+    throw new Error(`Supabase CLI retornou código ${result.status}${stderr ? `: ${stderr}` : ''}`);
+  }
+
+  return parseJsonOutput(result.stdout || '[]', 'Supabase CLI');
+}
+
+async function loadLinkedCatalog() {
+  const seriesRows = runSupabaseQuery('select * from public.series order by created_at asc;');
+  const episodeRows = runSupabaseQuery(
+    'select series_id, episode_number, title, file_id, preview_file_id, created_at from public.episodes order by series_id, episode_number asc nulls last, created_at asc;',
+  );
+
+  const episodeMap = new Map();
+  for (const episode of episodeRows) {
+    const seriesId = String(episode.series_id ?? '').trim();
+    if (!seriesId) continue;
+
+    const current = episodeMap.get(seriesId) || {
+      episode_count: 0,
+      playable_episode_count: 0,
+      episode_file_id: null,
+      episode_title: null,
+      episode_number: null,
+    };
+
+    current.episode_count += 1;
+    if (typeof episode.file_id === 'string' && episode.file_id.trim()) {
+      current.playable_episode_count += 1;
+      if (!current.episode_file_id) {
+        current.episode_file_id = episode.file_id.trim();
+        current.episode_title = typeof episode.title === 'string' ? episode.title : null;
+        current.episode_number = episode.episode_number ?? null;
+      }
+    }
+
+    episodeMap.set(seriesId, current);
+  }
+
+  return seriesRows.map((row) => {
+    const seriesId = String(row.id ?? '').trim();
+    const episodeData = episodeMap.get(seriesId) || {
+      episode_count: 0,
+      playable_episode_count: 0,
+      episode_file_id: null,
+      episode_title: null,
+      episode_number: null,
+    };
+
+    return {
+      ...row,
+      ...episodeData,
+    };
+  });
 }
 
 function buildPlanMarkdown(report, summary) {
@@ -72,14 +170,19 @@ function buildPlanMarkdown(report, summary) {
 const apiUrl = getArg('--api', DEFAULT_API_URL);
 const asJson = process.argv.includes('--json');
 const asPlan = process.argv.includes('--plan');
+const useLinkedDb = process.argv.includes('--linked');
 
-const res = await fetch(`${apiUrl}?action=series`);
-if (!res.ok) {
-  throw new Error(`Falha ao buscar catálogo: HTTP ${res.status}`);
-}
+const rows = useLinkedDb
+  ? await loadLinkedCatalog()
+  : await (async () => {
+      const res = await fetch(`${apiUrl}?action=series`);
+      if (!res.ok) {
+        throw new Error(`Falha ao buscar catálogo: HTTP ${res.status}`);
+      }
 
-const series = await res.json();
-const rows = Array.isArray(series) ? series : [];
+      const series = await res.json();
+      return Array.isArray(series) ? series : [];
+    })();
 
 const report = rows.map((row) => ({
   id: row.id ?? null,
