@@ -2463,9 +2463,9 @@ async function handleStreamV2(req: Request, url: URL) {
 }
 
 function countByStatus(rows: Record<string, unknown>[]) {
-  return rows.reduce((acc, row) => {
+  return rows.reduce((acc: Record<string, number>, row) => {
     const status = String(row.status ?? "unknown").trim().toLowerCase() || "unknown";
-    acc[status] = (acc[status] || 0) + 1;
+    acc[status] = (acc[status] ?? 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 }

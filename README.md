@@ -1,5 +1,7 @@
 # Seriescurtasexpressbot
 
+[![CI](https://github.com/isismoura97-sketch/Seriescurtasexpressbot/actions/workflows/ci.yml/badge.svg)](https://github.com/isismoura97-sketch/Seriescurtasexpressbot/actions/workflows/ci.yml)
+
 Aplicação web estática para o catálogo "Séries Curtas Express", com integração ao Telegram WebApp e consumo de uma função Supabase para catálogo e streaming.
 
 ## Estrutura
