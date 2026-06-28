@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260627-04';
+const BUILD_VERSION = '20260628-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 let tg = null;
 let userId = null;
@@ -977,6 +977,8 @@ function createCard(serie, isNetflix = false) {
     const playbackMode = getPlaybackMode(serie);
     const telegramOnly = playbackMode === 'telegram';
     const missingPlayback = playbackMode === 'missing';
+    card.dataset.id = normalizeId(serie.id);
+    card.dataset.playback = playbackMode;
     card.setAttribute(
         'aria-label',
         missingPlayback
