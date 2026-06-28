@@ -81,6 +81,24 @@ const fixtureSeries = [
     cover_url: '',
     telegram_file_id: 'TG_PAID',
   },
+  {
+    id: '814e3fba-38ce-47d5-b554-9e6b26c6eb58',
+    title: 'Marido "Pobre" Era Bilionário',
+    description: 'Capa com fallback local.',
+    category: 'Romance',
+    price: 0,
+    cover_url: 'https://uyyeascxvnrkjtlygdoe.supabase.co',
+    video_file_id: 'TG_MARIDO',
+  },
+  {
+    id: 'e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15',
+    title: 'O Quaterback Perdido Retorna',
+    description: 'Capa com fallback local.',
+    category: 'Drama',
+    price: 0,
+    cover_url: 'https://uyyeascxvnrkjtlygdoe.supabase.co',
+    video_file_id: 'TG_QUARTERBACK',
+  },
 ];
 
 let paidGranted = false;
@@ -296,6 +314,10 @@ async function main() {
       missingCards: document.querySelectorAll('.badge-unavailable-landscape').length,
       pixActive: document.querySelector('[data-payment-method="pix_qr"]')?.classList.contains('active'),
       appJs: [...document.scripts].find((script) => new URL(script.src, location.href).pathname.endsWith('/app.js'))?.src || '',
+      coverFallbacks: [
+        document.querySelector('#catalogGrid .card[data-id="814e3fba-38ce-47d5-b554-9e6b26c6eb58"] img')?.getAttribute('src') || '',
+        document.querySelector('#catalogGrid .card[data-id="e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15"] img')?.getAttribute('src') || '',
+      ],
     }));
 
     await page.locator('#catalogGrid .card[data-id="direct-ok"]').click();
@@ -391,7 +413,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260628-04')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260628-05')) failures.push('cache version not updated');
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError) failures.push('direct player failed');
     if (fallbackBeforeClick.title !== 'Abra no Telegram') failures.push('fallback title failed');
     if (!fallbackAfterClick.sent.includes('TG_FALLBACK')) failures.push('fallback telegram send failed');
@@ -400,6 +422,8 @@ async function main() {
     if (!episodePlayer.overlay || episodePlayer.videoDisplay !== 'block' || episodePlayer.playerError) failures.push('episode file player failed');
     const normalizedMissingAction = (missingModal.action || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (!normalizedMissingAction.includes('VIDEO INDISPONIVEL')) failures.push('missing video state failed');
+    if (!initial.coverFallbacks[0].includes('assets/covers/marido-pobre-bilionario.webp')) failures.push('marido cover fallback failed');
+    if (!initial.coverFallbacks[1].includes('assets/covers/o-quaterback-perdido-retorna.webp')) failures.push('quarterback cover fallback failed');
     if (!paidBeforePayment.modalActive || paidBeforePayment.playerActive || !paidBeforePayment.modalAction) failures.push('paid series pre-payment gating failed');
     if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
     if (!paidAfterPayment.overlay || paidAfterPayment.videoDisplay !== 'block' || paidAfterPayment.playerError) failures.push('paid series post-payment player failed');

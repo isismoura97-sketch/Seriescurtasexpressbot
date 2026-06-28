@@ -2524,8 +2524,10 @@ async function handleOwnerDashboard(req: Request) {
     getOwnerPaymentRows(),
   ]);
 
-  const playableSeries = series.filter((row) => extractDirectUrl(row) || extractTelegramFileId(row));
-  const missingPlayback = series.filter((row) => !extractDirectUrl(row) && !extractTelegramFileId(row));
+  const hasSeriesPlayback = (row: Record<string, unknown>) =>
+    Boolean(extractDirectUrl(row) || extractTelegramFileId(row) || Number(row.playable_episode_count ?? 0) > 0);
+  const playableSeries = series.filter((row) => hasSeriesPlayback(row));
+  const missingPlayback = series.filter((row) => !hasSeriesPlayback(row));
   const playableEpisodes = episodes.filter((row) => getEpisodeFileId(row));
   const statusCounts = countByStatus(payments);
 

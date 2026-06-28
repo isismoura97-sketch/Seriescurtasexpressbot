@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260628-04';
+const BUILD_VERSION = '20260628-05';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 let tg = null;
@@ -22,6 +22,10 @@ const PAYMENT_METHOD_STORAGE_KEY = 'checkout_payment_method';
 const BUYER_EMAIL_STORAGE_KEY = 'checkout_buyer_email';
 const ACTIVE_PAYMENT_ORDER_STORAGE_KEY = 'checkout_active_order';
 const STATIC_PIX_QR_IMAGE_URL = `assets/pix-qr.png?v=${BUILD_VERSION}`;
+const COVER_FALLBACKS = {
+    '814e3fba-38ce-47d5-b554-9e6b26c6eb58': `assets/covers/marido-pobre-bilionario.webp?v=${BUILD_VERSION}`,
+    'e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15': `assets/covers/o-quaterback-perdido-retorna.webp?v=${BUILD_VERSION}`,
+};
 
 function sanitizeUserId(raw) {
     if (raw == null) return null;
@@ -873,9 +877,17 @@ function getCoverUrl(serie) {
     } else if (serie.cover_path && serie.cover_path !== 'null') {
         raw = `${SUPABASE_PROJECT_URL}/storage/v1/object/public/covers/${encodeURI(serie.cover_path)}`;
     }
-    
+
+    const seriesId = normalizeId(serie.id);
+    const fallback = COVER_FALLBACKS[seriesId] || '';
+    const normalizedRaw = String(raw || '').trim().replace(/\/+$/, '');
+    const normalizedProject = SUPABASE_PROJECT_URL.replace(/\/+$/, '');
+    if (normalizedRaw === normalizedProject && fallback) {
+        return fallback;
+    }
+
     const safe = raw ? sanitizeUrl(raw) : '';
-    return safe || PLACEHOLDER_IMAGE;
+    return safe || fallback || PLACEHOLDER_IMAGE;
 }
 
 function hasDirectPlaybackUrl(serie) {
