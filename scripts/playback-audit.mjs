@@ -5,6 +5,8 @@ import { join } from 'node:path';
 
 const DEFAULT_API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
 const SUPABASE_CLI = 'supabase';
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
@@ -79,6 +81,31 @@ function runSupabaseQuery(sql) {
   return parseJsonOutput(result.stdout || '[]', 'Supabase CLI');
 }
 
+async function runSupabaseRestQuery(path) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado');
+  }
+
+  const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
+  const url = `${baseUrl}/rest/v1/${path}`;
+  const res = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Falha ao consultar Supabase REST: HTTP ${res.status}${text ? ` - ${text}` : ''}`);
+  }
+
+  if (!text.trim()) return [];
+  return JSON.parse(text);
+}
+
 async function loadLinkedCatalog() {
   const seriesRows = runSupabaseQuery('select * from public.series order by created_at asc;');
   const episodeRows = runSupabaseQuery(
@@ -128,6 +155,57 @@ async function loadLinkedCatalog() {
   });
 }
 
+async function loadServiceRoleCatalog() {
+  const [seriesRows, episodeRows] = await Promise.all([
+    runSupabaseRestQuery('series?select=*'),
+    runSupabaseRestQuery('episodes?select=series_id,episode_number,title,file_id,preview_file_id,created_at'),
+  ]);
+
+  const episodeMap = new Map();
+  for (const episode of Array.isArray(episodeRows) ? episodeRows : []) {
+    const seriesId = String(episode.series_id ?? '').trim();
+    if (!seriesId) continue;
+
+    const current = episodeMap.get(seriesId) || {
+      episode_count: 0,
+      playable_episode_count: 0,
+      episode_file_id: null,
+      episode_title: null,
+      episode_number: null,
+    };
+
+    current.episode_count += 1;
+    if (typeof episode.file_id === 'string' && episode.file_id.trim()) {
+      current.playable_episode_count += 1;
+      if (!current.episode_file_id) {
+        current.episode_file_id = episode.file_id.trim();
+        current.episode_title = typeof episode.title === 'string' ? episode.title : null;
+        current.episode_number = episode.episode_number ?? null;
+      }
+    }
+
+    episodeMap.set(seriesId, current);
+  }
+
+  return (Array.isArray(seriesRows) ? [...seriesRows] : [])
+    .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))
+    .map((row) => {
+      const seriesId = String(row.id ?? '').trim();
+      const episodeData = episodeMap.get(seriesId) || {
+        episode_count: 0,
+        playable_episode_count: 0,
+        episode_file_id: null,
+        episode_title: null,
+        episode_number: null,
+      };
+
+      return {
+        ...row,
+        ...episodeData,
+      };
+    });
+}
+
 function buildPlanMarkdown(report, summary) {
   const telegramItems = report.filter((row) => row.playback === 'telegram');
   const missingItems = report.filter((row) => row.playback === 'missing');
@@ -171,8 +249,11 @@ const apiUrl = getArg('--api', DEFAULT_API_URL);
 const asJson = process.argv.includes('--json');
 const asPlan = process.argv.includes('--plan');
 const useLinkedDb = process.argv.includes('--linked');
+const useServiceRole = process.argv.includes('--service-role');
 
-const rows = useLinkedDb
+const rows = useServiceRole
+  ? await loadServiceRoleCatalog()
+  : useLinkedDb
   ? await loadLinkedCatalog()
   : await (async () => {
       const res = await fetch(`${apiUrl}?action=series`);

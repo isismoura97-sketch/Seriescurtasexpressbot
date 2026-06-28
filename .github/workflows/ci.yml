@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint e validação
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.x
+
+      - name: Check Node scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in series-app/*.js scripts/*.mjs; do
+            node --check "$file"
+          done
+
+      - name: Type-check Supabase function
+        run: deno check supabase/functions/bot-unificado/index.ts
+
+  smoke:
+    name: Smoke test do Mini App
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Playwright
+        run: npm install --no-save playwright@1.61.0
+
+      - name: Install browser dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Mini App smoke check
+        run: node scripts/miniapp-functional-check.mjs
+
+  playback-audit:
+    name: Auditoria de playback
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run public playback audit
+        run: node scripts/playback-audit.mjs --json
+
+  linked-playback-audit:
+    name: Auditoria completa do catálogo
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run linked playback audit
+        shell: bash
+        run: |
+          if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
+            echo "Supabase secrets não configurados; pulando auditoria completa."
+            exit 0
+          fi
+
+          node scripts/playback-audit.mjs --service-role --json
