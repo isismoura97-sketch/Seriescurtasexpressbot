@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260628-03';
+const BUILD_VERSION = '20260628-04';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 let tg = null;
@@ -121,6 +121,9 @@ const DOM = {
     playerOverlay: document.getElementById('playerOverlay'),
     mainVideo: document.getElementById('mainVideo'),
     playerTitle: document.getElementById('playerTitle'),
+    playerKicker: document.getElementById('playerKicker'),
+    playerMeta: document.getElementById('playerMeta'),
+    playerAccessChip: document.getElementById('playerAccessChip'),
     playerLoading: document.getElementById('playerLoading'),
     playerError: document.getElementById('playerError'),
     watermarkId: document.getElementById('watermarkId'),
@@ -841,6 +844,7 @@ async function refreshPaymentStatus(orderId, shouldToast = true) {
             showToast('Pagamento confirmado! Seu acesso está pronto.', 'success');
             clearActivePaymentOrder();
             toggleCart(false);
+            closeModal();
         } else if (status === 'rejected' || status === 'cancelled' || status === 'canceled' || status === 'expired') {
             stopPaymentStatusPolling();
             renderPaymentSummary(order);
@@ -1248,11 +1252,40 @@ async function openPlayer(serieId, title) {
         title: title || sourceSerie?.title || 'Reproduzir',
         telegramFileId: getTelegramFileId(sourceSerie),
     };
+    const playbackMode = getPlaybackMode(sourceSerie);
+    const hasAccess = hasSeriesAccess(sourceSerie);
+    const isDirect = playbackMode === 'direct';
+    const isTelegramPlayback = playbackMode === 'telegram';
+    const isFreeContent = isFree(sourceSerie);
+
     DOM.playerOverlay.classList.add('active');
     DOM.playerLoading.classList.add('active');
     DOM.playerError.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
     if (DOM.playerTitle) DOM.playerTitle.textContent = title || 'Reproduzir';
+    if (DOM.playerKicker) {
+        DOM.playerKicker.innerHTML = isTelegramPlayback
+            ? '<i class="fas fa-satellite-dish"></i> Reprodução pelo Telegram'
+            : hasAccess
+                ? '<i class="fas fa-circle-check"></i> Reprodução liberada'
+                : '<i class="fas fa-film"></i> Carregando mídia';
+    }
+    if (DOM.playerMeta) {
+        DOM.playerMeta.textContent = isTelegramPlayback
+            ? 'Se o navegador travar, use o botão para abrir a reprodução no bot.'
+            : isFreeContent
+                ? 'Conteúdo gratuito com acesso direto no player.'
+                : 'Conteúdo liberado após pagamento confirmado.';
+    }
+    if (DOM.playerAccessChip) {
+        DOM.playerAccessChip.innerHTML = isTelegramPlayback
+            ? '<i class="fab fa-telegram"></i> Telegram'
+            : isFreeContent
+                ? '<i class="fas fa-gift"></i> GRÁTIS'
+                : hasAccess
+                    ? '<i class="fas fa-unlock"></i> LIBERADO'
+                    : '<i class="fas fa-lock"></i> PAGO';
+    }
     if (DOM.watermarkId) DOM.watermarkId.textContent = userId || '---';
 
     resetVideo();
@@ -1348,6 +1381,7 @@ function closePlayer() {
     DOM.playerOverlay.classList.remove('active');
     DOM.playerError.classList.remove('active');
     DOM.playerLoading.classList.remove('active');
+    if (DOM.playerMeta) DOM.playerMeta.textContent = 'Abra diretamente no player.';
 }
 
 // =================== MODAL ====================

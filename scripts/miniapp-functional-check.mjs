@@ -355,15 +355,23 @@ async function main() {
     await page.locator('#cartBtn').click();
     await page.fill('#buyerEmailInput', 'teste@example.com');
     await page.locator('#checkoutBtn').click();
-    await page.waitForFunction(() => document.querySelector('#paymentSummaryPanel')?.hidden === false, null, { timeout: 10000 });
+    await page.waitForFunction(() => {
+      const panel = document.querySelector('#paymentSummaryPanel');
+      const cartActive = document.querySelector('#cartDrawer')?.classList.contains('active');
+      return Boolean(panel) && (!panel.hidden || !cartActive);
+    }, null, { timeout: 10000 });
     const checkoutState = await page.evaluate(() => ({
       summaryHidden: document.querySelector('#paymentSummaryPanel')?.hidden,
       summaryText: document.querySelector('#paymentSummaryPanel')?.textContent?.replace(/\s+/g, ' ').trim(),
     }));
 
     await page.evaluate(() => window.toggleCart(false));
+    await page.waitForFunction(() => (
+      !document.querySelector('#cartDrawer')?.classList.contains('active')
+      && !document.querySelector('#modalOverlay')?.classList.contains('active')
+    ), null, { timeout: 10000 });
     await page.locator('#catalogGrid .card[data-id="paid-series"]').click();
-    await page.waitForFunction(() => document.querySelector('#playerOverlay')?.classList.contains('active') === true, null, { timeout: 10000 });
+    await page.waitForFunction(() => document.querySelector('#mainVideo')?.style.display === 'block', null, { timeout: 10000 });
     const paidAfterPayment = await page.evaluate(() => ({
       overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
       videoDisplay: document.querySelector('#mainVideo')?.style.display,
@@ -383,7 +391,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260628-03')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260628-04')) failures.push('cache version not updated');
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError) failures.push('direct player failed');
     if (fallbackBeforeClick.title !== 'Abra no Telegram') failures.push('fallback title failed');
     if (!fallbackAfterClick.sent.includes('TG_FALLBACK')) failures.push('fallback telegram send failed');
