@@ -83,6 +83,8 @@ const fixtureSeries = [
   },
 ];
 
+let paidGranted = false;
+
 function svgCover(label, color) {
   return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450"><rect width="100%" height="100%" fill="${encodeURIComponent(color)}"/><text x="50%" y="50%" fill="%23FFD700" text-anchor="middle">${encodeURIComponent(label)}</text></svg>`;
 }
@@ -185,6 +187,23 @@ async function installRoutes(page) {
         return;
       }
 
+      if (serieId === 'paid-series') {
+        if (!paidGranted) {
+          await route.fulfill({
+            status: 402,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'Pagamento necessario para assistir esta serie.', code: 'payment_required' }),
+          });
+          return;
+        }
+
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4', type: 'telegram_proxy' }),
+        });
+        return;
+      }
+
       await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Video indisponivel' }) });
       return;
     }
@@ -200,6 +219,7 @@ async function installRoutes(page) {
             pix_qr_code: '000201TESTEPIX',
             pix_qr_code_base64: '',
             checkout_url: 'https://mp.test/checkout',
+            items: [{ id: 'paid-series', title: 'Serie Paga', price: 19.9, quantity: 1 }],
           },
         }),
       });
@@ -207,14 +227,17 @@ async function installRoutes(page) {
     }
 
     if (action === 'payment-status') {
+      paidGranted = true;
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
           order: {
             order_id: 'order-test',
-            status: 'pending',
+            status: 'approved',
             payment_method: 'pix_qr',
             pix_qr_code: '000201TESTEPIX',
+            amount: 19.9,
+            items: [{ id: 'paid-series', title: 'Serie Paga', price: 19.9, quantity: 1 }],
           },
         }),
       });
@@ -323,6 +346,11 @@ async function main() {
 
     await page.locator('#catalogGrid .card[data-id="paid-series"]').click();
     await page.waitForSelector('#modalOverlay.active', { timeout: 10000 });
+    const paidBeforePayment = await page.evaluate(() => ({
+      modalActive: document.querySelector('#modalOverlay')?.classList.contains('active'),
+      playerActive: document.querySelector('#playerOverlay')?.classList.contains('active'),
+      modalAction: document.querySelector('#modalActions button')?.textContent?.trim(),
+    }));
     await page.locator('#modalActions button').click();
     await page.locator('#cartBtn').click();
     await page.fill('#buyerEmailInput', 'teste@example.com');
@@ -334,6 +362,15 @@ async function main() {
     }));
 
     await page.evaluate(() => window.toggleCart(false));
+    await page.locator('#catalogGrid .card[data-id="paid-series"]').click();
+    await page.waitForFunction(() => document.querySelector('#playerOverlay')?.classList.contains('active') === true, null, { timeout: 10000 });
+    const paidAfterPayment = await page.evaluate(() => ({
+      overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
+      videoDisplay: document.querySelector('#mainVideo')?.style.display,
+      playerError: document.querySelector('#playerError')?.classList.contains('active'),
+    }));
+    await page.evaluate(() => window.closePlayer());
+
     await page.locator('#ownerBtn').click();
     await page.fill('#ownerPasswordInput', 'owner-test');
     await page.locator('#ownerLoginBtn').click();
@@ -346,7 +383,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260628-02')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260628-03')) failures.push('cache version not updated');
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError) failures.push('direct player failed');
     if (fallbackBeforeClick.title !== 'Abra no Telegram') failures.push('fallback title failed');
     if (!fallbackAfterClick.sent.includes('TG_FALLBACK')) failures.push('fallback telegram send failed');
@@ -355,7 +392,9 @@ async function main() {
     if (!episodePlayer.overlay || episodePlayer.videoDisplay !== 'block' || episodePlayer.playerError) failures.push('episode file player failed');
     const normalizedMissingAction = (missingModal.action || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (!normalizedMissingAction.includes('VIDEO INDISPONIVEL')) failures.push('missing video state failed');
-    if (checkoutState.summaryHidden !== false || !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
+    if (!paidBeforePayment.modalActive || paidBeforePayment.playerActive || !paidBeforePayment.modalAction) failures.push('paid series pre-payment gating failed');
+    if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
+    if (!paidAfterPayment.overlay || paidAfterPayment.videoDisplay !== 'block' || paidAfterPayment.playerError) failures.push('paid series post-payment player failed');
     if (!ownerState.visible || !ownerState.text.includes('Series no catalogo') && !ownerState.text.includes('Séries no catálogo')) failures.push('owner area failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
 
@@ -371,7 +410,9 @@ async function main() {
         telegramSent: Boolean(telegramSent),
         episodePlayer,
         missingModal,
+        paidBeforePayment,
         checkoutState,
+        paidAfterPayment,
         ownerState,
       },
     };

@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260628-02';
+const BUILD_VERSION = '20260628-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 let tg = null;
@@ -67,6 +67,10 @@ function isFree(serie) {
     return price === 0 || serie.price === null || serie.price === undefined;
 }
 
+function hasSeriesAccess(serie) {
+    return isFree(serie) || serie?.has_access === true;
+}
+
 function normalizeId(value) {
     if (value == null) return '';
     return String(value);
@@ -95,7 +99,7 @@ function resetVideo() {
 function handleSeriesClick(serie) {
     const playbackMode = getPlaybackMode(serie);
 
-    if (isFree(serie)) {
+    if (hasSeriesAccess(serie)) {
         if (playbackMode === 'direct') {
             openPlayer(serie.id, serie.title);
             return;
@@ -107,10 +111,9 @@ function handleSeriesClick(serie) {
         }
 
         showToast('Essa série ainda não possui vídeo disponível', 'info');
-        openModal(serie);
-    } else {
-        openModal(serie);
     }
+
+    openModal(serie);
 }
 
 // ==================== CACHE DOM =====================
@@ -292,8 +295,16 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
         clearTimeout(timeoutId);
 
         if (!res.ok) {
-            await res.text().catch(() => '');
-            throw new Error(`HTTP ${res.status}`);
+            const text = await res.text().catch(() => '');
+            let data = null;
+            try {
+                data = text ? JSON.parse(text) : null;
+            } catch (_) {}
+            const error = new Error(data?.error || data?.message || `HTTP ${res.status}`);
+            error.status = res.status;
+            error.code = data?.code || '';
+            error.data = data;
+            throw error;
         }
 
         if (res.status === 204) return null;
@@ -648,6 +659,21 @@ async function requestPaymentStatus(payload) {
     return await requestJson(`${API_URL}?action=payment-status`, payload, 15000);
 }
 
+function markOrderItemsAsPurchased(order) {
+    const items = Array.isArray(order?.items) ? order.items : [];
+    if (!items.length) return;
+
+    const purchasedIds = new Set(items.map((item) => normalizeId(item.id || item.serie_id || item.series_id)).filter(Boolean));
+    if (!purchasedIds.size) return;
+
+    allSeries = allSeries.map((serie) => (
+        purchasedIds.has(normalizeId(serie.id))
+            ? { ...serie, has_access: true }
+            : serie
+    ));
+    refreshCatalog();
+}
+
 async function requestOwnerDashboard(password) {
     return await requestJson(`${API_URL}?action=owner-dashboard`, {
         init_data: tg?.initData || '',
@@ -808,6 +834,7 @@ async function refreshPaymentStatus(orderId, shouldToast = true) {
 
         const status = String(order.status || '');
         if (status === 'approved') {
+            markOrderItemsAsPurchased(order);
             cart = [];
             saveCart('PAYMENT_APPROVED');
             updateCartUI();
@@ -873,7 +900,7 @@ function findSeriesById(serieId) {
 
 function getPlaybackMode(serie) {
     if (hasDirectPlaybackUrl(serie)) return 'direct';
-    if (getTelegramFileId(serie)) return 'telegram';
+    if (getTelegramFileId(serie) || Number(serie?.playable_episode_count || 0) > 0) return 'telegram';
     return 'missing';
 }
 
@@ -901,6 +928,9 @@ async function init() {
     try {
         const url = new URL(API_URL);
         url.searchParams.set('action', 'series');
+        if (tg?.initData) {
+            url.searchParams.set('init_data', tg.initData);
+        }
         const data = await fetchWithTimeout(withCacheBuster(url.toString()));
         allSeries = Array.isArray(data) ? data : [];
         debugLog(`[INIT] ${allSeries.length} éries carregadas`);
@@ -920,7 +950,11 @@ async function init() {
             const targetSerie = allSeries.find((serie) => sameId(serie.id, APP_LAUNCH_SERIE_ID));
             if (targetSerie) {
                 setTimeout(() => {
-                    openPlayer(targetSerie.id, targetSerie.title);
+                    if (hasSeriesAccess(targetSerie)) {
+                        openPlayer(targetSerie.id, targetSerie.title);
+                    } else {
+                        openModal(targetSerie);
+                    }
                 }, 250);
             }
         }
@@ -1227,7 +1261,9 @@ async function openPlayer(serieId, title) {
         const url = new URL(API_URL);
         url.searchParams.set('action', 'stream');
         url.searchParams.set('serie_id', serieId);
-        url.searchParams.set('user_id', userId);
+        if (tg?.initData) {
+            url.searchParams.set('init_data', tg.initData);
+        }
 
         const data = await fetchWithTimeout(withCacheBuster(url.toString()));
         
@@ -1264,6 +1300,12 @@ async function openPlayer(serieId, title) {
             throw new Error('URL de vídeo não retornada');
         }
     } catch (err) {
+        if (err.status === 402 || err.code === 'payment_required') {
+            closePlayer();
+            if (sourceSerie) openModal(sourceSerie);
+            showToast('Finalize o pagamento para assistir esta série.', 'info');
+            return;
+        }
         showPlayerError();
     }
 }
@@ -1320,6 +1362,7 @@ function openModal(serie) {
     DOM.modalTitle.textContent = serie.title || 'Série';
     
     const free = isFree(serie);
+    const hasAccess = hasSeriesAccess(serie);
     const playbackMode = getPlaybackMode(serie);
     const telegramFileId = getTelegramFileId(serie);
     if (DOM.telegramGuide) {
@@ -1331,7 +1374,9 @@ function openModal(serie) {
         ? `${baseDescription} Este título é grande demais para tocar no navegador, então vamos abrir no Telegram.`
         : baseDescription;
 
-    if (free && playbackMode === 'telegram') {
+    if (!free && hasAccess) {
+        DOM.modalPrice.innerHTML = '<span class="free-badge"><i class="fas fa-unlock"></i> ACESSO LIBERADO</span>';
+    } else if (free && playbackMode === 'telegram') {
         DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> ASSISTIR NO TELEGRAM</span>';
     } else {
         DOM.modalPrice.innerHTML = free 
@@ -1343,7 +1388,10 @@ function openModal(serie) {
     const btn = document.createElement('button');
     btn.className = free ? 'btn btn-free' : 'btn btn-primary';
 
-    if (free && playbackMode === 'direct') {
+    if (!free && hasAccess && playbackMode !== 'missing') {
+        btn.className = 'btn btn-free';
+        btn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
+    } else if (free && playbackMode === 'direct') {
         btn.className = 'btn btn-free';
         btn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
     } else if (free && playbackMode === 'telegram') {
@@ -1358,7 +1406,9 @@ function openModal(serie) {
     
     btn.onclick = () => {
         closeModal();
-        if (free && playbackMode === 'direct') {
+        if (!free && hasAccess && playbackMode !== 'missing') {
+            openPlayer(serie.id, serie.title);
+        } else if (free && playbackMode === 'direct') {
             openPlayer(serie.id, serie.title);
         } else if (free && playbackMode === 'telegram') {
             if (telegramFileId) {
@@ -1527,7 +1577,9 @@ function checkout() {
 
         saveActivePaymentOrder(order);
         renderPaymentSummary(order);
-        if (order.status && String(order.status) !== 'approved') {
+        if (String(order.status || '') === 'approved') {
+            markOrderItemsAsPurchased(order);
+        } else if (order.status) {
             startPaymentStatusPolling(String(order.order_id || ''));
             refreshPaymentStatus(String(order.order_id || ''), false);
         }

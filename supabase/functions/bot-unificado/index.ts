@@ -101,6 +101,17 @@ function buildPlaybackUrl(req: Request, fileId: string, title = "") {
   return url.toString();
 }
 
+async function buildSignedPlaybackUrl(req: Request, fileId: string, title = "") {
+  const url = new URL(buildPlaybackUrl(req, fileId, title));
+  const token = await encryptChallenge(CAPTCHA_SECRET, {
+    v: 1,
+    file_id: fileId,
+    expires_at: Math.floor(Date.now() / 1000) + 600,
+  });
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
 function buildSeriesLaunchUrl(seriesId: string) {
   const url = new URL(SERIES_WEBAPP_URL);
   url.searchParams.set("play", seriesId);
@@ -1332,6 +1343,24 @@ async function decryptChallenge(secret: string, token: string) {
   return JSON.parse(textDecode(plain)) as Record<string, unknown>;
 }
 
+async function validatePlaybackToken(fileId: string, token: string) {
+  if (!fileId || !token) return false;
+
+  try {
+    const payload = await decryptChallenge(CAPTCHA_SECRET, token);
+    const tokenFileId = String(payload.file_id ?? "");
+    const expiresAt = Number(payload.expires_at ?? 0);
+    return Boolean(
+      tokenFileId &&
+      constantTimeEqual(tokenFileId, fileId) &&
+      expiresAt &&
+      Math.floor(Date.now() / 1000) <= expiresAt
+    );
+  } catch {
+    return false;
+  }
+}
+
 function buildCaptchaQuestion() {
   const operators = [
     { label: "+", compute: (a: number, b: number) => a + b },
@@ -2151,7 +2180,7 @@ function buildEpisodeAugmentation(episodes: Record<string, unknown>[], seriesId:
   };
 }
 
-async function getSeriesList() {
+async function getSeriesList(userId = "", includeProtected = false) {
   const data = await supabaseFetch(`${SERIES_TABLE}?select=*`);
   const series = Array.isArray(data) ? data as Record<string, unknown>[] : [];
 
@@ -2162,10 +2191,29 @@ async function getSeriesList() {
     episodes = [];
   }
 
-  return series.map((row) => ({
-    ...row,
-    ...buildEpisodeAugmentation(episodes, String(row[SERIES_ID_COLUMN] ?? row.id ?? "")),
-  }));
+  const accessibleIds = userId ? await getAccessibleSeriesIds(userId) : new Set<string>();
+
+  return series.map((row) => {
+    const seriesId = String(row[SERIES_ID_COLUMN] ?? row.id ?? "");
+    const episodeData = buildEpisodeAugmentation(episodes, seriesId);
+    const free = isSeriesFree(row);
+    const hasAccess = includeProtected || free || accessibleIds.has(seriesId);
+    const output: Record<string, unknown> = {
+      ...row,
+      ...episodeData,
+      is_free: free,
+      has_access: hasAccess,
+    };
+
+    if (!hasAccess) {
+      for (const key of [...SERIES_VIDEO_URL_COLUMNS, ...SERIES_VIDEO_FILE_ID_COLUMNS]) {
+        delete output[key];
+      }
+      delete output.episode_file_id;
+    }
+
+    return output;
+  });
 }
 
 async function getSeriesById(seriesId: string) {
@@ -2191,6 +2239,79 @@ async function getSeriesById(seriesId: string) {
   }
 
   return null;
+}
+
+function getSeriesPrice(row: Record<string, unknown>) {
+  const price = Number(row.price ?? 0);
+  return Number.isFinite(price) ? price : 0;
+}
+
+function isSeriesFree(row: Record<string, unknown>) {
+  return getSeriesPrice(row) <= 0;
+}
+
+function orderContainsSeries(order: Record<string, unknown>, seriesId: string) {
+  const items = Array.isArray(order.items) ? order.items : [];
+  return items.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const entry = item as Record<string, unknown>;
+    return String(entry.id ?? entry.serie_id ?? entry.series_id ?? "") === seriesId;
+  });
+}
+
+async function getApprovedPaymentOrderRows(userId: string) {
+  if (!userId) return [];
+  try {
+    const data = await supabaseFetch(
+      `${PAYMENT_ORDERS_TABLE}?select=order_id,items,status,user_id&user_id=eq.${encodeURIComponent(userId)}&status=eq.approved&limit=200`,
+    );
+    return Array.isArray(data) ? data as Record<string, unknown>[] : [];
+  } catch {
+    return [];
+  }
+}
+
+async function getApprovedPurchaseRows(userId: string) {
+  if (!userId) return [];
+  try {
+    const data = await supabaseFetch(
+      `purchases?select=serie_id,status,user_id&user_id=eq.${encodeURIComponent(userId)}&status=eq.approved&limit=500`,
+    );
+    return Array.isArray(data) ? data as Record<string, unknown>[] : [];
+  } catch {
+    return [];
+  }
+}
+
+async function getAccessibleSeriesIds(userId: string) {
+  const [orders, purchases] = await Promise.all([
+    getApprovedPaymentOrderRows(userId),
+    getApprovedPurchaseRows(userId),
+  ]);
+
+  const ids = new Set<string>();
+  for (const order of orders) {
+    const items = Array.isArray(order.items) ? order.items : [];
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      const entry = item as Record<string, unknown>;
+      const id = String(entry.id ?? entry.serie_id ?? entry.series_id ?? "").trim();
+      if (id) ids.add(id);
+    }
+  }
+
+  for (const purchase of purchases) {
+    const id = String(purchase.serie_id ?? "").trim();
+    if (id) ids.add(id);
+  }
+
+  return ids;
+}
+
+async function userHasPaidForSeries(userId: string, seriesId: string) {
+  if (!userId || !seriesId) return false;
+  const accessible = await getAccessibleSeriesIds(userId);
+  return accessible.has(seriesId);
 }
 
 function extractDirectUrl(row: Record<string, unknown>) {
@@ -2241,7 +2362,7 @@ async function resolveTelegramPlayback(req: Request, fileId: string, title: stri
   }
 
   return json(req, {
-    url: buildPlaybackUrl(req, fileId, title),
+    url: await buildSignedPlaybackUrl(req, fileId, title),
     type: "telegram_proxy",
     title,
   });
@@ -2303,6 +2424,22 @@ async function handleStreamV2(req: Request, url: URL) {
   const row = await getSeriesById(serieId);
   if (!row) {
     return json(req, { error: "Serie nao encontrada" }, 404);
+  }
+
+  if (!isSeriesFree(row as Record<string, unknown>)) {
+    let userId = "";
+    try {
+      const initData = url.searchParams.get("init_data") || "";
+      const validated = await validateWebAppInitData(initData);
+      userId = validated.userId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return json(req, { error: message, code: "telegram_auth_required" }, 401);
+    }
+
+    if (!(await userHasPaidForSeries(userId, serieId))) {
+      return json(req, { error: "Pagamento necessario para assistir esta serie.", code: "payment_required" }, 402);
+    }
   }
 
   const seriesTitle = String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title);
@@ -2382,7 +2519,7 @@ async function handleOwnerDashboard(req: Request) {
   }
 
   const [series, episodes, payments] = await Promise.all([
-    getSeriesList() as Promise<Record<string, unknown>[]>,
+    getSeriesList("", true) as Promise<Record<string, unknown>[]>,
     getEpisodesList().catch(() => [] as Record<string, unknown>[]),
     getOwnerPaymentRows(),
   ]);
@@ -2432,7 +2569,16 @@ Deno.serve(async (req) => {
     const action = url.searchParams.get("action") || (pathname.endsWith("/api") ? url.searchParams.get("action") : null);
 
     if (action === "series") {
-      const series = await getSeriesList();
+      let userId = "";
+      const initData = url.searchParams.get("init_data") || "";
+      if (initData) {
+        try {
+          userId = (await validateWebAppInitData(initData)).userId;
+        } catch {
+          userId = "";
+        }
+      }
+      const series = await getSeriesList(userId);
       return json(req, series);
     }
 
@@ -2444,6 +2590,9 @@ Deno.serve(async (req) => {
       const fileId = url.searchParams.get("file_id") || "";
       const title = url.searchParams.get("title") || "";
       if (!fileId) return json(req, { error: "file_id ausente" }, 400);
+      if (!(await validatePlaybackToken(fileId, url.searchParams.get("token") || ""))) {
+        return json(req, { error: "Token de playback invalido", code: "playback_token_invalid" }, 403);
+      }
       return await proxyTelegramFile(req, fileId, title);
     }
 
