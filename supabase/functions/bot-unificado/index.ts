@@ -1695,6 +1695,7 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
   }
 
   const chat = message.chat as Record<string, unknown> | undefined;
+  const chatType = typeof chat?.type === "string" ? chat.type : "";
   const chatId = chat?.id as string | number | undefined;
   if (chatId == null) {
     return json(req, { ok: true, ignored: true });
@@ -1742,6 +1743,11 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
   if (/^(?:\/menu|menu|\/catalogo|catalogo|\/catálogo|catálogo|\/ajuda|ajuda|\/help|help)$/i.test(text)) {
     await sendBotWelcomeMessage(chatId);
     return json(req, { ok: true, action: "menu_sent" });
+  }
+
+  if (chatType === "private" && text) {
+    await sendBotWelcomeMessage(chatId);
+    return json(req, { ok: true, action: "private_help_sent" });
   }
 
   return json(req, { ok: true, ignored: true });
