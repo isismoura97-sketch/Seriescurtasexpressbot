@@ -1027,9 +1027,9 @@ async function submitOwnerSeriesUpload(event) {
 
         if (dashboard) {
             renderOwnerDashboard(dashboard);
-        } else {
-            setOwnerUploadStatus('Série publicada com sucesso.', 'success');
         }
+
+        setOwnerUploadStatus('Série publicada com sucesso.', 'success');
 
         form.reset();
         const freeToggle = document.getElementById('ownerSeriesFree');
