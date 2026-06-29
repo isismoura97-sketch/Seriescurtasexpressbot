@@ -856,8 +856,12 @@ function renderOwnerDashboard(data) {
             const videoLabel = serie.has_video_url || serie.has_video_file_id ? 'Vídeo OK' : 'Sem vídeo';
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
+            const coverUrl = getCoverUrl(serie);
             return `
                 <article class="owner-series-row">
+                    <div class="owner-series-thumb-wrap">
+                        <img class="owner-series-thumb" src="${escapeHtml(coverUrl)}" alt="${escapeHtml(serie.title || 'Capa da série')}" loading="lazy" onerror=${JSON.stringify(`this.src=${JSON.stringify(PLACEHOLDER_IMAGE)}`)}>
+                    </div>
                     <div class="owner-series-row-main">
                         <strong>${escapeHtml(serie.title || 'Sem título')}</strong>
                         <span>${escapeHtml([serie.category || 'Geral', freeLabel, formatOwnerDate(serie.created_at)].join(' • '))}</span>
@@ -874,22 +878,35 @@ function renderOwnerDashboard(data) {
         .join('') || '<div class="owner-list-row"><span>Nenhuma série cadastrada ainda</span><strong>-</strong></div>';
 
     DOM.ownerDashboard.innerHTML = `
-        <div class="owner-metrics">
-            <div class="owner-card">
-                <span>Séries no catálogo</span>
-                <strong>${escapeHtml(String(catalog.series_total ?? 0))}</strong>
+        <section class="owner-hero-card">
+            <div class="owner-hero-copy">
+                <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Administração em vídeo único</span>
+                <h3>Gerencie séries, capa, trailer e vídeo principal em um só painel.</h3>
+                <p>Seu catálogo foi organizado para séries individuais: cada série tem um vídeo principal, com trailer opcional quando existir.</p>
             </div>
-            <div class="owner-card">
-                <span>Séries com player</span>
-                <strong>${escapeHtml(String(catalog.playable_series ?? 0))}</strong>
+            <div class="owner-hero-actions">
+                <span class="owner-pill">1 vídeo principal por série</span>
+                <span class="owner-pill">Trailer opcional</span>
+                <span class="owner-pill">Upload no Supabase</span>
             </div>
-            <div class="owner-card">
-                <span>Episódios com File_ID</span>
-                <strong>${escapeHtml(String(catalog.playable_episodes ?? 0))}</strong>
+            <div class="owner-kpi-grid">
+                <div class="owner-card">
+                    <span>Séries no catálogo</span>
+                    <strong>${escapeHtml(String(catalog.series_total ?? 0))}</strong>
+                </div>
+                <div class="owner-card">
+                    <span>Com vídeo publicado</span>
+                    <strong>${escapeHtml(String(catalog.playable_series ?? 0))}</strong>
+                </div>
+                <div class="owner-card">
+                    <span>Sem vídeo ainda</span>
+                    <strong>${escapeHtml(String(catalog.missing_playback ?? 0))}</strong>
+                </div>
             </div>
-        </div>
-        <div class="owner-section">
-            <h3>Nova série</h3>
+        </section>
+        <div class="owner-dashboard-grid">
+            <div class="owner-section owner-section-featured">
+                <h3>Nova série em vídeo único</h3>
             <form class="owner-upload-form" id="ownerSeriesForm" enctype="multipart/form-data">
                 <div class="owner-upload-grid">
                     <label class="payment-field">
@@ -921,7 +938,7 @@ function renderOwnerDashboard(data) {
                         <input type="file" name="trailer_file" accept="video/*">
                     </label>
                     <label class="payment-field">
-                        <span>Vídeo completo</span>
+                        <span>Vídeo principal da série</span>
                         <input type="file" name="video_file" accept="video/*" required>
                     </label>
                 </div>
@@ -929,34 +946,35 @@ function renderOwnerDashboard(data) {
                     <button class="btn btn-primary" type="submit">
                         <i class="fas fa-cloud-arrow-up"></i> Publicar série
                     </button>
-                    <p class="owner-upload-note">O trailer é opcional. Se não houver trailer, basta deixar o campo vazio.</p>
+                    <p class="owner-upload-note">Envie apenas um vídeo principal por série. O trailer é opcional e pode ser deixado em branco.</p>
                 </div>
                 <div class="owner-status" id="ownerUploadStatus"></div>
             </form>
-        </div>
-        <div class="owner-section">
-            <h3>Saúde do Catálogo</h3>
-            <div class="owner-list">
-                <div class="owner-list-row"><span>Séries sem player</span><strong>${escapeHtml(String(catalog.missing_playback ?? 0))}</strong></div>
-                <div class="owner-list-row"><span>Episódios cadastrados</span><strong>${escapeHtml(String(catalog.episodes_total ?? 0))}</strong></div>
-                <div class="owner-list-row"><span>Séries com episódios em vídeo</span><strong>${escapeHtml(String(catalog.series_with_episode_files ?? 0))}</strong></div>
             </div>
-        </div>
-        <div class="owner-section">
-            <h3>Pagamentos</h3>
-            <div class="owner-list">
-                <div class="owner-list-row"><span>Pedidos registrados</span><strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong></div>
-                <div class="owner-list-row"><span>Total aprovado</span><strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong></div>
-                ${statusRows}
+            <div class="owner-section">
+                <h3>Saúde do Catálogo</h3>
+                <div class="owner-list">
+                    <div class="owner-list-row"><span>Séries com vídeo</span><strong>${escapeHtml(String(catalog.playable_series ?? 0))}</strong></div>
+                    <div class="owner-list-row"><span>Séries sem vídeo</span><strong>${escapeHtml(String(catalog.missing_playback ?? 0))}</strong></div>
+                    <div class="owner-list-row"><span>Conteúdo legado</span><strong>${escapeHtml(String(catalog.episodes_total ?? 0))}</strong></div>
+                </div>
             </div>
-        </div>
-        <div class="owner-section">
-            <h3>Séries recentes</h3>
-            <div class="owner-series-list">${recentSeriesRows}</div>
-        </div>
-        <div class="owner-section">
-            <h3>Pedidos Recentes</h3>
-            <div class="owner-list">${recentRows}</div>
+            <div class="owner-section">
+                <h3>Pagamentos</h3>
+                <div class="owner-list">
+                    <div class="owner-list-row"><span>Pedidos registrados</span><strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong></div>
+                    <div class="owner-list-row"><span>Total aprovado</span><strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong></div>
+                    ${statusRows}
+                </div>
+            </div>
+            <div class="owner-section owner-series-section">
+                <h3>Séries recentes</h3>
+                <div class="owner-series-list">${recentSeriesRows}</div>
+            </div>
+            <div class="owner-section">
+                <h3>Pedidos Recentes</h3>
+                <div class="owner-list">${recentRows}</div>
+            </div>
         </div>
     `;
     DOM.ownerDashboard.hidden = false;
