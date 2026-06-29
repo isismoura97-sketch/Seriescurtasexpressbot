@@ -1776,6 +1776,12 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
     return json(req, { ok: true, ignored: true });
   }
 
+  const mediaFileEntries = getTelegramMediaFileEntries(message);
+  if (chatType === "private" && mediaFileEntries.length) {
+    await sendTelegramFileIdMessage(chatId, mediaFileEntries);
+    return json(req, { ok: true, action: "file_id_sent", count: mediaFileEntries.length });
+  }
+
   const webAppData = message.web_app_data as Record<string, unknown> | undefined;
   const webAppDataRaw = typeof webAppData?.data === "string" ? webAppData.data.trim() : "";
   if (webAppDataRaw) {
@@ -2006,6 +2012,85 @@ function getMessageType(message: Record<string, unknown>) {
   if (message.video_note) return "video_note";
   if (message.sticker) return "sticker";
   return "unknown";
+}
+
+function getTelegramFileEntry(value: unknown, label: string) {
+  const media = value as Record<string, unknown> | undefined;
+  const fileId = typeof media?.file_id === "string" ? media.file_id.trim() : "";
+  if (!fileId) return null;
+
+  return {
+    label,
+    fileId,
+    uniqueId: typeof media?.file_unique_id === "string" ? media.file_unique_id : "",
+    fileName: typeof media?.file_name === "string" ? media.file_name : "",
+    mimeType: typeof media?.mime_type === "string" ? media.mime_type : "",
+    fileSize: typeof media?.file_size === "number" ? media.file_size : null,
+    width: typeof media?.width === "number" ? media.width : null,
+    height: typeof media?.height === "number" ? media.height : null,
+    duration: typeof media?.duration === "number" ? media.duration : null,
+  };
+}
+
+function getTelegramMediaFileEntries(message: Record<string, unknown>) {
+  const entries = [];
+
+  const photos = Array.isArray(message.photo) ? message.photo : [];
+  if (photos.length) {
+    const largestPhoto = photos
+      .filter((photo) => photo && typeof photo === "object")
+      .sort((left, right) => {
+        const leftSize = Number((left as Record<string, unknown>).file_size ?? 0);
+        const rightSize = Number((right as Record<string, unknown>).file_size ?? 0);
+        return leftSize - rightSize;
+      })
+      .at(-1);
+    const photoEntry = getTelegramFileEntry(largestPhoto, "Imagem");
+    if (photoEntry) entries.push(photoEntry);
+  }
+
+  for (const [key, label] of [
+    ["video", "Video"],
+    ["document", "Documento"],
+    ["animation", "Animacao"],
+    ["audio", "Audio"],
+    ["voice", "Voz"],
+    ["video_note", "Video circular"],
+    ["sticker", "Sticker"],
+  ] as const) {
+    const entry = getTelegramFileEntry(message[key], label);
+    if (entry) entries.push(entry);
+  }
+
+  return entries;
+}
+
+function formatTelegramFileIdMessage(entries: ReturnType<typeof getTelegramMediaFileEntries>) {
+  const lines = entries.length === 1
+    ? ["File_ID encontrado:"]
+    : ["File_IDs encontrados:"];
+
+  entries.forEach((entry, index) => {
+    if (entries.length > 1) lines.push("");
+    lines.push(`${entries.length > 1 ? `${index + 1}. ` : ""}Tipo: ${entry.label}`);
+    if (entry.fileName) lines.push(`Arquivo: ${entry.fileName}`);
+    if (entry.mimeType) lines.push(`MIME: ${entry.mimeType}`);
+    if (entry.width && entry.height) lines.push(`Dimensoes: ${entry.width}x${entry.height}`);
+    if (entry.duration) lines.push(`Duracao: ${entry.duration}s`);
+    if (entry.fileSize) lines.push(`Tamanho: ${entry.fileSize} bytes`);
+    if (entry.uniqueId) lines.push(`File Unique ID: ${entry.uniqueId}`);
+    lines.push("File_ID:");
+    lines.push(entry.fileId);
+  });
+
+  return lines.join("\n");
+}
+
+async function sendTelegramFileIdMessage(chatId: string | number, entries: ReturnType<typeof getTelegramMediaFileEntries>) {
+  return await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: formatTelegramFileIdMessage(entries),
+  });
 }
 
 function parseAppPayload(rawValue: string) {
