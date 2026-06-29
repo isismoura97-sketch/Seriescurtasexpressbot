@@ -20,6 +20,7 @@ jobs:
   lint:
     name: Lint e validação
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -27,7 +28,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: "22"
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -48,6 +49,7 @@ jobs:
   smoke:
     name: Smoke test do Mini App
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -55,20 +57,48 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: "22"
 
       - name: Install Playwright
-        run: npm install --no-save playwright@1.61.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            npm install --no-save playwright@1.61.0 && break
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
 
       - name: Install browser dependencies
-        run: npx playwright install --with-deps chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            npx playwright install --with-deps chromium && break
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
 
       - name: Run Mini App smoke check
-        run: node scripts/miniapp-functional-check.mjs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2; do
+            node scripts/miniapp-functional-check.mjs && break
+            if [ "$attempt" -eq 2 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
 
   playback-audit:
     name: Auditoria de playback
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -76,14 +106,24 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: "22"
 
       - name: Run public playback audit
-        run: node scripts/playback-audit.mjs --json
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            node scripts/playback-audit.mjs --json && break
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
 
   linked-playback-audit:
     name: Auditoria completa do catálogo
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -94,7 +134,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: "22"
 
       - name: Run linked playback audit
         shell: bash
@@ -104,4 +144,11 @@ jobs:
             exit 0
           fi
 
-          node scripts/playback-audit.mjs --service-role --json
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            node scripts/playback-audit.mjs --service-role --json && break
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done

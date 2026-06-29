@@ -8,6 +8,45 @@ const SUPABASE_CLI = 'supabase';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchJsonWithRetry(url, init = {}, options = {}) {
+  const retries = Number.isFinite(Number(options.retries)) ? Math.max(1, Math.floor(Number(options.retries))) : 3;
+  const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Math.max(1000, Math.floor(Number(options.timeoutMs))) : 15000;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          accept: 'application/json',
+          ...(init.headers || {}),
+        },
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}${text ? ` - ${text}` : ''}`);
+      }
+      return text.trim() ? JSON.parse(text) : [];
+    } catch (error) {
+      lastError = error;
+      if (attempt >= retries) break;
+      await sleep(500 * attempt);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Falha de rede'));
+}
+
 function getArg(name, fallback = null) {
   const index = process.argv.indexOf(name);
   return index >= 0 ? (process.argv[index + 1] ?? fallback) : fallback;
@@ -88,22 +127,16 @@ async function runSupabaseRestQuery(path) {
 
   const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
   const url = `${baseUrl}/rest/v1/${path}`;
-  const res = await fetch(url, {
+  return await fetchJsonWithRetry(url, {
     headers: {
       apikey: SUPABASE_SERVICE_ROLE_KEY,
       authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      accept: 'application/json',
       'content-type': 'application/json',
     },
+  }, {
+    retries: 3,
+    timeoutMs: 15000,
   });
-
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Falha ao consultar Supabase REST: HTTP ${res.status}${text ? ` - ${text}` : ''}`);
-  }
-
-  if (!text.trim()) return [];
-  return JSON.parse(text);
 }
 
 async function loadLinkedCatalog() {
@@ -256,12 +289,10 @@ const rows = useServiceRole
   : useLinkedDb
   ? await loadLinkedCatalog()
   : await (async () => {
-      const res = await fetch(`${apiUrl}?action=series`);
-      if (!res.ok) {
-        throw new Error(`Falha ao buscar catálogo: HTTP ${res.status}`);
-      }
-
-      const series = await res.json();
+      const series = await fetchJsonWithRetry(`${apiUrl}?action=series`, {}, {
+        retries: 3,
+        timeoutMs: 15000,
+      });
       return Array.isArray(series) ? series : [];
     })();
 
