@@ -82,6 +82,10 @@ function hasSeriesAccess(serie) {
     return isFree(serie) || serie?.has_access === true;
 }
 
+function isPlaybackLocked(serie) {
+    return Boolean(serie && !hasSeriesAccess(serie) && !isFree(serie));
+}
+
 function normalizeId(value) {
     if (value == null) return '';
     return String(value);
@@ -1675,6 +1679,7 @@ function findSeriesById(serieId) {
 }
 
 function getPlaybackMode(serie) {
+    if (isPlaybackLocked(serie)) return 'locked';
     if (hasDirectPlaybackUrl(serie)) return 'direct';
     if (getTelegramFileId(serie) || Number(serie?.playable_episode_count || 0) > 0) return 'telegram';
     return 'missing';
@@ -1945,6 +1950,7 @@ function createCard(serie, isNetflix = false) {
     card.setAttribute('role', 'button');
     const playbackMode = getPlaybackMode(serie);
     const telegramOnly = playbackMode === 'telegram';
+    const lockedPlayback = playbackMode === 'locked';
     const missingPlayback = playbackMode === 'missing';
     card.dataset.id = normalizeId(serie.id);
     card.dataset.playback = playbackMode;
@@ -1952,6 +1958,8 @@ function createCard(serie, isNetflix = false) {
         'aria-label',
         missingPlayback
             ? `Abrir ${serie.title || 'série'} - vídeo indisponível`
+            : lockedPlayback
+            ? `Abrir ${serie.title || 'série'} - conteúdo bloqueado até pagamento`
             : telegramOnly
             ? `Abrir ${serie.title || 'série'} - reprodução via Telegram`
             : `Abrir ${serie.title || 'série'}`
@@ -1973,6 +1981,13 @@ function createCard(serie, isNetflix = false) {
         const badge = document.createElement('div');
         badge.className = 'badge-telegram-landscape';
         badge.innerHTML = '<i class="fab fa-telegram"></i> TELEGRAM';
+        cover.appendChild(badge);
+    }
+
+    if (lockedPlayback) {
+        const badge = document.createElement('div');
+        badge.className = 'badge-locked-landscape';
+        badge.innerHTML = '<i class="fas fa-lock"></i> BLOQUEADO';
         cover.appendChild(badge);
     }
 
@@ -2195,10 +2210,14 @@ function openModal(serie) {
     const baseDescription = serie.description || 'Sem descrição disponível.';
     DOM.modalDesc.textContent = playbackMode === 'telegram'
         ? `${baseDescription} Este título é grande demais para tocar no navegador, então vamos abrir no Telegram.`
+        : playbackMode === 'locked'
+        ? `${baseDescription} Este título está bloqueado até a confirmação do pagamento.`
         : baseDescription;
 
     if (!free && hasAccess) {
         DOM.modalPrice.innerHTML = '<span class="free-badge"><i class="fas fa-unlock"></i> ACESSO LIBERADO</span>';
+    } else if (!free && playbackMode === 'locked') {
+        DOM.modalPrice.innerHTML = `<span class="locked-badge"><i class="fas fa-lock"></i> BLOQUEADO • ${escapeHtml(formatPrice(serie.price))}</span>`;
     } else if (free && playbackMode === 'telegram') {
         DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> ASSISTIR NO TELEGRAM</span>';
     } else {

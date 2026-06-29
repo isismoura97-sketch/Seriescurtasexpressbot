@@ -122,6 +122,10 @@ function runSupabaseQuery(sql) {
   return parseJsonOutput(result.stdout || '[]', 'Supabase CLI');
 }
 
+function isLockedContent(row) {
+  return row?.has_access === false && Number(row?.price || 0) > 0;
+}
+
 async function loadRows(useLinked) {
   if (!useLinked) {
     const inputPath = getArg('--input', DEFAULT_INPUT);
@@ -173,7 +177,11 @@ async function loadRows(useLinked) {
     id: row.id ?? '',
     title: row.title ?? '(sem título)',
     category: row.category ?? '',
-    playback: Number(row.playable_episode_count || 0) > 0 || typeof row.video_file_id === 'string' && row.video_file_id.trim() ? 'telegram' : 'missing',
+    playback: isLockedContent(row)
+      ? 'locked'
+      : Number(row.playable_episode_count || 0) > 0 || typeof row.video_file_id === 'string' && row.video_file_id.trim()
+      ? 'telegram'
+      : 'missing',
     episode_count: row.episode_count ?? 0,
     playable_episode_count: row.playable_episode_count ?? 0,
     episode_file_id: row.episode_file_id ?? '',
@@ -206,6 +214,7 @@ function renderTable(title, items) {
 const useLinked = process.argv.includes('--linked');
 const rows = await loadRows(useLinked);
 const missing = rows.filter((row) => row.playback === 'missing');
+const locked = rows.filter((row) => row.playback === 'locked');
 const withCategory = missing.filter((row) => String(row.category ?? '').trim().length > 0);
 const withoutCategory = missing.filter((row) => String(row.category ?? '').trim().length === 0);
 
@@ -219,6 +228,9 @@ const output = [
   '',
   `Total de itens sem mídia: ${missing.length}`,
   '',
+  `Total de itens bloqueados: ${locked.length}`,
+  '',
+  locked.length ? renderTable('Conteúdo bloqueado', locked) : '',
   renderTable('Wave 1: categoria preenchida', withCategory),
   renderTable('Wave 2: categoria ausente', withoutCategory),
   '## Observação',

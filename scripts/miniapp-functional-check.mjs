@@ -79,7 +79,7 @@ const fixtureSeries = [
     category: 'Romance',
     price: 19.9,
     cover_url: '',
-    telegram_file_id: 'TG_PAID',
+    video_file_id: 'TG_PAID',
   },
   {
     id: '814e3fba-38ce-47d5-b554-9e6b26c6eb58',
@@ -311,6 +311,7 @@ async function main() {
     const initial = await page.evaluate(() => ({
       cards: document.querySelectorAll('#catalogGrid .card').length,
       telegramCards: document.querySelectorAll('.badge-telegram-landscape').length,
+      lockedPaidCard: document.querySelectorAll('#catalogGrid .card[data-id="paid-series"] .badge-locked-landscape').length,
       missingCards: document.querySelectorAll('.badge-unavailable-landscape').length,
       pixActive: document.querySelector('[data-payment-method="pix_qr"]')?.classList.contains('active'),
       appJs: [...document.scripts].find((script) => new URL(script.src, location.href).pathname.endsWith('/app.js'))?.src || '',
@@ -421,6 +422,7 @@ async function main() {
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
     if (!initial.appJs.includes('20260628-07')) failures.push('cache version not updated');
+    if (initial.lockedPaidCard !== 1) failures.push(`locked card count: ${initial.lockedPaidCard}`);
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError) failures.push('direct player failed');
     if (fallbackBeforeClick.title !== 'Abra no Telegram') failures.push('fallback title failed');
     if (!fallbackAfterClick.sent.includes('TG_FALLBACK')) failures.push('fallback telegram send failed');

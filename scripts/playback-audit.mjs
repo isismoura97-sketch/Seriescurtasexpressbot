@@ -68,10 +68,16 @@ function hasTelegramFile(row) {
   });
 }
 
+function isLockedContent(row) {
+  return row?.has_access === false && Number(row?.price || 0) > 0;
+}
+
 function classify(row) {
   const direct = hasDirectPlaybackUrl(row);
+  const locked = isLockedContent(row);
   const telegram = hasTelegramFile(row);
 
+  if (locked) return 'locked';
   if (direct) return 'direct';
   if (telegram) return 'telegram';
   return 'missing';
@@ -241,6 +247,7 @@ async function loadServiceRoleCatalog() {
 
 function buildPlanMarkdown(report, summary) {
   const telegramItems = report.filter((row) => row.playback === 'telegram');
+  const lockedItems = report.filter((row) => row.playback === 'locked');
   const missingItems = report.filter((row) => row.playback === 'missing');
 
   const lines = [
@@ -250,6 +257,7 @@ function buildPlanMarkdown(report, summary) {
     '',
     `- Séries com URL direta: ${summary.direct}`,
     `- Séries que dependem do Telegram: ${summary.telegram}`,
+    `- Séries protegidas/bloqueadas: ${summary.locked}`,
     `- Séries sem mídia identificada: ${summary.missing}`,
     '',
     '## Prioridade 1: títulos que já dependem do Telegram',
@@ -259,6 +267,14 @@ function buildPlanMarkdown(report, summary) {
     '| Título | Categoria | Ação recomendada |',
     '| --- | --- | --- |',
     ...telegramItems.map((row) => `| ${row.title.replaceAll('|', '\\|')} | ${String(row.category ?? 'sem categoria').replaceAll('|', '\\|')} | Manter no Telegram ou migrar para URL direta quando houver arquivo fonte |`),
+    '',
+    '## Títulos protegidos',
+    '',
+    'Esses títulos têm vídeo no catálogo, mas o acesso está oculto até o pagamento. Eles não são candidatos a migração de mídia.',
+    '',
+    '| Título | Categoria | Observação |',
+    '| --- | --- | --- |',
+    ...lockedItems.map((row) => `| ${row.title.replaceAll('|', '\\|')} | ${String(row.category ?? 'sem categoria').replaceAll('|', '\\|')} | Conteúdo bloqueado no catálogo público |`),
     '',
     '## Prioridade 2: títulos sem mídia identificada',
     '',
@@ -306,7 +322,7 @@ const report = rows.map((row) => ({
 const summary = report.reduce((acc, row) => {
   acc[row.playback] = (acc[row.playback] || 0) + 1;
   return acc;
-}, { direct: 0, telegram: 0, missing: 0 });
+}, { direct: 0, telegram: 0, locked: 0, missing: 0 });
 
 if (asPlan) {
   process.stdout.write(buildPlanMarkdown(report, summary));

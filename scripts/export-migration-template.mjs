@@ -26,7 +26,12 @@ function hasTelegramFile(row) {
   });
 }
 
+function isLockedContent(row) {
+  return row?.has_access === false && Number(row?.price || 0) > 0;
+}
+
 function classify(row) {
+  if (isLockedContent(row)) return 'locked';
   if (hasDirectPlaybackUrl(row)) return 'direct';
   if (hasTelegramFile(row)) return 'telegram';
   return 'missing';
@@ -133,7 +138,7 @@ function buildRows(series) {
   return series
     .map((row) => {
       const playback = classify(row);
-      if (playback === 'direct') return null;
+      if (playback === 'direct' || playback === 'locked') return null;
 
       const title = row?.title ?? '(sem título)';
       const category = row?.category ?? 'sem categoria';
