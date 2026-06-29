@@ -53,6 +53,8 @@ function getArg(name, fallback = null) {
 }
 
 function hasDirectPlaybackUrl(row) {
+  if (typeof row?.video_storage_path === 'string' && row.video_storage_path.trim().length > 0) return true;
+
   return ['video_url', 'stream_url', 'media_url', 'url'].some((key) => {
     const value = row?.[key];
     return typeof value === 'string' && value.trim().length > 0;

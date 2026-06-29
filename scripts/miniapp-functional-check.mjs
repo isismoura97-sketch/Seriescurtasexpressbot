@@ -36,6 +36,16 @@ const fixtureSeries = [
     video_url: 'https://example.com/direct-ok.mp4',
   },
   {
+    id: 'storage-direct',
+    title: 'Storage Assinado',
+    description: 'Video enviado pelo painel do proprietario.',
+    category: 'Drama',
+    price: 0,
+    cover_url: svgCover('Storage', '#113322'),
+    video_storage_path: 'storage-direct/video.mp4',
+    has_video_url: true,
+  },
+  {
     id: 'direct-fallback',
     title: 'Direto com Fallback',
     description: 'Falha no video direto, mas tem Telegram.',
@@ -177,6 +187,14 @@ async function installRoutes(page) {
         await route.fulfill({
           contentType: 'application/json',
           body: JSON.stringify({ url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4' }),
+        });
+        return;
+      }
+
+      if (serieId === 'storage-direct') {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4', type: 'storage_signed' }),
         });
         return;
       }
@@ -346,6 +364,16 @@ async function main() {
     }));
     await page.evaluate(() => window.closePlayer());
 
+    await page.locator('#catalogGrid .card[data-id="storage-direct"]').click();
+    await page.waitForFunction(() => document.querySelector('#mainVideo')?.style.display === 'block', null, { timeout: 10000 });
+    const storageState = await page.evaluate(() => ({
+      playback: document.querySelector('#catalogGrid .card[data-id="storage-direct"]')?.dataset.playback || '',
+      overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
+      videoDisplay: document.querySelector('#mainVideo')?.style.display,
+      playerError: document.querySelector('#playerError')?.classList.contains('active'),
+    }));
+    await page.evaluate(() => window.closePlayer());
+
     await page.locator('#catalogGrid .card[data-id="telegram-only"]').click();
     await page.waitForSelector('#playerError.active', { timeout: 10000 });
     const telegramPlayer = await page.evaluate(() => ({
@@ -431,12 +459,13 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260629-03')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260629-04')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
     if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
     if (initial.missingPlayback !== 'missing') failures.push(`missing playback state: ${initial.missingPlayback}`);
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError || directState.muted) failures.push('direct player failed');
+    if (storageState.playback !== 'direct' || !storageState.overlay || storageState.videoDisplay !== 'block' || storageState.playerError) failures.push('storage signed player failed');
     const normalizedFallbackTitle = (fallbackBeforeClick.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (!normalizedFallbackTitle.includes('Erro ao reproduzir')) failures.push('protected fallback title failed');
     if (fallbackAfterClick.sent || fallbackAfterClick.opened) failures.push('fallback should not open telegram');
@@ -462,6 +491,7 @@ async function main() {
       checks: {
         initial,
         directState,
+        storageState,
         fallbackBeforeClick,
         fallbackAfterClick,
         telegramPlayer,

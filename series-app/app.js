@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260629-03';
+const BUILD_VERSION = '20260629-04';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 let tg = null;
@@ -1677,6 +1677,8 @@ function getCoverUrl(serie) {
 
 function hasDirectPlaybackUrl(serie) {
     if (!serie) return false;
+
+    if (typeof serie.video_storage_path === 'string' && serie.video_storage_path.trim()) return true;
 
     return ['video_url', 'stream_url', 'media_url', 'url', 'video', 'stream', 'media', 'playback_url'].some(key => {
         const value = serie[key];

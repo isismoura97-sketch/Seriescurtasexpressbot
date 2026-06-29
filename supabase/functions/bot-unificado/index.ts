@@ -9,7 +9,7 @@ const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? 
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
 const CATALOG_URL = Deno.env.get("CATALOG_URL") ?? SERIES_WEBAPP_URL;
 const SUPPORT_URL = Deno.env.get("SUPPORT_URL") ?? Deno.env.get("TELEGRAM_SUPPORT_URL") ?? "https://t.me/ShortNovelsBot";
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-03";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-04";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -304,6 +304,52 @@ function storagePublicUrl(bucket: string, objectPath: string) {
   return `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(bucket)}/${cleanedPath}`;
 }
 
+function encodeStorageObjectPath(objectPath: string) {
+  return objectPath
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
+async function createStorageSignedUrl(bucket: string, objectPath: string, expiresIn = 600) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !bucket || !objectPath) return "";
+
+  const encodedPath = encodeStorageObjectPath(objectPath);
+  const url = `${SUPABASE_URL}/storage/v1/object/sign/${encodeURIComponent(bucket)}/${encodedPath}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ expiresIn }),
+  });
+
+  const text = await res.text();
+  let data: unknown = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // keep raw response for error reporting
+  }
+
+  if (!res.ok) {
+    const message = typeof data === "object" && data && "message" in data
+      ? String((data as { message?: string }).message)
+      : `Storage signed URL failed (${res.status})`;
+    throw new Error(message);
+  }
+
+  const signedUrl = typeof data === "object" && data
+    ? String((data as { signedURL?: unknown; signedUrl?: unknown }).signedURL ?? (data as { signedUrl?: unknown }).signedUrl ?? "")
+    : "";
+  if (!signedUrl) return "";
+
+  return new URL(signedUrl, SUPABASE_URL).toString();
+}
+
 function getStorageObjectName(seriesId: string, kind: string, fileName: string) {
   const cleanedSeriesId = String(seriesId || "series").trim() || "series";
   const cleanedKind = String(kind || "media").trim() || "media";
@@ -315,11 +361,7 @@ async function uploadStorageObject(bucket: string, objectPath: string, file: Fil
     throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
   }
 
-  const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${objectPath
-    .split("/")
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join("/")}`;
+  const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStorageObjectPath(objectPath)}`;
 
   const res = await fetch(url, {
     method: "POST",
@@ -380,11 +422,7 @@ async function deleteStorageObject(bucket: string, objectPath: string) {
     return false;
   }
 
-  const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${objectPath
-    .split("/")
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join("/")}`;
+  const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStorageObjectPath(objectPath)}`;
 
   const res = await fetch(url, {
     method: "DELETE",
@@ -2605,7 +2643,7 @@ async function getSeriesList(userId = "", includeProtected = false) {
     const episodeData = buildEpisodeAugmentation(episodes, seriesId);
     const free = isSeriesFree(row);
     const hasAccess = includeProtected || free || accessibleIds.has(seriesId);
-    const hasVideoUrl = Boolean(extractDirectUrl(row));
+    const hasVideoUrl = Boolean(extractVideoStoragePath(row) || extractDirectUrl(row));
     const hasVideoFileId = Boolean(extractTelegramFileId(row));
     const hasEpisodePlayback = Number(episodeData.playable_episode_count ?? 0) > 0;
     const output: Record<string, unknown> = {
@@ -2622,6 +2660,8 @@ async function getSeriesList(userId = "", includeProtected = false) {
       for (const key of [...SERIES_VIDEO_URL_COLUMNS, ...SERIES_VIDEO_FILE_ID_COLUMNS]) {
         delete output[key];
       }
+      delete output.video_storage_path;
+      delete output.storage_path;
       delete output.episode_file_id;
     }
 
@@ -2735,6 +2775,30 @@ function extractDirectUrl(row: Record<string, unknown>) {
   return null;
 }
 
+function extractVideoStoragePath(row: Record<string, unknown>) {
+  const explicitPath = String(row.video_storage_path ?? row.storage_path ?? "").trim();
+  if (explicitPath) return explicitPath;
+
+  for (const key of SERIES_VIDEO_URL_COLUMNS) {
+    const value = row[key];
+    const storagePath = extractStorageObjectPathFromUrl(value, SERIES_VIDEO_BUCKET);
+    if (storagePath) return storagePath;
+  }
+
+  return "";
+}
+
+async function resolveStoragePlayback(row: Record<string, unknown>, title: string) {
+  const storagePath = extractVideoStoragePath(row);
+  if (!storagePath) return null;
+
+  return {
+    url: await createStorageSignedUrl(SERIES_VIDEO_BUCKET, storagePath, 600),
+    type: "storage_signed",
+    title,
+  };
+}
+
 function extractTelegramFileId(row: Record<string, unknown>) {
   for (const key of [...SERIES_VIDEO_FILE_ID_COLUMNS, "preview_file_id", "previewFileId"]) {
     const value = row[key];
@@ -2791,6 +2855,11 @@ async function handleStream(req: Request, url: URL) {
   const row = await getSeriesById(serieId);
   if (!row) {
     return json(req, { error: "Série não encontrada" }, 404);
+  }
+
+  const storagePlayback = await resolveStoragePlayback(row as Record<string, unknown>, String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title));
+  if (storagePlayback?.url) {
+    return json(req, storagePlayback);
   }
 
   const directUrl = extractDirectUrl(row as Record<string, unknown>);
@@ -2854,6 +2923,11 @@ async function handleStreamV2(req: Request, url: URL) {
   }
 
   const seriesTitle = String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title);
+  const storagePlayback = await resolveStoragePlayback(row as Record<string, unknown>, seriesTitle);
+  if (storagePlayback?.url) {
+    return json(req, storagePlayback);
+  }
+
   const directUrl = extractDirectUrl(row as Record<string, unknown>);
   if (directUrl) {
     return json(req, { url: directUrl, type: "direct", title: seriesTitle });
@@ -2940,7 +3014,7 @@ function serializeOwnerSeries(row: Record<string, unknown>) {
     playable_episode_count: Number(row.playable_episode_count ?? 0) || 0,
     episode_file_id: row.episode_file_id ?? null,
     is_free: isSeriesFree(row),
-    has_video_url: Boolean(extractDirectUrl(row)),
+    has_video_url: Boolean(extractVideoStoragePath(row) || extractDirectUrl(row)),
     has_video_file_id: Boolean(extractTelegramFileId(row)),
     has_trailer: Boolean(row.trailer_url || row.trailer_storage_path || row.trailer_file_id),
     has_cover: Boolean(row.cover_url || row.cover_storage_path || row.cover_file_id),
@@ -2955,7 +3029,7 @@ async function buildOwnerDashboardPayload(userId: string) {
   ]);
 
   const sortedSeries = sortByCreatedAtDesc(series);
-  const hasInternalPlayback = (row: Record<string, unknown>) => Boolean(extractDirectUrl(row));
+  const hasInternalPlayback = (row: Record<string, unknown>) => Boolean(extractVideoStoragePath(row) || extractDirectUrl(row));
   const needsMigration = (row: Record<string, unknown>) =>
     !hasInternalPlayback(row) && Boolean(extractTelegramFileId(row) || Number(row.playable_episode_count ?? 0) > 0);
   const hasAnyPlayback = (row: Record<string, unknown>) => hasInternalPlayback(row) || needsMigration(row);
