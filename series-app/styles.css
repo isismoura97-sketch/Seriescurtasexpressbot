@@ -1201,6 +1201,33 @@ body.light-mode .modal-title {
     overflow: hidden;
 }
 
+.card-actions {
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+}
+
+.card-cart-btn {
+    border: 1px solid rgba(255, 215, 0, 0.35);
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.18), rgba(255, 215, 0, 0.08));
+    color: var(--primary);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.card-cart-btn:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.28), rgba(255, 215, 0, 0.14));
+    border-color: rgba(255, 215, 0, 0.6);
+}
+
 body.light-mode .netflix-info,
 body.light-mode .card-info {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.78) 100%);
@@ -1691,6 +1718,110 @@ body.light-mode .cart-item {
     color: var(--text-main);
 }
 
+.owner-upload-form {
+    display: grid;
+    gap: 14px;
+}
+
+.owner-upload-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.owner-upload-span-2 {
+    grid-column: span 2;
+}
+
+.owner-upload-form textarea {
+    width: 100%;
+    min-height: 120px;
+    resize: vertical;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,215,0,0.16);
+    background: rgba(255,255,255,0.05);
+    color: var(--text-main);
+    font: inherit;
+}
+
+.owner-upload-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-main);
+    font-size: 14px;
+}
+
+.owner-upload-toggle input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary);
+}
+
+.owner-upload-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.owner-upload-note {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 0;
+}
+
+.owner-series-list {
+    display: grid;
+    gap: 10px;
+}
+
+.owner-series-row {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,215,0,0.12);
+    background: rgba(255,255,255,0.04);
+}
+
+.owner-series-row-main strong {
+    display: block;
+    color: var(--text-main);
+    margin-bottom: 4px;
+}
+
+.owner-series-row-main span {
+    display: block;
+    color: var(--primary);
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.owner-series-row-main p {
+    margin: 0;
+    color: var(--text-dim);
+    line-height: 1.5;
+}
+
+.owner-series-row-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.owner-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255,215,0,0.1);
+    color: var(--text-main);
+    border: 1px solid rgba(255,215,0,0.16);
+    font-size: 12px;
+}
+
 /* ====================== TOAST ====================== */
 .toast-container {
     position: fixed;
@@ -1796,7 +1927,12 @@ body.light-mode .cart-item {
     }
 
     .owner-login,
-    .owner-metrics {
+    .owner-metrics,
+    .owner-upload-grid {
         grid-template-columns: 1fr;
+    }
+
+    .owner-upload-span-2 {
+        grid-column: auto;
     }
 }

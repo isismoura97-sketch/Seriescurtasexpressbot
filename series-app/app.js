@@ -522,7 +522,7 @@ function renderPaymentSummary(order) {
     details.push(`<div class="payment-detail"><span>Total</span><strong>${escapeHtml(formatPrice(amount))}</strong></div>`);
 
     if (order.checkout_url) {
-        details.push(`<div class="payment-detail"><span>Link</span><strong>Disponível</strong></div>`);
+        details.push(`<div class="payment-detail"><span>Mercado Pago</span><strong>Página disponível</strong></div>`);
     }
 
     if (order.pix_qr_code) {
@@ -571,7 +571,7 @@ function renderPaymentSummary(order) {
             openTelegramBotLink(`https://t.me/${TELEGRAM_BOT_USERNAME}`);
         });
     } else {
-        openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Abrir pagamento';
+        openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Abrir página Mercado Pago';
         openButton.addEventListener('click', () => {
             if (order.checkout_url) {
                 openExternalLink(order.checkout_url);
@@ -584,7 +584,7 @@ function renderPaymentSummary(order) {
     if (order.checkout_url) {
         const copyLinkButton = document.createElement('button');
         copyLinkButton.className = 'btn btn-secondary';
-        copyLinkButton.innerHTML = '<i class="fas fa-copy"></i> Copiar link';
+        copyLinkButton.innerHTML = '<i class="fas fa-copy"></i> Copiar link Mercado Pago';
         copyLinkButton.addEventListener('click', async () => {
             await copyToClipboard(order.checkout_url);
             showToast('Link de pagamento copiado!', 'success');
@@ -685,6 +685,28 @@ async function requestPaymentStatus(payload) {
     return await requestJson(`${API_URL}?action=payment-status`, payload, 15000);
 }
 
+async function requestOwnerSeriesSave(formData) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+    try {
+        const res = await fetch(`${API_URL}?action=owner-series-save`, {
+            method: 'POST',
+            cache: 'no-store',
+            body: formData,
+            signal: controller.signal
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
+        }
+        return data;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 function markOrderItemsAsPurchased(order) {
     const items = Array.isArray(order?.items) ? order.items : [];
     if (!items.length) return;
@@ -723,6 +745,61 @@ function setOwnerStatus(message = '', type = '') {
     DOM.ownerStatus.className = `owner-status ${type}`.trim();
 }
 
+function setOwnerUploadStatus(message = '', type = '') {
+    const status = document.getElementById('ownerUploadStatus');
+    if (!status) return;
+    status.textContent = message;
+    status.className = `owner-status ${type}`.trim();
+}
+
+function getTrailerUrl(serie) {
+    if (!serie) return '';
+
+    if (typeof serie.trailer_url === 'string' && serie.trailer_url.trim()) {
+        return sanitizeUrl(serie.trailer_url.trim());
+    }
+    if (typeof serie.trailer_storage_path === 'string' && serie.trailer_storage_path.trim()) {
+        return `${SUPABASE_PROJECT_URL}/storage/v1/object/public/trailers/${encodeURI(serie.trailer_storage_path)}`;
+    }
+    return '';
+}
+
+function formatOwnerDate(value) {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) return 'Data indisponível';
+    return new Intl.DateTimeFormat('pt-BR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(date);
+}
+
+function wireOwnerUploadForm() {
+    const form = document.getElementById('ownerSeriesForm');
+    const freeToggle = document.getElementById('ownerSeriesFree');
+    const priceInput = document.getElementById('ownerSeriesPrice');
+
+    if (freeToggle && priceInput) {
+        const syncPriceState = () => {
+            const isFree = Boolean(freeToggle.checked);
+            priceInput.disabled = isFree;
+            priceInput.required = !isFree;
+            if (isFree) {
+                priceInput.value = '0';
+            }
+        };
+
+        freeToggle.onchange = syncPriceState;
+        syncPriceState();
+    }
+
+    if (form) {
+        form.onsubmit = submitOwnerSeriesUpload;
+    }
+}
+
 function openOwnerArea() {
     if (!isOwnerUser()) {
         showToast('Área restrita ao proprietário', 'error');
@@ -751,6 +828,7 @@ function renderOwnerDashboard(data) {
 
     const catalog = data?.catalog || {};
     const payments = data?.payments || {};
+    const recentSeries = Array.isArray(data?.recent_series) ? data.recent_series : [];
     const statusCounts = payments.status_counts || {};
     const recentOrders = Array.isArray(payments.recent_orders) ? payments.recent_orders : [];
 
@@ -772,6 +850,29 @@ function renderOwnerDashboard(data) {
         `)
         .join('') || '<div class="owner-list-row"><span>Nenhum pedido recente</span><strong>-</strong></div>';
 
+    const recentSeriesRows = recentSeries
+        .map((serie) => {
+            const trailerLabel = serie.has_trailer ? 'Trailer' : 'Sem trailer';
+            const videoLabel = serie.has_video_url || serie.has_video_file_id ? 'Vídeo OK' : 'Sem vídeo';
+            const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
+            const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
+            return `
+                <article class="owner-series-row">
+                    <div class="owner-series-row-main">
+                        <strong>${escapeHtml(serie.title || 'Sem título')}</strong>
+                        <span>${escapeHtml([serie.category || 'Geral', freeLabel, formatOwnerDate(serie.created_at)].join(' • '))}</span>
+                        <p>${escapeHtml(serie.description || 'Sem descrição')}</p>
+                    </div>
+                    <div class="owner-series-row-tags">
+                        <span class="owner-pill">${escapeHtml(coverLabel)}</span>
+                        <span class="owner-pill">${escapeHtml(videoLabel)}</span>
+                        <span class="owner-pill">${escapeHtml(trailerLabel)}</span>
+                    </div>
+                </article>
+            `;
+        })
+        .join('') || '<div class="owner-list-row"><span>Nenhuma série cadastrada ainda</span><strong>-</strong></div>';
+
     DOM.ownerDashboard.innerHTML = `
         <div class="owner-metrics">
             <div class="owner-card">
@@ -786,6 +887,52 @@ function renderOwnerDashboard(data) {
                 <span>Episódios com File_ID</span>
                 <strong>${escapeHtml(String(catalog.playable_episodes ?? 0))}</strong>
             </div>
+        </div>
+        <div class="owner-section">
+            <h3>Nova série</h3>
+            <form class="owner-upload-form" id="ownerSeriesForm" enctype="multipart/form-data">
+                <div class="owner-upload-grid">
+                    <label class="payment-field">
+                        <span>Título</span>
+                        <input type="text" name="title" placeholder="Nome da série" required>
+                    </label>
+                    <label class="payment-field">
+                        <span>Categoria</span>
+                        <input type="text" name="category" placeholder="Romance, Drama..." value="Geral" required>
+                    </label>
+                    <label class="payment-field owner-upload-span-2">
+                        <span>Descrição</span>
+                        <textarea name="description" rows="4" placeholder="Descreva a série" required></textarea>
+                    </label>
+                    <label class="owner-upload-toggle">
+                        <input type="checkbox" name="is_free" id="ownerSeriesFree">
+                        <span>Marcar como série gratuita</span>
+                    </label>
+                    <label class="payment-field">
+                        <span>Preço</span>
+                        <input type="number" name="price" id="ownerSeriesPrice" min="0" step="0.01" placeholder="0,00" value="0">
+                    </label>
+                    <label class="payment-field">
+                        <span>Capa</span>
+                        <input type="file" name="cover_file" accept="image/*" required>
+                    </label>
+                    <label class="payment-field">
+                        <span>Trailer opcional</span>
+                        <input type="file" name="trailer_file" accept="video/*">
+                    </label>
+                    <label class="payment-field">
+                        <span>Vídeo completo</span>
+                        <input type="file" name="video_file" accept="video/*" required>
+                    </label>
+                </div>
+                <div class="owner-upload-actions">
+                    <button class="btn btn-primary" type="submit">
+                        <i class="fas fa-cloud-arrow-up"></i> Publicar série
+                    </button>
+                    <p class="owner-upload-note">O trailer é opcional. Se não houver trailer, basta deixar o campo vazio.</p>
+                </div>
+                <div class="owner-status" id="ownerUploadStatus"></div>
+            </form>
         </div>
         <div class="owner-section">
             <h3>Saúde do Catálogo</h3>
@@ -804,11 +951,16 @@ function renderOwnerDashboard(data) {
             </div>
         </div>
         <div class="owner-section">
+            <h3>Séries recentes</h3>
+            <div class="owner-series-list">${recentSeriesRows}</div>
+        </div>
+        <div class="owner-section">
             <h3>Pedidos Recentes</h3>
             <div class="owner-list">${recentRows}</div>
         </div>
     `;
     DOM.ownerDashboard.hidden = false;
+    wireOwnerUploadForm();
 }
 
 async function submitOwnerLogin(event) {
@@ -838,6 +990,65 @@ async function submitOwnerLogin(event) {
         if (DOM.ownerLoginBtn) {
             DOM.ownerLoginBtn.disabled = false;
             DOM.ownerLoginBtn.innerHTML = '<i class="fas fa-lock-open"></i> Entrar';
+        }
+    }
+}
+
+async function submitOwnerSeriesUpload(event) {
+    event?.preventDefault();
+    if (!isOwnerUser()) return;
+
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+
+    const formData = new FormData(form);
+    formData.set('init_data', tg?.initData || '');
+    formData.set('password', String(DOM.ownerPasswordInput?.value || ''));
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    const previousLabel = submitButton?.innerHTML || '';
+
+    try {
+        if (submitButton instanceof HTMLButtonElement) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Publicando...';
+        }
+        setOwnerUploadStatus('Enviando arquivos para o Supabase...', '');
+
+        const payload = await requestOwnerSeriesSave(formData);
+        const created = payload?.series || null;
+        const dashboard = payload?.dashboard || null;
+
+        if (created) {
+            allSeries = [created, ...allSeries.filter((serie) => !sameId(serie.id, created.id))];
+            refreshCatalog();
+            initHero();
+        }
+
+        if (dashboard) {
+            renderOwnerDashboard(dashboard);
+        } else {
+            setOwnerUploadStatus('Série publicada com sucesso.', 'success');
+        }
+
+        form.reset();
+        const freeToggle = document.getElementById('ownerSeriesFree');
+        const priceInput = document.getElementById('ownerSeriesPrice');
+        if (freeToggle instanceof HTMLInputElement && priceInput instanceof HTMLInputElement) {
+            freeToggle.checked = false;
+            priceInput.disabled = false;
+            priceInput.required = true;
+            priceInput.value = '0';
+        }
+
+        showToast('Série publicada com sucesso!', 'success');
+    } catch (error) {
+        setOwnerUploadStatus(error.message || 'Não foi possível publicar a série.', 'error');
+        showToast(error.message || 'Falha ao publicar a série.', 'error');
+    } finally {
+        if (submitButton instanceof HTMLButtonElement) {
+            submitButton.disabled = false;
+            submitButton.innerHTML = previousLabel || '<i class="fas fa-cloud-arrow-up"></i> Publicar série';
         }
     }
 }
@@ -912,7 +1123,7 @@ function getCoverUrl(serie) {
 function hasDirectPlaybackUrl(serie) {
     if (!serie) return false;
 
-    return ['video_url', 'stream_url', 'media_url', 'url'].some(key => {
+    return ['video_url', 'stream_url', 'media_url', 'url', 'video', 'stream', 'media', 'playback_url'].some(key => {
         const value = serie[key];
         return typeof value === 'string' && value.trim() && sanitizeUrl(value.trim());
     });
@@ -921,7 +1132,19 @@ function hasDirectPlaybackUrl(serie) {
 function getTelegramFileId(serie) {
     if (!serie) return '';
 
-    for (const key of ['video_file_id', 'file_id', 'telegram_file_id', 'episode_file_id']) {
+    for (const key of [
+        'video_file_id',
+        'file_id',
+        'telegram_file_id',
+        'episode_file_id',
+        'preview_file_id',
+        'videoFileId',
+        'telegramFileId',
+        'fileId',
+        'previewFileId',
+        'playback_file_id',
+        'media_file_id',
+    ]) {
         const value = serie[key];
         if (typeof value === 'string' && value.trim()) return value.trim();
     }
@@ -1256,6 +1479,22 @@ function createCard(serie, isNetflix = false) {
     titleDiv.className = isNetflix ? 'netflix-title' : 'card-title';
     titleDiv.textContent = serie.title || '';
     infoDiv.appendChild(titleDiv);
+
+    if (!free) {
+        const actions = document.createElement('div');
+        actions.className = 'card-actions';
+        const buyBtn = document.createElement('button');
+        buyBtn.type = 'button';
+        buyBtn.className = 'card-cart-btn';
+        buyBtn.innerHTML = '<i class="fas fa-cart-plus"></i> Carrinho';
+        buyBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            addToCart(serie);
+        });
+        actions.appendChild(buyBtn);
+        infoDiv.appendChild(actions);
+    }
     card.appendChild(infoDiv);
 
     card.addEventListener('click', () => handleSeriesClick(serie));
@@ -1430,6 +1669,7 @@ function openModal(serie) {
     const hasAccess = hasSeriesAccess(serie);
     const playbackMode = getPlaybackMode(serie);
     const telegramFileId = getTelegramFileId(serie);
+    const trailerUrl = getTrailerUrl(serie);
     if (DOM.telegramGuide) {
         DOM.telegramGuide.hidden = playbackMode !== 'telegram';
     }
@@ -1490,6 +1730,18 @@ function openModal(serie) {
     };
     
     DOM.modalActions.appendChild(btn);
+
+    if (trailerUrl) {
+        const trailerBtn = document.createElement('button');
+        trailerBtn.className = 'btn btn-secondary';
+        trailerBtn.innerHTML = '<i class="fas fa-film"></i> Ver trailer';
+        trailerBtn.onclick = () => {
+            closeModal();
+            window.open(trailerUrl, '_blank', 'noopener,noreferrer');
+        };
+        DOM.modalActions.appendChild(trailerBtn);
+    }
+
     DOM.modalOverlay.classList.add('active');
     document.body.classList.add('modal-open');
 }
@@ -1596,6 +1848,7 @@ function addToCart(serie) {
         showToast('Item adicionado, mas não será salvo entre sessões', 'error');
     }
     updateCartUI();
+    toggleCart(true);
     showToast('Adicionado ao carrinho!', 'success');
 }
 

@@ -16,6 +16,9 @@ const PAYMENT_ORDERS_TABLE = Deno.env.get("PAYMENT_ORDERS_TABLE") ?? "payment_or
 const OWNER_TELEGRAM_USER_ID = Deno.env.get("OWNER_TELEGRAM_USER_ID") ?? "1048601631";
 const OWNER_AREA_PASSWORD = Deno.env.get("OWNER_AREA_PASSWORD") ?? "";
 const OWNER_AREA_PASSWORD_SHA256 = Deno.env.get("OWNER_AREA_PASSWORD_SHA256") ?? "";
+const SERIES_COVER_BUCKET = Deno.env.get("SERIES_COVER_BUCKET") ?? "covers";
+const SERIES_TRAILER_BUCKET = Deno.env.get("SERIES_TRAILER_BUCKET") ?? "trailers";
+const SERIES_VIDEO_BUCKET = Deno.env.get("SERIES_VIDEO_BUCKET") ?? "videos";
 const PUBLIC_CHANNEL_USERNAME = Deno.env.get("PUBLIC_CHANNEL_USERNAME") ?? "";
 const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
 const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID") ?? "";
@@ -284,6 +287,69 @@ async function supabaseRestRequest(path: string, init: { method?: string; header
   }
 
   return data;
+}
+
+function storagePublicUrl(bucket: string, objectPath: string) {
+  if (!SUPABASE_URL || !bucket || !objectPath) return "";
+  const cleanedPath = objectPath
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  return `${SUPABASE_URL}/storage/v1/object/public/${encodeURIComponent(bucket)}/${cleanedPath}`;
+}
+
+function getStorageObjectName(seriesId: string, kind: string, fileName: string) {
+  const cleanedSeriesId = String(seriesId || "series").trim() || "series";
+  const cleanedKind = String(kind || "media").trim() || "media";
+  return `${cleanedSeriesId}/${cleanedKind}-${safeFilename(fileName || cleanedKind)}`;
+}
+
+async function uploadStorageObject(bucket: string, objectPath: string, file: File) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
+  }
+
+  const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${objectPath
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/")}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "content-type": file.type || "application/octet-stream",
+      "x-upsert": "true",
+    },
+    body: await file.arrayBuffer(),
+  });
+
+  const text = await res.text();
+  let data: unknown = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // keep raw text
+  }
+
+  if (!res.ok) {
+    const error = new Error(
+      typeof data === "object" && data && "message" in data
+        ? String((data as { message?: string }).message)
+        : `Storage upload failed (${res.status})`,
+    ) as Error & { status?: number; body?: unknown };
+    error.status = res.status;
+    error.body = data;
+    throw error;
+  }
+
+  return {
+    path: objectPath,
+    publicUrl: storagePublicUrl(bucket, objectPath),
+  };
 }
 
 type CheckoutMethod = "mercado_pago_link" | "pix_qr" | "telegram_checkout";
@@ -2177,7 +2243,7 @@ async function supabaseFetch(path: string) {
 }
 
 function getEpisodeFileId(row: Record<string, unknown>) {
-  for (const key of EPISODE_VIDEO_FILE_ID_COLUMNS) {
+  for (const key of [...EPISODE_VIDEO_FILE_ID_COLUMNS, "preview_file_id", "previewFileId"]) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
@@ -2367,7 +2433,7 @@ function extractDirectUrl(row: Record<string, unknown>) {
 }
 
 function extractTelegramFileId(row: Record<string, unknown>) {
-  for (const key of SERIES_VIDEO_FILE_ID_COLUMNS) {
+  for (const key of [...SERIES_VIDEO_FILE_ID_COLUMNS, "preview_file_id", "previewFileId"]) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
@@ -2534,54 +2600,72 @@ async function getOwnerPaymentRows() {
   }
 }
 
-async function handleOwnerDashboard(req: Request) {
-  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body) {
-    return json(req, { error: "Corpo da requisicao invalido" }, 400);
-  }
+function sortByCreatedAtDesc(rows: Record<string, unknown>[]) {
+  return rows.slice().sort((left, right) => {
+    const leftTime = Date.parse(String(left.created_at ?? "")) || 0;
+    const rightTime = Date.parse(String(right.created_at ?? "")) || 0;
+    return rightTime - leftTime;
+  });
+}
 
-  let validated: { userId: string };
-  try {
-    validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return json(req, { error: message }, 401);
-  }
+function isTruthyInput(value: unknown) {
+  return ["1", "true", "yes", "sim", "on"].includes(String(value ?? "").trim().toLowerCase());
+}
 
-  if (String(validated.userId) !== String(OWNER_TELEGRAM_USER_ID)) {
-    return json(req, { error: "Acesso restrito ao proprietario" }, 403);
-  }
+function normalizeOwnerPrice(value: unknown, forceFree: boolean) {
+  if (forceFree) return 0;
+  const raw = Number(value ?? 0);
+  if (!Number.isFinite(raw) || raw < 0) return 0;
+  return Number(raw.toFixed(2));
+}
 
-  const hasPasswordConfigured = Boolean(OWNER_AREA_PASSWORD_SHA256 || OWNER_AREA_PASSWORD || TELEGRAM_WEBHOOK_SECRET);
-  if (!hasPasswordConfigured) {
-    return json(req, { error: "Senha do proprietario nao configurada" }, 503);
-  }
+function serializeOwnerSeries(row: Record<string, unknown>) {
+  return {
+    id: String(row.id ?? ""),
+    title: String(row.title ?? ""),
+    description: String(row.description ?? ""),
+    category: String(row.category ?? ""),
+    price: Number(row.price ?? 0) || 0,
+    created_at: row.created_at ?? null,
+    cover_url: row.cover_url ?? null,
+    cover_storage_path: row.cover_storage_path ?? null,
+    cover_file_id: row.cover_file_id ?? null,
+    trailer_url: row.trailer_url ?? null,
+    trailer_storage_path: row.trailer_storage_path ?? null,
+    trailer_file_id: row.trailer_file_id ?? null,
+    video_url: row.video_url ?? null,
+    video_storage_path: row.video_storage_path ?? null,
+    video_file_id: row.video_file_id ?? null,
+    is_free: isSeriesFree(row),
+    has_video_url: Boolean(extractDirectUrl(row)),
+    has_video_file_id: Boolean(extractTelegramFileId(row)),
+    has_trailer: Boolean(row.trailer_url || row.trailer_storage_path || row.trailer_file_id),
+    has_cover: Boolean(row.cover_url || row.cover_storage_path || row.cover_file_id),
+  };
+}
 
-  const passwordOk = await validateOwnerPassword(String(body.password ?? ""));
-  if (!passwordOk) {
-    return json(req, { error: "Senha invalida" }, 403);
-  }
-
+async function buildOwnerDashboardPayload(userId: string) {
   const [series, episodes, payments] = await Promise.all([
     getSeriesList("", true) as Promise<Record<string, unknown>[]>,
     getEpisodesList().catch(() => [] as Record<string, unknown>[]),
     getOwnerPaymentRows(),
   ]);
 
+  const sortedSeries = sortByCreatedAtDesc(series);
   const hasSeriesPlayback = (row: Record<string, unknown>) =>
     Boolean(extractDirectUrl(row) || extractTelegramFileId(row) || Number(row.playable_episode_count ?? 0) > 0);
-  const playableSeries = series.filter((row) => hasSeriesPlayback(row));
-  const missingPlayback = series.filter((row) => !hasSeriesPlayback(row));
+  const playableSeries = sortedSeries.filter((row) => hasSeriesPlayback(row));
+  const missingPlayback = sortedSeries.filter((row) => !hasSeriesPlayback(row));
   const playableEpisodes = episodes.filter((row) => getEpisodeFileId(row));
   const statusCounts = countByStatus(payments);
 
-  return json(req, {
+  return {
     ok: true,
     owner: {
-      telegram_user_id: validated.userId,
+      telegram_user_id: userId,
     },
     catalog: {
-      series_total: series.length,
+      series_total: sortedSeries.length,
       playable_series: playableSeries.length,
       missing_playback: missingPlayback.length,
       episodes_total: episodes.length,
@@ -2601,7 +2685,138 @@ async function handleOwnerDashboard(req: Request) {
         confirmed_at: row.confirmed_at ?? null,
       })),
     },
-  });
+    recent_series: sortedSeries.slice(0, 8).map((row) => serializeOwnerSeries(row)),
+  };
+}
+
+async function resolveOwnerRequest(body: Record<string, unknown>) {
+  let validated: { userId: string };
+  try {
+    validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { error: message, status: 401 };
+  }
+
+  if (String(validated.userId) !== String(OWNER_TELEGRAM_USER_ID)) {
+    return { error: "Acesso restrito ao proprietario", status: 403 };
+  }
+
+  const hasPasswordConfigured = Boolean(OWNER_AREA_PASSWORD_SHA256 || OWNER_AREA_PASSWORD || TELEGRAM_WEBHOOK_SECRET);
+  if (!hasPasswordConfigured) {
+    return { error: "Senha do proprietario nao configurada", status: 503 };
+  }
+
+  const passwordOk = await validateOwnerPassword(String(body.password ?? ""));
+  if (!passwordOk) {
+    return { error: "Senha invalida", status: 403 };
+  }
+
+  return { userId: validated.userId };
+}
+
+async function handleOwnerDashboard(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) {
+    return json(req, { error: access.error }, access.status);
+  }
+
+  const payload = await buildOwnerDashboardPayload(access.userId);
+  return json(req, payload);
+}
+
+async function handleOwnerSeriesCreate(req: Request) {
+  const form = await req.formData().catch(() => null);
+  if (!form) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  const body = Object.fromEntries(form.entries());
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) {
+    return json(req, { error: access.error }, access.status);
+  }
+
+  const title = String(form.get("title") ?? "").trim();
+  const description = String(form.get("description") ?? "").trim();
+  const category = String(form.get("category") ?? "Geral").trim() || "Geral";
+  const forceFree = isTruthyInput(form.get("is_free"));
+  const price = normalizeOwnerPrice(form.get("price"), forceFree);
+  const cover = form.get("cover_file");
+  const video = form.get("video_file");
+  const trailer = form.get("trailer_file");
+
+  if (!title) {
+    return json(req, { error: "Informe o título da série" }, 400);
+  }
+
+  if (!description) {
+    return json(req, { error: "Informe a descrição da série" }, 400);
+  }
+
+  if (!(cover instanceof File)) {
+    return json(req, { error: "Envie a imagem de capa" }, 400);
+  }
+
+  if (!(video instanceof File)) {
+    return json(req, { error: "Envie o vídeo completo da série" }, 400);
+  }
+
+  if (!forceFree && price <= 0) {
+    return json(req, { error: "Informe um valor maior que zero para a série paga" }, 400);
+  }
+
+  const seriesId = String(form.get("id") ?? "").trim() || crypto.randomUUID();
+  const coverObjectPath = getStorageObjectName(seriesId, "cover", cover.name || "cover");
+  const videoObjectPath = getStorageObjectName(seriesId, "video", video.name || "video");
+  const trailerFile = trailer instanceof File && trailer.size > 0 ? trailer : null;
+  const trailerObjectPath = trailerFile ? getStorageObjectName(seriesId, "trailer", trailerFile.name || "trailer") : "";
+
+  const [coverUpload, videoUpload, trailerUpload] = await Promise.all([
+    uploadStorageObject(SERIES_COVER_BUCKET, coverObjectPath, cover),
+    uploadStorageObject(SERIES_VIDEO_BUCKET, videoObjectPath, video),
+    trailerFile ? uploadStorageObject(SERIES_TRAILER_BUCKET, trailerObjectPath, trailerFile) : Promise.resolve(null),
+  ]);
+
+  const rowPayload: Record<string, unknown> = {
+    id: seriesId,
+    title,
+    description,
+    category,
+    price,
+    cover_url: coverUpload.publicUrl,
+    cover_storage_path: coverUpload.path,
+    video_url: videoUpload.publicUrl,
+    video_storage_path: videoUpload.path,
+    trailer_url: trailerUpload?.publicUrl ?? null,
+    trailer_storage_path: trailerUpload?.path ?? null,
+  };
+
+  const inserted = await supabaseRestRequest(SERIES_TABLE, {
+    method: "POST",
+    headers: {
+      prefer: "return=representation",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify([rowPayload]),
+  }) as Record<string, unknown>[] | Record<string, unknown>;
+
+  const seriesRow = Array.isArray(inserted) ? inserted[0] : inserted;
+  if (!seriesRow || typeof seriesRow !== "object") {
+    return json(req, { error: "Não foi possível registrar a série" }, 500);
+  }
+
+  const dashboard = await buildOwnerDashboardPayload(access.userId);
+  return json(req, {
+    ok: true,
+    series: serializeOwnerSeries(seriesRow as Record<string, unknown>),
+    dashboard,
+  }, 201);
 }
 
 Deno.serve(async (req) => {
@@ -2652,6 +2867,10 @@ Deno.serve(async (req) => {
 
     if (action === "owner-dashboard") {
       return await handleOwnerDashboard(req);
+    }
+
+    if (action === "owner-series-save") {
+      return await handleOwnerSeriesCreate(req);
     }
 
     if (action === "mercado-pago-webhook") {
