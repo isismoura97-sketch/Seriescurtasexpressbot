@@ -7,6 +7,8 @@ const CAPTCHA_WEBAPP_URL = Deno.env.get("CAPTCHA_WEBAPP_URL") ?? "https://series
 const CAPTCHA_MAX_AGE_SECONDS = Number(Deno.env.get("CAPTCHA_MAX_AGE_SECONDS") ?? "600");
 const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? "600");
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
+const CATALOG_URL = Deno.env.get("CATALOG_URL") ?? SERIES_WEBAPP_URL;
+const SUPPORT_URL = Deno.env.get("SUPPORT_URL") ?? Deno.env.get("TELEGRAM_SUPPORT_URL") ?? "https://t.me/ShortNovelsBot";
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
 const MERCADO_PAGO_WEBHOOK_SECRET = Deno.env.get("MERCADO_PAGO_WEBHOOK_SECRET") ?? "";
 const MERCADO_PAGO_PIX_KEY = Deno.env.get("MERCADO_PAGO_PIX_KEY") ?? "";
@@ -1398,8 +1400,8 @@ function withTelegramUrlFallbackButtons(payload: Record<string, string | number 
     const keyboard = parsed.inline_keyboard;
     if (!Array.isArray(keyboard)) return payload;
 
-    const existingUrls = new Set<string>();
-    const webAppUrls: string[] = [];
+    let miniAppUrl = SERIES_WEBAPP_URL;
+    let catalogUrl = CATALOG_URL;
 
     for (const row of keyboard) {
       if (!Array.isArray(row)) continue;
@@ -1409,17 +1411,16 @@ function withTelegramUrlFallbackButtons(payload: Record<string, string | number 
         const url = typeof candidate.url === "string" ? candidate.url : "";
         const webApp = candidate.web_app as Record<string, unknown> | undefined;
         const webAppUrl = typeof webApp?.url === "string" ? webApp.url : "";
-        if (url) existingUrls.add(url);
-        if (webAppUrl) webAppUrls.push(webAppUrl);
+        if (webAppUrl) miniAppUrl = webAppUrl;
+        if (url && url !== SUPPORT_URL) catalogUrl = url;
       }
     }
 
-    for (const url of webAppUrls) {
-      if (!existingUrls.has(url)) {
-        keyboard.push([{ text: "Abrir no navegador", url }]);
-        existingUrls.add(url);
-      }
-    }
+    parsed.inline_keyboard = [
+      [{ text: "Catalogo", url: catalogUrl }],
+      [{ text: "Mini App", web_app: { url: miniAppUrl } }],
+      [{ text: "Suporte", url: SUPPORT_URL }],
+    ];
 
     return { ...payload, reply_markup: stringifyJson(parsed) };
   } catch {
@@ -1479,7 +1480,7 @@ async function configureTelegramBotSurface() {
   await telegramRequest("setChatMenuButton", {
     menu_button: stringifyJson({
       type: "web_app",
-      text: "Abrir catalogo",
+      text: "Mini App",
       web_app: { url: SERIES_WEBAPP_URL },
     }),
   });
