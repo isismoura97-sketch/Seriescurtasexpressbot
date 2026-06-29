@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260628-07';
+const BUILD_VERSION = '20260629-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 let tg = null;
@@ -247,47 +247,14 @@ function setPlayerErrorView({ iconClass, iconColor, title, description, buttonHt
     }
 }
 
-function openTelegramPlayback(serieId, title, telegramFileId) {
-    const safeTitle = title || 'esta série';
-    const payload = JSON.stringify({
-        action: 'play_video',
-        serie_id: serieId,
-        file_id: telegramFileId,
-        title
-    });
-
-    try {
-        if (tg && typeof tg.sendData === 'function') {
-            tg.sendData(payload);
-            showToast(`Enviando "${safeTitle}" para o Telegram...`, 'success');
-            closePlayer();
-            return true;
-        }
-    } catch (err) {
-        console.warn('[PLAYER] Falha ao enviar dados ao Telegram:', err.message);
-    }
-
-    const startPayload = encodeURIComponent(`play_${serieId || telegramFileId}`);
-    const deepLink = `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${startPayload}`;
-
-    try {
-        if (tg && typeof tg.openTelegramLink === 'function') {
-            tg.openTelegramLink(deepLink);
-        } else {
-            window.open(deepLink, '_blank', 'noopener,noreferrer');
-        }
-        showToast(`Abrindo "${safeTitle}" no Telegram...`, 'info');
-        closePlayer();
-        return true;
-    } catch (err) {
-        console.warn('[PLAYER] Falha ao abrir Telegram:', err.message);
-        return false;
-    }
-}
-
 function bindPlayerVideoEvents() {
     if (playerVideoEventsBound || !DOM.mainVideo) return;
     playerVideoEventsBound = true;
+    DOM.mainVideo.disableRemotePlayback = true;
+
+    DOM.mainVideo.addEventListener('contextmenu', (event) => {
+        event.preventDefault();
+    });
 
     DOM.mainVideo.addEventListener('loadeddata', () => {
         DOM.playerLoading?.classList.remove('active');
@@ -1972,7 +1939,7 @@ function createCard(serie, isNetflix = false) {
             : lockedPlayback
             ? `Abrir ${serie.title || 'série'} - conteúdo bloqueado até pagamento`
             : telegramOnly
-            ? `Abrir ${serie.title || 'série'} - reprodução via Telegram`
+            ? `Abrir ${serie.title || 'série'} - player protegido no Mini App`
             : `Abrir ${serie.title || 'série'}`
     );
 
@@ -1980,34 +1947,6 @@ function createCard(serie, isNetflix = false) {
     const coverUrl = getCoverUrl(serie);
     const cover = document.createElement('div');
     cover.className = isNetflix ? 'netflix-cover' : 'card-cover';
-
-    if (free) {
-        const badge = document.createElement('div');
-        badge.className = 'badge-gratis-landscape';
-        badge.innerHTML = '<i class="fas fa-gift"></i> GRÁTIS';
-        cover.appendChild(badge);
-    }
-
-    if (telegramOnly) {
-        const badge = document.createElement('div');
-        badge.className = 'badge-telegram-landscape';
-        badge.innerHTML = '<i class="fab fa-telegram"></i> TELEGRAM';
-        cover.appendChild(badge);
-    }
-
-    if (lockedPlayback) {
-        const badge = document.createElement('div');
-        badge.className = 'badge-locked-landscape';
-        badge.innerHTML = '<i class="fas fa-lock"></i> BLOQUEADO';
-        cover.appendChild(badge);
-    }
-
-    if (missingPlayback) {
-        const badge = document.createElement('div');
-        badge.className = 'badge-unavailable-landscape';
-        badge.innerHTML = '<i class="fas fa-ban"></i> SEM VÍDEO';
-        cover.appendChild(badge);
-    }
 
     const img = document.createElement('img');
     img.src = coverUrl;
@@ -2079,21 +2018,21 @@ async function openPlayer(serieId, title) {
     if (DOM.playerTitle) DOM.playerTitle.textContent = title || 'Reproduzir';
     if (DOM.playerKicker) {
         DOM.playerKicker.innerHTML = isTelegramPlayback
-            ? '<i class="fas fa-satellite-dish"></i> Reprodução pelo Telegram'
+            ? '<i class="fas fa-shield-halved"></i> Player protegido'
             : hasAccess
                 ? '<i class="fas fa-circle-check"></i> Reprodução liberada'
                 : '<i class="fas fa-film"></i> Carregando mídia';
     }
     if (DOM.playerMeta) {
         DOM.playerMeta.textContent = isTelegramPlayback
-            ? 'Se o navegador travar, use o botão para abrir a reprodução no bot.'
+            ? 'O vídeo será carregado dentro do Mini App, sem envio de arquivo compartilhável.'
             : isFreeContent
                 ? 'Conteúdo gratuito com acesso direto no player.'
                 : 'Conteúdo liberado após pagamento confirmado.';
     }
     if (DOM.playerAccessChip) {
         DOM.playerAccessChip.innerHTML = isTelegramPlayback
-            ? '<i class="fab fa-telegram"></i> Telegram'
+            ? '<i class="fas fa-lock"></i> Protegido'
             : isFreeContent
                 ? '<i class="fas fa-gift"></i> GRÁTIS'
                 : hasAccess
@@ -2127,17 +2066,17 @@ async function openPlayer(serieId, title) {
                     showToast('Toque no vídeo para reproduzir', 'info');
                 });
             }
-        } else if ((data.type === 'telegram_file' || data.file_id) && data.file_id) {
-            playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: data.file_id };
-            const telegramDescription = data.reason || 'Este título usa um arquivo do Telegram. Abra no bot para continuar a reprodução.';
+        } else if (data.type === 'internal_player_unavailable' || data.type === 'telegram_file' || data.file_id) {
+            playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: '' };
+            const telegramDescription = data.reason || 'Este título precisa ser preparado para reprodução protegida dentro do Mini App.';
             DOM.mainVideo.style.display = 'none';
             setPlayerErrorView({
-                iconClass: 'fab fa-telegram',
-                iconColor: '#2AABEE',
-                title: 'Reprodução via Telegram',
+                iconClass: 'fas fa-shield-halved',
+                iconColor: '#FFD700',
+                title: 'Player interno indisponível',
                 description: telegramDescription,
-                buttonHtml: '<i class="fab fa-telegram"></i> Abrir no Telegram',
-                buttonHandler: () => openTelegramPlayback(serieId, title, data.file_id)
+                buttonHtml: '<i class="fas fa-redo"></i> Tentar novamente',
+                buttonHandler: retryPlayer
             });
             DOM.playerError.classList.add('active');
             return;
@@ -2160,32 +2099,19 @@ async function openPlayer(serieId, title) {
 function showPlayerError() {
     DOM.playerLoading.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
-    const telegramFileId = playerRetryData?.telegramFileId || '';
-    const canFallbackToTelegram = Boolean(telegramFileId);
     setPlayerErrorView({
         iconClass: 'fas fa-exclamation-triangle',
         iconColor: '#ff4444',
-        title: canFallbackToTelegram ? 'Abra no Telegram' : 'Erro ao reproduzir o vídeo',
-        description: canFallbackToTelegram
-            ? 'A reprodução direta falhou, mas este título pode continuar no Telegram.'
-            : 'Tente novamente. Se o erro persistir, o player pode depender de abertura no Telegram.',
-        buttonHtml: canFallbackToTelegram
-            ? '<i class="fab fa-telegram"></i> Abrir no Telegram'
-            : '<i class="fas fa-redo"></i> Tentar Novamente',
-        buttonHandler: canFallbackToTelegram
-            ? () => openTelegramPlayback(playerRetryData.id, playerRetryData.title, telegramFileId)
-            : retryPlayer
+        title: 'Erro ao reproduzir o vídeo',
+        description: 'Tente novamente. Se o erro persistir, este arquivo precisa ser convertido ou migrado para reprodução protegida dentro do Mini App.',
+        buttonHtml: '<i class="fas fa-redo"></i> Tentar Novamente',
+        buttonHandler: retryPlayer
     });
     DOM.playerError.classList.add('active');
 }
 
 function retryPlayer() {
     if (!playerRetryData) return;
-
-    if (playerRetryData.telegramFileId) {
-        openTelegramPlayback(playerRetryData.id, playerRetryData.title, playerRetryData.telegramFileId);
-        return;
-    }
 
     openPlayer(playerRetryData.id, playerRetryData.title);
 }
@@ -2215,12 +2141,12 @@ function openModal(serie) {
     const telegramFileId = getTelegramFileId(serie);
     const trailerUrl = getTrailerUrl(serie);
     if (DOM.telegramGuide) {
-        DOM.telegramGuide.hidden = playbackMode !== 'telegram';
+        DOM.telegramGuide.hidden = true;
     }
 
     const baseDescription = serie.description || 'Sem descrição disponível.';
     DOM.modalDesc.textContent = playbackMode === 'telegram'
-        ? `${baseDescription} Este título é grande demais para tocar no navegador, então vamos abrir no Telegram.`
+        ? `${baseDescription} A reprodução será carregada dentro do player protegido do Mini App.`
         : playbackMode === 'locked'
         ? `${baseDescription} Este título está bloqueado até a confirmação do pagamento.`
         : baseDescription;
@@ -2230,7 +2156,7 @@ function openModal(serie) {
     } else if (!free && playbackMode === 'locked') {
         DOM.modalPrice.innerHTML = `<span class="locked-badge"><i class="fas fa-lock"></i> BLOQUEADO • ${escapeHtml(formatPrice(serie.price))}</span>`;
     } else if (free && playbackMode === 'telegram') {
-        DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> ASSISTIR NO TELEGRAM</span>';
+        DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fas fa-shield-halved"></i> PLAYER PROTEGIDO</span>';
     } else {
         DOM.modalPrice.innerHTML = free 
             ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
@@ -2249,7 +2175,7 @@ function openModal(serie) {
         btn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
     } else if (free && playbackMode === 'telegram') {
         btn.className = 'btn btn-telegram';
-        btn.innerHTML = '<i class="fab fa-telegram"></i> ABRIR NO TELEGRAM';
+        btn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR NO MINI APP';
     } else if (free) {
         btn.className = 'btn btn-secondary';
         btn.innerHTML = '<i class="fas fa-ban"></i> VÍDEO INDISPONÍVEL';
@@ -2264,12 +2190,7 @@ function openModal(serie) {
         } else if (free && playbackMode === 'direct') {
             openPlayer(serie.id, serie.title);
         } else if (free && playbackMode === 'telegram') {
-            if (telegramFileId) {
-                openTelegramPlayback(serie.id, serie.title, telegramFileId);
-            } else {
-                showToast('Este título será encaminhado ao Telegram para abrir o bot correto.', 'info');
-                openPlayer(serie.id, serie.title);
-            }
+            openPlayer(serie.id, serie.title);
         } else if (free) {
             showToast('Essa série ainda não possui vídeo disponível', 'info');
         } else {

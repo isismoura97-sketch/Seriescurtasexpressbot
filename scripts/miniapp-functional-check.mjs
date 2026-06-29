@@ -192,7 +192,7 @@ async function installRoutes(page) {
       if (serieId === 'telegram-only') {
         await route.fulfill({
           contentType: 'application/json',
-          body: JSON.stringify({ type: 'telegram_file', file_id: 'TG_ONLY', reason: 'Abra no Telegram.' }),
+          body: JSON.stringify({ type: 'internal_player_unavailable', reason: 'Preparar para player interno.' }),
         });
         return;
       }
@@ -310,9 +310,9 @@ async function main() {
 
     const initial = await page.evaluate(() => ({
       cards: document.querySelectorAll('#catalogGrid .card').length,
-      telegramCards: document.querySelectorAll('.badge-telegram-landscape').length,
-      lockedPaidCard: document.querySelectorAll('#catalogGrid .card[data-id="paid-series"] .badge-locked-landscape').length,
-      missingCards: document.querySelectorAll('.badge-unavailable-landscape').length,
+      topBadges: document.querySelectorAll('#catalogGrid .badge-gratis-landscape, #catalogGrid .badge-telegram-landscape, #catalogGrid .badge-locked-landscape, #catalogGrid .badge-unavailable-landscape').length,
+      lockedPaidPlayback: document.querySelector('#catalogGrid .card[data-id="paid-series"]')?.dataset.playback || '',
+      missingPlayback: document.querySelector('#catalogGrid .card[data-id="missing-video"]')?.dataset.playback || '',
       pixActive: document.querySelector('[data-payment-method="pix_qr"]')?.classList.contains('active'),
       appJs: [...document.scripts].find((script) => new URL(script.src, location.href).pathname.endsWith('/app.js'))?.src || '',
       coverFallbacks: [
@@ -341,6 +341,7 @@ async function main() {
       sent: window.__sentData || '',
       opened: window.__openedTelegramLink || '',
     }));
+    await page.evaluate(() => window.closePlayer());
 
     await page.locator('#catalogGrid .card[data-id="telegram-only"]').click();
     await page.waitForSelector('#playerError.active', { timeout: 10000 });
@@ -350,6 +351,7 @@ async function main() {
     }));
     await page.locator('#playerErrorAction').click();
     const telegramSent = await page.evaluate(() => window.__sentData || '');
+    await page.evaluate(() => window.closePlayer());
 
     await page.locator('#catalogGrid .card[data-id="episode-video"]').click();
     await page.waitForFunction(() => document.querySelector('#mainVideo')?.style.display === 'block', null, { timeout: 10000 });
@@ -421,13 +423,17 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260628-07')) failures.push('cache version not updated');
-    if (initial.lockedPaidCard !== 1) failures.push(`locked card count: ${initial.lockedPaidCard}`);
+    if (!initial.appJs.includes('20260629-01')) failures.push('cache version not updated');
+    if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
+    if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
+    if (initial.missingPlayback !== 'missing') failures.push(`missing playback state: ${initial.missingPlayback}`);
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError) failures.push('direct player failed');
-    if (fallbackBeforeClick.title !== 'Abra no Telegram') failures.push('fallback title failed');
-    if (!fallbackAfterClick.sent.includes('TG_FALLBACK')) failures.push('fallback telegram send failed');
-    if (!['Reprodução via Telegram', 'Abra no Telegram'].includes(telegramPlayer.title)) failures.push('telegram player fallback failed');
-    if (!telegramSent.includes('TG_ONLY')) failures.push('telegram modal send failed');
+    const normalizedFallbackTitle = (fallbackBeforeClick.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (!normalizedFallbackTitle.includes('Erro ao reproduzir')) failures.push('protected fallback title failed');
+    if (fallbackAfterClick.sent || fallbackAfterClick.opened) failures.push('fallback should not open telegram');
+    const normalizedTelegramTitle = (telegramPlayer.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (normalizedTelegramTitle !== 'Player interno indisponivel') failures.push('telegram player protected fallback failed');
+    if (telegramSent) failures.push('telegram-only should not send file_id to bot');
     if (!episodePlayer.overlay || episodePlayer.videoDisplay !== 'block' || episodePlayer.playerError) failures.push('episode file player failed');
     const normalizedMissingAction = (missingModal.action || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (!normalizedMissingAction.includes('VIDEO INDISPONIVEL')) failures.push('missing video state failed');

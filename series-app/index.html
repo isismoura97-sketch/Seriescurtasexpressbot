@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="styles.css?v=20260628-07">
+    <link rel="stylesheet" href="styles.css?v=20260629-01">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
@@ -83,7 +83,7 @@
                     </div>
                     <div class="player-error-copy">
                         <h3 id="playerErrorTitle">Erro ao reproduzir o vídeo</h3>
-                        <p id="playerErrorDesc">Tente novamente ou abra no Telegram.</p>
+                        <p id="playerErrorDesc">Tente novamente dentro do Mini App.</p>
                     </div>
                     <div class="player-error-actions">
                         <button class="btn btn-primary" id="playerErrorAction" onclick="retryPlayer()">
@@ -172,13 +172,13 @@
                 <p class="modal-desc" id="modalDesc">Descrição da série...</p>
                 <div class="telegram-guide" id="telegramGuide" hidden>
                     <div class="telegram-guide-title">
-                        <i class="fab fa-telegram"></i>
-                        Como assistir no Telegram
+                        <i class="fas fa-shield-halved"></i>
+                        Como assistir no Mini App
                     </div>
                     <ol class="telegram-guide-steps">
-                        <li>Toque em <strong>Abrir no Telegram</strong>.</li>
-                        <li>O bot vai abrir já no título certo.</li>
-                        <li>Depois volte para o app quando terminar.</li>
+                        <li>Toque em <strong>Assistir no Mini App</strong>.</li>
+                        <li>O player protegido vai carregar dentro desta tela.</li>
+                        <li>Se aparecer aviso de preparo, esse vídeo precisa ser migrado para reprodução interna.</li>
                     </ol>
                 </div>
                 <div class="modal-actions" id="modalActions"></div>
@@ -318,6 +318,6 @@
     <script defer src="/_vercel/speed-insights/script.js"></script>
 
     <!-- Script Principal -->
-    <script defer src="app.js?v=20260628-07"></script>
+    <script defer src="app.js?v=20260629-01"></script>
 </body>
 </html>

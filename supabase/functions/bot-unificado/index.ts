@@ -1848,8 +1848,7 @@ async function proxyTelegramFile(req: Request, fileId: string, title = "") {
       req,
       {
         error: message,
-        type: "telegram_file",
-        file_id: fileId,
+        type: "internal_player_unavailable",
         title,
       },
       message.toLowerCase().includes("file is too big") ? 422 : 500,
@@ -1869,8 +1868,7 @@ async function proxyTelegramFile(req: Request, fileId: string, title = "") {
       req,
       {
         error: message || "Telegram file fetch failed",
-        type: "telegram_file",
-        file_id: fileId,
+        type: "internal_player_unavailable",
         title,
       },
       502,
@@ -1883,8 +1881,7 @@ async function proxyTelegramFile(req: Request, fileId: string, title = "") {
       req,
       {
         error: detail || `Telegram file request failed (${upstream.status})`,
-        type: "telegram_file",
-        file_id: fileId,
+        type: "internal_player_unavailable",
         title,
       },
       upstream.status,
@@ -2745,10 +2742,9 @@ async function resolveTelegramPlayback(req: Request, fileId: string, title: stri
     const message = error instanceof Error ? error.message : String(error);
     if (message.toLowerCase().includes("file is too big")) {
       return json(req, {
-        type: "telegram_file",
-        file_id: fileId,
+        type: "internal_player_unavailable",
         title,
-        reason: "Este vÃ­deo Ã© grande demais para o player do navegador. Abra no Telegram para assistir.",
+        reason: "Este vídeo precisa ser migrado ou convertido para reprodução protegida dentro do Mini App.",
       });
     }
     throw error;
@@ -2787,10 +2783,9 @@ async function handleStream(req: Request, url: URL) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.toLowerCase().includes("file is too big")) {
         return json(req, {
-          type: "telegram_file",
-          file_id: fileId,
+          type: "internal_player_unavailable",
           title: (row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title,
-          reason: "Este vídeo é grande demais para o player do navegador. Abra no Telegram para assistir.",
+          reason: "Este vídeo precisa ser migrado ou convertido para reprodução protegida dentro do Mini App.",
         });
       }
       throw error;
