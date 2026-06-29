@@ -1411,6 +1411,22 @@ async function telegramRequest(method: string, payload: Record<string, string | 
   return data.result;
 }
 
+async function getTelegramWebhookInfo() {
+  return await telegramRequest("getWebhookInfo", {});
+}
+
+function sanitizeTelegramWebhookInfo(info: Record<string, unknown>) {
+  return {
+    url: typeof info.url === "string" ? info.url : "",
+    pending_update_count: typeof info.pending_update_count === "number" ? info.pending_update_count : 0,
+    last_error_date: typeof info.last_error_date === "number" ? info.last_error_date : null,
+    last_error_message: typeof info.last_error_message === "string" ? info.last_error_message : null,
+    max_connections: typeof info.max_connections === "number" ? info.max_connections : null,
+    allowed_updates: Array.isArray(info.allowed_updates) ? info.allowed_updates : [],
+    has_custom_certificate: info.has_custom_certificate === true,
+  };
+}
+
 function base64UrlEncode(bytes: Uint8Array) {
   let binary = "";
   for (const byte of bytes) {
@@ -2206,6 +2222,55 @@ async function handleTelegramWebhook(req: Request) {
     await sendCaptchaInvitation(fallbackChatId, webAppUrl.toString());
   }
   return json(req, { ok: true, action: "captcha_sent" });
+}
+
+async function handleTelegramWebhookInfo(req: Request) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN nao configurado" }, 500);
+  }
+
+  const info = await getTelegramWebhookInfo() as Record<string, unknown>;
+  return json(req, {
+    ok: true,
+    webhook: sanitizeTelegramWebhookInfo(info),
+  });
+}
+
+async function handleTelegramWebhookRepair(req: Request) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN nao configurado" }, 500);
+  }
+
+  if (!TELEGRAM_WEBHOOK_SECRET) {
+    return json(req, { ok: false, error: "TELEGRAM_WEBHOOK_SECRET nao configurado" }, 500);
+  }
+
+  const webhookUrl = SUPABASE_URL
+    ? new URL(`/functions/v1/${FUNCTION_NAME}/api`, SUPABASE_URL)
+    : new URL(req.url);
+  webhookUrl.searchParams.set("action", "telegram-webhook");
+
+  await telegramRequest("setWebhook", {
+    url: webhookUrl.toString(),
+    secret_token: TELEGRAM_WEBHOOK_SECRET,
+    allowed_updates: stringifyJson([
+      "message",
+      "edited_message",
+      "chat_member",
+      "chat_join_request",
+      "my_chat_member",
+      "callback_query",
+      "channel_post",
+      "edited_channel_post",
+    ]),
+  });
+
+  const info = await getTelegramWebhookInfo() as Record<string, unknown>;
+  return json(req, {
+    ok: true,
+    action: "telegram_webhook_repaired",
+    webhook: sanitizeTelegramWebhookInfo(info),
+  });
 }
 
 async function handleCaptchaVerify(req: Request) {
@@ -3031,6 +3096,14 @@ Deno.serve(async (req) => {
 
     if (action === "mercado-pago-webhook") {
       return await handleMercadoPagoWebhook(req, url);
+    }
+
+    if (action === "telegram-webhook-info") {
+      return await handleTelegramWebhookInfo(req);
+    }
+
+    if (action === "telegram-webhook-repair") {
+      return await handleTelegramWebhookRepair(req);
     }
 
     if (action === "telegram-webhook") {

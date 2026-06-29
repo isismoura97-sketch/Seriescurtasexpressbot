@@ -1,1 +1,4 @@
 project_id = "uyyeascxvnrkjtlygdoe"
+
+[functions.bot-unificado]
+verify_jwt = false
