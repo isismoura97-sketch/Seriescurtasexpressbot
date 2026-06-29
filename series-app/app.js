@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260629-01';
+const BUILD_VERSION = '20260629-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 let tg = null;
@@ -119,7 +119,14 @@ function saveCart(context = 'CART') {
 function resetVideo() {
     DOM.mainVideo.pause();
     DOM.mainVideo.src = '';
+    DOM.mainVideo.removeAttribute('poster');
     DOM.mainVideo.removeAttribute('src');
+    DOM.mainVideo.load();
+}
+
+function setPlayerLoadingView(title = 'Preparando player protegido', subtitle = 'Carregando vídeo dentro do Mini App...') {
+    if (DOM.playerLoadingTitle) DOM.playerLoadingTitle.textContent = title;
+    if (DOM.playerLoadingSubtitle) DOM.playerLoadingSubtitle.textContent = subtitle;
 }
 
 function handleSeriesClick(serie) {
@@ -151,6 +158,8 @@ const DOM = {
     playerMeta: document.getElementById('playerMeta'),
     playerAccessChip: document.getElementById('playerAccessChip'),
     playerLoading: document.getElementById('playerLoading'),
+    playerLoadingTitle: document.getElementById('playerLoadingTitle'),
+    playerLoadingSubtitle: document.getElementById('playerLoadingSubtitle'),
     playerError: document.getElementById('playerError'),
     watermarkId: document.getElementById('watermarkId'),
     cartOverlay: document.getElementById('cartOverlay'),
@@ -258,6 +267,21 @@ function bindPlayerVideoEvents() {
 
     DOM.mainVideo.addEventListener('loadeddata', () => {
         DOM.playerLoading?.classList.remove('active');
+    });
+
+    DOM.mainVideo.addEventListener('canplay', () => {
+        DOM.playerLoading?.classList.remove('active');
+    });
+
+    DOM.mainVideo.addEventListener('playing', () => {
+        DOM.playerLoading?.classList.remove('active');
+    });
+
+    DOM.mainVideo.addEventListener('waiting', () => {
+        if (DOM.playerOverlay?.classList.contains('active') && DOM.mainVideo?.style.display === 'block') {
+            setPlayerLoadingView('Reconectando ao vídeo', 'Aguarde um instante, mantendo a sessão protegida...');
+            DOM.playerLoading?.classList.add('active');
+        }
     });
 
     DOM.mainVideo.addEventListener('error', () => {
@@ -2012,7 +2036,9 @@ async function openPlayer(serieId, title) {
     const isFreeContent = isFree(sourceSerie);
 
     DOM.playerOverlay.classList.add('active');
+    DOM.playerOverlay.dataset.state = 'loading';
     DOM.playerLoading.classList.add('active');
+    setPlayerLoadingView('Preparando player protegido', 'Carregando vídeo dentro do Mini App...');
     DOM.playerError.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
     if (DOM.playerTitle) DOM.playerTitle.textContent = title || 'Reproduzir';
@@ -2042,6 +2068,10 @@ async function openPlayer(serieId, title) {
     if (DOM.watermarkId) DOM.watermarkId.textContent = userId || '---';
 
     resetVideo();
+    const posterUrl = getCoverUrl(sourceSerie);
+    if (posterUrl && posterUrl !== PLACEHOLDER_IMAGE) {
+        DOM.mainVideo.setAttribute('poster', posterUrl);
+    }
 
     try {
         const url = new URL(API_URL);
@@ -2057,7 +2087,10 @@ async function openPlayer(serieId, title) {
             const safeVideoUrl = sanitizeUrl(data.url);
             if (!safeVideoUrl) throw new Error('URL de vídeo invalida');
             DOM.mainVideo.setAttribute('src', safeVideoUrl);
+            DOM.mainVideo.muted = false;
+            DOM.mainVideo.volume = 1;
             DOM.mainVideo.style.display = 'block';
+            DOM.playerOverlay.dataset.state = 'playing';
             
             const playPromise = DOM.mainVideo.play();
             if (playPromise !== undefined) {
@@ -2070,6 +2103,7 @@ async function openPlayer(serieId, title) {
             playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: '' };
             const telegramDescription = data.reason || 'Este título precisa ser preparado para reprodução protegida dentro do Mini App.';
             DOM.mainVideo.style.display = 'none';
+            DOM.playerOverlay.dataset.state = 'unavailable';
             setPlayerErrorView({
                 iconClass: 'fas fa-shield-halved',
                 iconColor: '#FFD700',
@@ -2099,6 +2133,7 @@ async function openPlayer(serieId, title) {
 function showPlayerError() {
     DOM.playerLoading.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
+    if (DOM.playerOverlay) DOM.playerOverlay.dataset.state = 'error';
     setPlayerErrorView({
         iconClass: 'fas fa-exclamation-triangle',
         iconColor: '#ff4444',
@@ -2119,6 +2154,7 @@ function retryPlayer() {
 function closePlayer() {
     resetVideo();
     DOM.playerOverlay.classList.remove('active');
+    delete DOM.playerOverlay.dataset.state;
     DOM.playerError.classList.remove('active');
     DOM.playerLoading.classList.remove('active');
     if (DOM.playerMeta) DOM.playerMeta.textContent = 'Abra diretamente no player.';

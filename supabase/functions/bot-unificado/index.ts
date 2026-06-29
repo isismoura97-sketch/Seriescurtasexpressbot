@@ -9,6 +9,9 @@ const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? 
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
 const CATALOG_URL = Deno.env.get("CATALOG_URL") ?? SERIES_WEBAPP_URL;
 const SUPPORT_URL = Deno.env.get("SUPPORT_URL") ?? Deno.env.get("TELEGRAM_SUPPORT_URL") ?? "https://t.me/ShortNovelsBot";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-02";
+const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
+  new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
 const MERCADO_PAGO_WEBHOOK_SECRET = Deno.env.get("MERCADO_PAGO_WEBHOOK_SECRET") ?? "";
 const MERCADO_PAGO_PIX_KEY = Deno.env.get("MERCADO_PAGO_PIX_KEY") ?? "";
@@ -1417,7 +1420,7 @@ function withTelegramUrlFallbackButtons(payload: Record<string, string | number 
     }
 
     parsed.inline_keyboard = [
-      [{ text: "Catalogo", url: catalogUrl }],
+      [{ text: "Catálogo", url: catalogUrl }],
       [{ text: "Mini App", web_app: { url: miniAppUrl } }],
       [{ text: "Suporte", url: SUPPORT_URL }],
     ];
@@ -2140,16 +2143,36 @@ async function sendCheckoutAck(chatId: string | number, itemCount: number, total
 }
 
 async function sendBotWelcomeMessage(chatId: string | number) {
+  const text = [
+    "Bem-vindo ao Séries Express.",
+    "Abra o catálogo para ver as séries gratuitas e as séries com liberação por pagamento.",
+    "Se você já começou uma série, também pode reabri-la pelo Mini App.",
+  ].join("\n");
+  const replyMarkup = JSON.stringify({
+    inline_keyboard: [
+      [{ text: "Catálogo", url: CATALOG_URL }],
+      [{ text: "Mini App", web_app: { url: SERIES_WEBAPP_URL } }],
+      [{ text: "Suporte", url: SUPPORT_URL }],
+    ],
+  });
+
+  try {
+    return await telegramRequest("sendPhoto", {
+      chat_id: chatId,
+      photo: WELCOME_LOGO_URL,
+      caption: text,
+      protect_content: true,
+      reply_markup: replyMarkup,
+    });
+  } catch (error) {
+    console.warn("[WELCOME] Falha ao enviar logo nas boas-vindas:", error instanceof Error ? error.message : String(error));
+  }
+
   return await telegramRequest("sendMessage", {
     chat_id: chatId,
-    text: [
-      "Bem-vindo ao Séries Express.",
-      "Abra o catálogo para ver as séries gratuitas e as séries com liberação por pagamento.",
-      "Se você já começou uma série, também pode reabri-la pelo mini app.",
-    ].join("\n"),
-    reply_markup: JSON.stringify({
-      inline_keyboard: [[{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]],
-    }),
+    text,
+    protect_content: true,
+    reply_markup: replyMarkup,
   });
 }
 

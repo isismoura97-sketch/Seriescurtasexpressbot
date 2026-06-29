@@ -315,6 +315,7 @@ async function main() {
       missingPlayback: document.querySelector('#catalogGrid .card[data-id="missing-video"]')?.dataset.playback || '',
       pixActive: document.querySelector('[data-payment-method="pix_qr"]')?.classList.contains('active'),
       appJs: [...document.scripts].find((script) => new URL(script.src, location.href).pathname.endsWith('/app.js'))?.src || '',
+      welcomeLogo: document.querySelector('.player-loading-logo')?.getAttribute('src') || '',
       coverFallbacks: [
         document.querySelector('#catalogGrid .card[data-id="814e3fba-38ce-47d5-b554-9e6b26c6eb58"] img')?.getAttribute('src') || '',
         document.querySelector('#catalogGrid .card[data-id="e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15"] img')?.getAttribute('src') || '',
@@ -326,6 +327,8 @@ async function main() {
     const directState = await page.evaluate(() => ({
       overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
       videoDisplay: document.querySelector('#mainVideo')?.style.display,
+      muted: document.querySelector('#mainVideo')?.muted,
+      poster: document.querySelector('#mainVideo')?.getAttribute('poster') || '',
       playerError: document.querySelector('#playerError')?.classList.contains('active'),
     }));
     await page.evaluate(() => window.closePlayer());
@@ -423,11 +426,12 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260629-01')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260629-02')) failures.push('cache version not updated');
+    if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
     if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
     if (initial.missingPlayback !== 'missing') failures.push(`missing playback state: ${initial.missingPlayback}`);
-    if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError) failures.push('direct player failed');
+    if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError || directState.muted) failures.push('direct player failed');
     const normalizedFallbackTitle = (fallbackBeforeClick.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (!normalizedFallbackTitle.includes('Erro ao reproduzir')) failures.push('protected fallback title failed');
     if (fallbackAfterClick.sent || fallbackAfterClick.opened) failures.push('fallback should not open telegram');
