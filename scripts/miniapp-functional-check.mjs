@@ -354,7 +354,12 @@ async function main() {
     }));
     await page.locator('#playerErrorAction').click();
     const telegramSent = await page.evaluate(() => window.__sentData || '');
-    await page.evaluate(() => window.closePlayer());
+    const migrationOwnerOpened = await page.evaluate(() => document.querySelector('#ownerOverlay')?.classList.contains('active'));
+    await page.evaluate(() => {
+      window.closePlayer();
+      document.querySelector('#ownerOverlay')?.classList.remove('active');
+      document.body.classList.remove('modal-open');
+    });
 
     await page.locator('#catalogGrid .card[data-id="episode-video"]').click();
     await page.waitForFunction(() => document.querySelector('#mainVideo')?.style.display === 'block', null, { timeout: 10000 });
@@ -426,7 +431,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260629-02')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260629-03')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
     if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
@@ -436,7 +441,9 @@ async function main() {
     if (!normalizedFallbackTitle.includes('Erro ao reproduzir')) failures.push('protected fallback title failed');
     if (fallbackAfterClick.sent || fallbackAfterClick.opened) failures.push('fallback should not open telegram');
     const normalizedTelegramTitle = (telegramPlayer.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (normalizedTelegramTitle !== 'Player interno indisponivel') failures.push('telegram player protected fallback failed');
+    if (normalizedTelegramTitle !== 'Envie este video ao player interno') failures.push('telegram player migration prompt failed');
+    if (!telegramPlayer.action?.includes('Enviar')) failures.push('telegram player migration action failed');
+    if (!migrationOwnerOpened) failures.push('owner migration shortcut failed');
     if (telegramSent) failures.push('telegram-only should not send file_id to bot');
     if (!episodePlayer.overlay || episodePlayer.videoDisplay !== 'block' || episodePlayer.playerError) failures.push('episode file player failed');
     const normalizedMissingAction = (missingModal.action || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');

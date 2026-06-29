@@ -9,7 +9,7 @@ const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? 
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
 const CATALOG_URL = Deno.env.get("CATALOG_URL") ?? SERIES_WEBAPP_URL;
 const SUPPORT_URL = Deno.env.get("SUPPORT_URL") ?? Deno.env.get("TELEGRAM_SUPPORT_URL") ?? "https://t.me/ShortNovelsBot";
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-02";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -2937,6 +2937,8 @@ function serializeOwnerSeries(row: Record<string, unknown>) {
     video_url: row.video_url ?? null,
     video_storage_path: row.video_storage_path ?? null,
     video_file_id: row.video_file_id ?? null,
+    playable_episode_count: Number(row.playable_episode_count ?? 0) || 0,
+    episode_file_id: row.episode_file_id ?? null,
     is_free: isSeriesFree(row),
     has_video_url: Boolean(extractDirectUrl(row)),
     has_video_file_id: Boolean(extractTelegramFileId(row)),
@@ -2953,10 +2955,13 @@ async function buildOwnerDashboardPayload(userId: string) {
   ]);
 
   const sortedSeries = sortByCreatedAtDesc(series);
-  const hasSeriesPlayback = (row: Record<string, unknown>) =>
-    Boolean(extractDirectUrl(row) || extractTelegramFileId(row) || Number(row.playable_episode_count ?? 0) > 0);
-  const playableSeries = sortedSeries.filter((row) => hasSeriesPlayback(row));
-  const missingPlayback = sortedSeries.filter((row) => !hasSeriesPlayback(row));
+  const hasInternalPlayback = (row: Record<string, unknown>) => Boolean(extractDirectUrl(row));
+  const needsMigration = (row: Record<string, unknown>) =>
+    !hasInternalPlayback(row) && Boolean(extractTelegramFileId(row) || Number(row.playable_episode_count ?? 0) > 0);
+  const hasAnyPlayback = (row: Record<string, unknown>) => hasInternalPlayback(row) || needsMigration(row);
+  const playableSeries = sortedSeries.filter((row) => hasInternalPlayback(row));
+  const migrationNeeded = sortedSeries.filter((row) => needsMigration(row));
+  const missingPlayback = sortedSeries.filter((row) => !hasAnyPlayback(row));
   const playableEpisodes = episodes.filter((row) => getEpisodeFileId(row));
   const statusCounts = countByStatus(payments);
 
@@ -2968,6 +2973,8 @@ async function buildOwnerDashboardPayload(userId: string) {
     catalog: {
       series_total: sortedSeries.length,
       playable_series: playableSeries.length,
+      internal_playback_series: playableSeries.length,
+      migration_needed: migrationNeeded.length,
       missing_playback: missingPlayback.length,
       episodes_total: episodes.length,
       playable_episodes: playableEpisodes.length,

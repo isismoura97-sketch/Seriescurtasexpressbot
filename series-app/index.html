@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="styles.css?v=20260629-02">
+    <link rel="stylesheet" href="styles.css?v=20260629-03">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
@@ -72,7 +72,7 @@
             </div>
 
             <div class="loading-player" id="playerLoading">
-                <img class="player-loading-logo" src="assets/logo-welcome.png?v=20260629-02" alt="Séries Express">
+                <img class="player-loading-logo" src="assets/logo-welcome.png?v=20260629-03" alt="Séries Express">
                 <div class="spinner"></div>
                 <div class="player-loading-title" id="playerLoadingTitle">Preparando player protegido</div>
                 <div class="player-loading-subtitle" id="playerLoadingSubtitle">Carregando vídeo dentro do Mini App...</div>
@@ -269,14 +269,14 @@
         </section>
 
         <!-- TELEGRAM ROW -->
-        <section class="netflix-row telegram-row" id="telegramRow" role="region" aria-label="Disponíveis no Telegram" style="display:none;">
+        <section class="netflix-row telegram-row" id="telegramRow" role="region" aria-label="Precisam migrar para o player interno" style="display:none;">
             <div class="telegram-row-head">
                 <div>
                     <div class="netflix-row-title">
-                        <i class="fab fa-telegram" style="color:#2AABEE;"></i> Disponíveis no Telegram
+                        <i class="fas fa-shield-halved" style="color:#FFD700;"></i> Precisam migrar
                     </div>
                     <p class="telegram-row-note">
-                        Títulos que precisam ser abertos no bot para tocar sem travar no navegador.
+                        Títulos com File_ID legado. Envie o arquivo pelo painel para tocar dentro do Mini App.
                     </p>
                 </div>
                 <span class="telegram-row-count" id="telegramRowCount">0 títulos</span>
@@ -319,6 +319,6 @@
     <script defer src="/_vercel/speed-insights/script.js"></script>
 
     <!-- Script Principal -->
-    <script defer src="app.js?v=20260629-02"></script>
+    <script defer src="app.js?v=20260629-03"></script>
 </body>
 </html>
