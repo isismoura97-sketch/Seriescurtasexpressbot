@@ -1389,14 +1389,53 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
   };
 }
 
+function withTelegramUrlFallbackButtons(payload: Record<string, string | number | boolean>) {
+  const replyMarkup = typeof payload.reply_markup === "string" ? payload.reply_markup : "";
+  if (!replyMarkup) return payload;
+
+  try {
+    const parsed = JSON.parse(replyMarkup) as Record<string, unknown>;
+    const keyboard = parsed.inline_keyboard;
+    if (!Array.isArray(keyboard)) return payload;
+
+    const existingUrls = new Set<string>();
+    const webAppUrls: string[] = [];
+
+    for (const row of keyboard) {
+      if (!Array.isArray(row)) continue;
+      for (const button of row) {
+        if (!button || typeof button !== "object") continue;
+        const candidate = button as Record<string, unknown>;
+        const url = typeof candidate.url === "string" ? candidate.url : "";
+        const webApp = candidate.web_app as Record<string, unknown> | undefined;
+        const webAppUrl = typeof webApp?.url === "string" ? webApp.url : "";
+        if (url) existingUrls.add(url);
+        if (webAppUrl) webAppUrls.push(webAppUrl);
+      }
+    }
+
+    for (const url of webAppUrls) {
+      if (!existingUrls.has(url)) {
+        keyboard.push([{ text: "Abrir no navegador", url }]);
+        existingUrls.add(url);
+      }
+    }
+
+    return { ...payload, reply_markup: stringifyJson(parsed) };
+  } catch {
+    return payload;
+  }
+}
+
 async function telegramRequest(method: string, payload: Record<string, string | number | boolean>) {
+  const finalPayload = withTelegramUrlFallbackButtons(payload);
   const res = await fetch(telegramApiUrl(method), {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
     },
     body: new URLSearchParams(
-      Object.entries(payload).reduce<Record<string, string>>((acc, [key, value]) => {
+      Object.entries(finalPayload).reduce<Record<string, string>>((acc, [key, value]) => {
         acc[key] = String(value);
         return acc;
       }, {}),
@@ -1425,6 +1464,25 @@ function sanitizeTelegramWebhookInfo(info: Record<string, unknown>) {
     allowed_updates: Array.isArray(info.allowed_updates) ? info.allowed_updates : [],
     has_custom_certificate: info.has_custom_certificate === true,
   };
+}
+
+async function configureTelegramBotSurface() {
+  await telegramRequest("setMyCommands", {
+    commands: stringifyJson([
+      { command: "start", description: "Abrir o catalogo" },
+      { command: "catalogo", description: "Ver series disponiveis" },
+      { command: "menu", description: "Mostrar opcoes" },
+      { command: "ajuda", description: "Receber ajuda" },
+    ]),
+  });
+
+  await telegramRequest("setChatMenuButton", {
+    menu_button: stringifyJson({
+      type: "web_app",
+      text: "Abrir catalogo",
+      web_app: { url: SERIES_WEBAPP_URL },
+    }),
+  });
 }
 
 function base64UrlEncode(bytes: Uint8Array) {
@@ -2264,6 +2322,7 @@ async function handleTelegramWebhookRepair(req: Request) {
       "edited_channel_post",
     ]),
   });
+  await configureTelegramBotSurface();
 
   const info = await getTelegramWebhookInfo() as Record<string, unknown>;
   return json(req, {
