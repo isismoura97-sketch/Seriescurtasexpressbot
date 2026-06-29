@@ -20,7 +20,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="styles.css?v=20260629-04">
+    <link rel="stylesheet" href="styles.css?v=20260629-05">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
@@ -72,7 +72,7 @@
             </div>
 
             <div class="loading-player" id="playerLoading">
-                <img class="player-loading-logo" src="assets/logo-welcome.png?v=20260629-04" alt="Séries Express">
+                <img class="player-loading-logo" src="assets/logo-welcome.png?v=20260629-05" alt="Séries Express">
                 <div class="spinner"></div>
                 <div class="player-loading-title" id="playerLoadingTitle">Preparando player protegido</div>
                 <div class="player-loading-subtitle" id="playerLoadingSubtitle">Carregando vídeo dentro do Mini App...</div>
@@ -100,7 +100,6 @@
 
             <div class="player-stage">
                 <video id="mainVideo" 
-                       controls 
                        playsinline 
                        webkit-playsinline
                        controlsList="nodownload noplaybackrate noremoteplayback"
@@ -109,6 +108,22 @@
                        aria-label="Vídeo da série"
                        style="display:none;">
                 </video>
+                <div class="player-controls" id="playerControls" aria-label="Controles do player">
+                    <div class="player-timeline-row">
+                        <span class="player-time" id="playerCurrentTime">00:00</span>
+                        <input type="range" id="playerSeekInput" class="player-seek" min="0" max="1000" value="0" aria-label="Barra de progresso">
+                        <span class="player-time" id="playerDuration">00:00</span>
+                    </div>
+                    <div class="player-actions-row">
+                        <button type="button" class="player-control-btn" id="playerMuteBtn" aria-label="Silenciar ou ativar som">
+                            <i class="fas fa-volume-high"></i>
+                        </button>
+                        <input type="range" id="playerVolumeInput" class="player-volume" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+                        <button type="button" class="player-control-btn" id="playerFullscreenBtn" aria-label="Abrir em tela cheia">
+                            <i class="fas fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div class="player-watermark" id="playerWatermark">
@@ -319,6 +334,6 @@
     <script defer src="/_vercel/speed-insights/script.js"></script>
 
     <!-- Script Principal -->
-    <script defer src="app.js?v=20260629-04"></script>
+    <script defer src="app.js?v=20260629-05"></script>
 </body>
 </html>

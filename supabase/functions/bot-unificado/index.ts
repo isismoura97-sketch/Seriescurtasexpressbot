@@ -9,7 +9,7 @@ const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? 
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
 const CATALOG_URL = Deno.env.get("CATALOG_URL") ?? SERIES_WEBAPP_URL;
 const SUPPORT_URL = Deno.env.get("SUPPORT_URL") ?? Deno.env.get("TELEGRAM_SUPPORT_URL") ?? "https://t.me/ShortNovelsBot";
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-04";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-05";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -1763,6 +1763,26 @@ async function telegramGetFile(fileId: string) {
   return payload.result as { file_path: string };
 }
 
+async function downloadTelegramFileAsVideo(fileId: string, title: string) {
+  const { file_path } = await telegramGetFile(fileId);
+  if (!file_path) {
+    throw new Error("Telegram file_path ausente");
+  }
+
+  const upstreamUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${file_path}`;
+  const upstream = await fetch(upstreamUrl);
+  if (!upstream.ok) {
+    const detail = await upstream.text().catch(() => "");
+    throw new Error(detail || `Telegram download failed (${upstream.status})`);
+  }
+
+  const bytes = new Uint8Array(await upstream.arrayBuffer());
+  const contentType = upstream.headers.get("content-type") || "video/mp4";
+  const fallbackName = `${safeFilename(title || fileId)}.mp4`;
+
+  return new File([bytes], fallbackName, { type: contentType });
+}
+
 async function sendChatJoinRequestWebApp(chatJoinRequestQueryId: string, webAppUrl: string) {
   return await telegramRequest("sendChatJoinRequestWebApp", {
     chat_join_request_query_id: chatJoinRequestQueryId,
@@ -3245,6 +3265,86 @@ async function handleOwnerSeriesCreate(req: Request) {
   }, 201);
 }
 
+async function handleOwnerSeriesMigrate(req: Request) {
+  const form = await req.formData().catch(() => null);
+  const body = form ? Object.fromEntries(form.entries()) : await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) {
+    return json(req, { error: access.error }, access.status);
+  }
+
+  const seriesId = String(body.series_id ?? body.id ?? "").trim();
+  if (!seriesId) {
+    return json(req, { error: "Informe o id da serie" }, 400);
+  }
+
+  const existingRow = await getSeriesById(seriesId);
+  if (!existingRow) {
+    return json(req, { error: "Serie nao encontrada" }, 404);
+  }
+
+  const fileId = extractTelegramFileId(existingRow as Record<string, unknown>);
+  if (!fileId) {
+    return json(req, { error: "Nao foi encontrado File_ID para migrar" }, 400);
+  }
+
+  const title = String((existingRow as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? body.title ?? "video");
+  const objectPath = getStorageObjectName(seriesId, "video", title || "video");
+
+  let migratedFile: File;
+  try {
+    migratedFile = await downloadTelegramFileAsVideo(fileId, title);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(
+      req,
+      {
+        error: message,
+        type: "internal_player_unavailable",
+        title,
+        reason: "Este video ainda nao pode ser migrado automaticamente para o player interno.",
+      },
+      422,
+    );
+  }
+
+  const uploaded = await uploadStorageObject(SERIES_VIDEO_BUCKET, objectPath, migratedFile);
+
+  const rowPayload: Record<string, unknown> = {
+    video_url: uploaded.publicUrl,
+    video_storage_path: uploaded.path,
+  };
+
+  await supabaseRestRequest(
+    `${SERIES_TABLE}?id=eq.${encodeURIComponent(seriesId)}`,
+    {
+      method: "PATCH",
+      headers: {
+        prefer: "return=representation",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(rowPayload),
+    },
+  );
+
+  const freshRow = await getSeriesById(seriesId);
+  const dashboard = await buildOwnerDashboardPayload(access.userId);
+
+  return json(req, {
+    ok: true,
+    series: serializeOwnerSeries((freshRow && typeof freshRow === "object" ? freshRow : existingRow) as Record<string, unknown>),
+    dashboard,
+    uploaded: {
+      bucket: SERIES_VIDEO_BUCKET,
+      path: uploaded.path,
+    },
+  });
+}
+
 async function handleOwnerSeriesDelete(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
@@ -3338,6 +3438,10 @@ Deno.serve(async (req) => {
 
     if (action === "owner-series-save") {
       return await handleOwnerSeriesCreate(req);
+    }
+
+    if (action === "owner-series-migrate") {
+      return await handleOwnerSeriesMigrate(req);
     }
 
     if (action === "owner-series-delete") {
