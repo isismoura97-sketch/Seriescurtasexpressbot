@@ -352,6 +352,67 @@ async function uploadStorageObject(bucket: string, objectPath: string, file: Fil
   };
 }
 
+function extractStorageObjectPathFromUrl(publicUrl: unknown, bucket: string) {
+  if (typeof publicUrl !== "string" || !publicUrl || !bucket) return "";
+
+  try {
+    const parsed = new URL(publicUrl);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    const publicIndex = parts.findIndex((part) => part === "public");
+    if (publicIndex === -1) return "";
+
+    const bucketIndex = publicIndex + 1;
+    if (parts[bucketIndex] !== bucket) return "";
+
+    return parts.slice(bucketIndex + 1).map((part) => decodeURIComponent(part)).join("/");
+  } catch {
+    return "";
+  }
+}
+
+async function deleteStorageObject(bucket: string, objectPath: string) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !bucket || !objectPath) {
+    return false;
+  }
+
+  const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${objectPath
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/")}`;
+
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Storage delete failed (${res.status})`);
+  }
+
+  return true;
+}
+
+async function deleteSeriesMediaAssets(row: Record<string, unknown>) {
+  const candidates = [
+    { bucket: SERIES_COVER_BUCKET, path: String(row.cover_storage_path ?? "").trim() || extractStorageObjectPathFromUrl(row.cover_url, SERIES_COVER_BUCKET) },
+    { bucket: SERIES_VIDEO_BUCKET, path: String(row.video_storage_path ?? "").trim() || extractStorageObjectPathFromUrl(row.video_url, SERIES_VIDEO_BUCKET) },
+    { bucket: SERIES_TRAILER_BUCKET, path: String(row.trailer_storage_path ?? "").trim() || extractStorageObjectPathFromUrl(row.trailer_url, SERIES_TRAILER_BUCKET) },
+  ].filter((entry) => Boolean(entry.path));
+
+  for (const entry of candidates) {
+    try {
+      await deleteStorageObject(entry.bucket, entry.path);
+    } catch {
+      // best effort; the row still gets removed
+    }
+  }
+}
+
 type CheckoutMethod = "mercado_pago_link" | "pix_qr" | "telegram_checkout";
 
 function normalizeCheckoutMethod(value: unknown): CheckoutMethod {
@@ -2863,6 +2924,47 @@ async function handleOwnerSeriesCreate(req: Request) {
   }, 201);
 }
 
+async function handleOwnerSeriesDelete(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) {
+    return json(req, { error: access.error }, access.status);
+  }
+
+  const seriesId = String(body.series_id ?? body.id ?? "").trim();
+  if (!seriesId) {
+    return json(req, { error: "Informe o id da serie" }, 400);
+  }
+
+  const existingRow = await getSeriesById(seriesId);
+  if (!existingRow) {
+    return json(req, { error: "Serie nao encontrada" }, 404);
+  }
+
+  await deleteSeriesMediaAssets(existingRow as Record<string, unknown>);
+
+  await supabaseRestRequest(
+    `${SERIES_TABLE}?id=eq.${encodeURIComponent(seriesId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        prefer: "return=representation",
+        "content-type": "application/json",
+      },
+    },
+  );
+
+  const dashboard = await buildOwnerDashboardPayload(access.userId);
+  return json(req, {
+    ok: true,
+    dashboard,
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(req) });
@@ -2915,6 +3017,10 @@ Deno.serve(async (req) => {
 
     if (action === "owner-series-save") {
       return await handleOwnerSeriesCreate(req);
+    }
+
+    if (action === "owner-series-delete") {
+      return await handleOwnerSeriesDelete(req);
     }
 
     if (action === "mercado-pago-webhook") {

@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260628-06';
+const BUILD_VERSION = '20260628-07';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 let tg = null;
@@ -65,6 +65,9 @@ let playerVideoEventsBound = false;
 let ownerSeriesCatalog = [];
 let ownerSeriesEditId = '';
 let ownerCoverPreviewObjectUrl = '';
+let ownerDashboardSnapshot = null;
+let ownerSeriesSearchTerm = '';
+let ownerSeriesFilterMode = 'all';
 
 // ==================== SHARED UTILITIES ====================
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
@@ -353,6 +356,10 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function escapeAttr(text) {
+    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function showToast(message, type = 'info') {
@@ -756,6 +763,248 @@ function setOwnerUploadStatus(message = '', type = '') {
     status.className = `owner-status ${type}`.trim();
 }
 
+function setOwnerSeriesSearchTerm(value = '') {
+    ownerSeriesSearchTerm = String(value || '');
+    if (ownerDashboardSnapshot) {
+        renderOwnerDashboard(ownerDashboardSnapshot);
+    }
+}
+
+function setOwnerSeriesFilterMode(mode = 'all') {
+    ownerSeriesFilterMode = mode || 'all';
+    if (ownerDashboardSnapshot) {
+        renderOwnerDashboard(ownerDashboardSnapshot);
+    }
+}
+
+function normalizeOwnerFilterText(value) {
+    return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+}
+
+function hasOwnerSeriesPlayback(serie) {
+    return Boolean(serie?.has_video_url || serie?.has_video_file_id);
+}
+
+function getOwnerSeriesFilterCounts(series = []) {
+    return {
+        all: series.length,
+        free: series.filter((item) => isFree(item)).length,
+        paid: series.filter((item) => !isFree(item)).length,
+        playable: series.filter((item) => hasOwnerSeriesPlayback(item)).length,
+        missing_video: series.filter((item) => !hasOwnerSeriesPlayback(item)).length,
+    };
+}
+
+function filterOwnerSeries(series = []) {
+    const term = normalizeOwnerFilterText(ownerSeriesSearchTerm);
+    return series.filter((serie) => {
+        const title = normalizeOwnerFilterText(serie?.title);
+        const description = normalizeOwnerFilterText(serie?.description);
+        const category = normalizeOwnerFilterText(serie?.category);
+
+        const matchesTerm = !term || title.includes(term) || description.includes(term) || category.includes(term);
+        if (!matchesTerm) return false;
+
+        switch (ownerSeriesFilterMode) {
+            case 'free':
+                return isFree(serie);
+            case 'paid':
+                return !isFree(serie);
+            case 'playable':
+                return hasOwnerSeriesPlayback(serie);
+            case 'missing_video':
+                return !hasOwnerSeriesPlayback(serie);
+            case 'all':
+            default:
+                return true;
+        }
+    });
+}
+
+function buildOwnerQuickUploadFormData(serie, fieldName, file) {
+    const formData = new FormData();
+    formData.set('init_data', tg?.initData || '');
+    formData.set('password', String(DOM.ownerPasswordInput?.value || ''));
+    formData.set('series_id', String(serie?.id || ''));
+    formData.set('title', String(serie?.title || ''));
+    formData.set('description', String(serie?.description || ''));
+    formData.set('category', String(serie?.category || 'Geral') || 'Geral');
+    formData.set('price', String(Number(serie?.price ?? 0) || 0));
+    formData.set('is_free', isFree(serie) ? '1' : '0');
+    formData.set(fieldName, file);
+    return formData;
+}
+
+async function submitOwnerQuickUpload(seriesId, fieldName, file) {
+    const serie = ownerSeriesCatalog.find((item) => sameId(item.id, seriesId));
+    if (!serie) {
+        showToast('Não encontrei a série para atualizar.', 'error');
+        return;
+    }
+    if (!(file instanceof File) || file.size <= 0) {
+        showToast('Selecione um arquivo válido.', 'error');
+        return;
+    }
+
+    const labels = {
+        cover_file: 'capa',
+        video_file: 'vídeo principal',
+        trailer_file: 'trailer',
+    };
+    const submitLabel = labels[fieldName] || 'arquivo';
+    const previousStatus = document.getElementById('ownerUploadStatus')?.textContent || '';
+
+    try {
+        setOwnerUploadStatus(`Enviando nova ${submitLabel} de "${serie.title || 'série'}"...`, '');
+        const payload = await requestOwnerSeriesSave(buildOwnerQuickUploadFormData(serie, fieldName, file));
+        const updated = payload?.series || null;
+        const dashboard = payload?.dashboard || null;
+
+        if (updated) {
+            allSeries = [updated, ...allSeries.filter((item) => !sameId(item.id, updated.id))];
+            refreshCatalog();
+            initHero();
+        }
+
+        if (dashboard) {
+            ownerDashboardSnapshot = dashboard;
+            renderOwnerDashboard(dashboard);
+        }
+
+        setOwnerUploadStatus(`Nova ${submitLabel} aplicada com sucesso.`, 'success');
+        showToast(`Nova ${submitLabel} aplicada com sucesso!`, 'success');
+    } catch (error) {
+        setOwnerUploadStatus(error.message || `Não foi possível trocar a ${submitLabel}.`, 'error');
+        showToast(error.message || `Falha ao trocar a ${submitLabel}.`, 'error');
+    } finally {
+        if (!document.getElementById('ownerUploadStatus')?.textContent) {
+            setOwnerUploadStatus(previousStatus, '');
+        }
+    }
+}
+
+function requestOwnerSeriesDelete(seriesId) {
+    return requestJson(`${API_URL}?action=owner-series-delete`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        series_id: seriesId,
+    }, 20000);
+}
+
+async function deleteOwnerSeries(seriesId) {
+    const serie = ownerSeriesCatalog.find((item) => sameId(item.id, seriesId));
+    if (!serie) {
+        showToast('Não encontrei a série para excluir.', 'error');
+        return;
+    }
+
+    const confirmed = window.confirm(`Excluir "${serie.title || 'esta série'}"? Esta ação não pode ser desfeita.`);
+    if (!confirmed) return;
+
+    try {
+        setOwnerUploadStatus(`Excluindo "${serie.title || 'série'}"...`, '');
+        const payload = await requestOwnerSeriesDelete(seriesId);
+        const dashboard = payload?.dashboard || null;
+
+        allSeries = allSeries.filter((item) => !sameId(item.id, seriesId));
+        refreshCatalog();
+        initHero();
+
+        if (sameId(ownerSeriesEditId, seriesId)) {
+            ownerSeriesEditId = '';
+        }
+
+        if (dashboard) {
+            ownerDashboardSnapshot = dashboard;
+            renderOwnerDashboard(dashboard);
+        }
+        showToast('Série excluída com sucesso.', 'success');
+        setOwnerUploadStatus('Série excluída com sucesso.', 'success');
+    } catch (error) {
+        setOwnerUploadStatus(error.message || 'Não foi possível excluir a série.', 'error');
+        showToast(error.message || 'Falha ao excluir a série.', 'error');
+    }
+}
+
+function restoreOwnerSeriesEditorState() {
+    if (!ownerSeriesEditId) {
+        resetOwnerSeriesEditor();
+        return;
+    }
+
+    const serie = ownerSeriesCatalog.find((item) => sameId(item.id, ownerSeriesEditId));
+    if (!serie) {
+        resetOwnerSeriesEditor();
+        return;
+    }
+
+    updateOwnerFormMode(serie);
+}
+
+function wireOwnerDashboardControls() {
+    const searchInput = document.getElementById('ownerSeriesSearchInput');
+    if (searchInput instanceof HTMLInputElement) {
+        searchInput.value = ownerSeriesSearchTerm;
+        searchInput.oninput = () => setOwnerSeriesSearchTerm(searchInput.value);
+    }
+
+    const filterButtons = document.querySelectorAll('[data-owner-filter-mode]');
+    filterButtons.forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.onclick = () => setOwnerSeriesFilterMode(button.dataset.ownerFilterMode || 'all');
+    });
+
+    const quickActionButtons = document.querySelectorAll('[data-owner-quick-action]');
+    quickActionButtons.forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.onclick = () => {
+            const action = button.dataset.ownerQuickAction || '';
+            const seriesId = button.dataset.ownerSeriesId || '';
+            const input = document.getElementById(`ownerQuick${action[0]?.toUpperCase() ?? ''}${action.slice(1)}Input`);
+            if (input instanceof HTMLInputElement) {
+                input.dataset.seriesId = seriesId;
+                input.value = '';
+                input.click();
+            }
+        };
+    });
+
+    const quickFileInputs = [
+        { id: 'ownerQuickCoverInput', field: 'cover_file' },
+        { id: 'ownerQuickVideoInput', field: 'video_file' },
+        { id: 'ownerQuickTrailerInput', field: 'trailer_file' },
+    ];
+
+    quickFileInputs.forEach(({ id, field }) => {
+        const input = document.getElementById(id);
+        if (!(input instanceof HTMLInputElement)) return;
+        input.onchange = async () => {
+            const file = input.files?.[0] || null;
+            const seriesId = String(input.dataset.seriesId || '');
+            input.value = '';
+            if (!seriesId) return;
+            await submitOwnerQuickUpload(seriesId, field, file);
+        };
+    });
+
+    const editButtons = document.querySelectorAll('[data-owner-edit-id]');
+    editButtons.forEach((button) => {
+        if (button instanceof HTMLButtonElement) {
+            button.onclick = () => openOwnerSeriesEditor(button.dataset.ownerEditId || '');
+        }
+    });
+
+    const deleteButtons = document.querySelectorAll('[data-owner-delete-id]');
+    deleteButtons.forEach((button) => {
+        if (button instanceof HTMLButtonElement) {
+            button.onclick = () => deleteOwnerSeries(button.dataset.ownerDeleteId || '');
+        }
+    });
+}
+
 function releaseOwnerCoverPreviewObjectUrl() {
     if (ownerCoverPreviewObjectUrl) {
         URL.revokeObjectURL(ownerCoverPreviewObjectUrl);
@@ -870,6 +1119,7 @@ function updateOwnerFormMode(serie = null) {
         trailerInput.required = false;
     }
 
+    releaseOwnerCoverPreviewObjectUrl();
     setOwnerCoverPreview(editing ? getCoverUrl(serie) : PLACEHOLDER_IMAGE, editing ? 'Capa atual da série' : 'Pré-visualização da capa');
     if (form) {
         form.dataset.mode = editing ? 'edit' : 'create';
@@ -999,13 +1249,18 @@ function formatOwnerCurrency(value) {
 function renderOwnerDashboard(data) {
     if (!DOM.ownerDashboard) return;
 
+    ownerDashboardSnapshot = data;
     const catalog = data?.catalog || {};
     const payments = data?.payments || {};
     const seriesItems = Array.isArray(data?.series_items) ? data.series_items : [];
-    const recentSeries = seriesItems.length ? seriesItems : (Array.isArray(data?.recent_series) ? data.recent_series : []);
+    const recentSeries = Array.isArray(data?.recent_series) ? data.recent_series : [];
+    const catalogSeries = seriesItems.length ? seriesItems : recentSeries;
     const statusCounts = payments.status_counts || {};
     const recentOrders = Array.isArray(payments.recent_orders) ? payments.recent_orders : [];
-    ownerSeriesCatalog = recentSeries;
+    ownerSeriesCatalog = catalogSeries;
+    const visibleSeries = filterOwnerSeries(ownerSeriesCatalog);
+    const filterCounts = getOwnerSeriesFilterCounts(ownerSeriesCatalog);
+    const visibleSeriesLabel = `${visibleSeries.length} de ${ownerSeriesCatalog.length}`;
 
     const statusRows = Object.entries(statusCounts)
         .map(([status, count]) => `
@@ -1025,14 +1280,14 @@ function renderOwnerDashboard(data) {
         `)
         .join('') || '<div class="owner-list-row"><span>Nenhum pedido recente</span><strong>-</strong></div>';
 
-    const recentSeriesRows = recentSeries
+    const recentSeriesRows = visibleSeries
         .map((serie) => {
             const trailerLabel = serie.has_trailer ? 'Trailer' : 'Sem trailer';
             const videoLabel = serie.has_video_url || serie.has_video_file_id ? 'Vídeo OK' : 'Sem vídeo';
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
             const coverUrl = getCoverUrl(serie);
-            const editId = JSON.stringify(String(serie.id || ''));
+            const editId = String(serie.id || '');
             return `
                 <article class="owner-series-row">
                     <div class="owner-series-thumb-wrap">
@@ -1049,14 +1304,37 @@ function renderOwnerDashboard(data) {
                         <span class="owner-pill">${escapeHtml(trailerLabel)}</span>
                     </div>
                     <div class="owner-series-row-actions">
-                        <button type="button" class="btn btn-secondary owner-series-edit-btn" data-owner-edit-id=${editId}>
+                        <button type="button" class="btn btn-secondary owner-series-edit-btn" data-owner-edit-id="${escapeAttr(editId)}">
                             <i class="fas fa-pen-to-square"></i> Editar
+                        </button>
+                        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="cover" data-owner-series-id="${escapeAttr(editId)}">
+                            <i class="fas fa-image"></i> Trocar capa
+                        </button>
+                        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="video" data-owner-series-id="${escapeAttr(editId)}">
+                            <i class="fas fa-film"></i> Trocar vídeo
+                        </button>
+                        <button type="button" class="btn btn-danger owner-series-mini-btn" data-owner-delete-id="${escapeAttr(editId)}">
+                            <i class="fas fa-trash"></i> Excluir
                         </button>
                     </div>
                 </article>
             `;
         })
-        .join('') || '<div class="owner-list-row"><span>Nenhuma série cadastrada ainda</span><strong>-</strong></div>';
+        .join('') || '<div class="owner-list-row"><span>Nenhuma série encontrada com esses filtros</span><strong>-</strong></div>';
+
+    const toolbarFilters = [
+        { key: 'all', label: `Todas (${filterCounts.all})` },
+        { key: 'free', label: `Grátis (${filterCounts.free})` },
+        { key: 'paid', label: `Pagas (${filterCounts.paid})` },
+        { key: 'playable', label: `Com vídeo (${filterCounts.playable})` },
+        { key: 'missing_video', label: `Sem vídeo (${filterCounts.missing_video})` },
+    ];
+
+    const toolbarChips = toolbarFilters.map((filter) => `
+        <button type="button" class="owner-filter-chip ${ownerSeriesFilterMode === filter.key ? 'active' : ''}" data-owner-filter-mode="${escapeAttr(filter.key)}">
+            ${escapeHtml(filter.label)}
+        </button>
+    `).join('');
 
     DOM.ownerDashboard.innerHTML = `
         <section class="owner-hero-card">
@@ -1069,6 +1347,7 @@ function renderOwnerDashboard(data) {
                 <span class="owner-pill">1 vídeo principal por série</span>
                 <span class="owner-pill">Trailer opcional</span>
                 <span class="owner-pill">Upload no Supabase</span>
+                <span class="owner-pill">${escapeHtml(visibleSeriesLabel)} visíveis</span>
             </div>
             <div class="owner-kpi-grid">
                 <div class="owner-card">
@@ -1166,7 +1445,25 @@ function renderOwnerDashboard(data) {
                 </div>
             </div>
             <div class="owner-section owner-series-section">
-                <h3>Séries cadastradas</h3>
+                <div class="owner-section-head">
+                    <div>
+                        <h3>Séries cadastradas</h3>
+                        <p>Busque, filtre, troque capa/vídeo rapidamente ou abra o editor completo.</p>
+                    </div>
+                    <div class="owner-series-count">${escapeHtml(visibleSeriesLabel)} exibidas</div>
+                </div>
+                <div class="owner-series-toolbar">
+                    <label class="payment-field owner-series-search">
+                        <span>Buscar séries</span>
+                        <input type="search" id="ownerSeriesSearchInput" placeholder="Título, descrição ou categoria" value="${escapeAttr(ownerSeriesSearchTerm)}">
+                    </label>
+                    <div class="owner-series-filters" role="tablist" aria-label="Filtros do catálogo">
+                        ${toolbarChips}
+                    </div>
+                </div>
+                <input type="file" id="ownerQuickCoverInput" accept="image/*" hidden>
+                <input type="file" id="ownerQuickVideoInput" accept="video/*" hidden>
+                <input type="file" id="ownerQuickTrailerInput" accept="video/*" hidden>
                 <div class="owner-series-list">${recentSeriesRows}</div>
             </div>
             <div class="owner-section">
@@ -1177,15 +1474,8 @@ function renderOwnerDashboard(data) {
     `;
     DOM.ownerDashboard.hidden = false;
     wireOwnerUploadForm();
-    const editButtons = DOM.ownerDashboard.querySelectorAll('[data-owner-edit-id]');
-    editButtons.forEach((button) => {
-        if (button instanceof HTMLButtonElement) {
-            button.onclick = () => openOwnerSeriesEditor(button.dataset.ownerEditId || '');
-        }
-    });
-    if (!ownerSeriesEditId) {
-        resetOwnerSeriesEditor();
-    }
+    wireOwnerDashboardControls();
+    restoreOwnerSeriesEditorState();
 }
 
 async function submitOwnerLogin(event) {
@@ -1253,6 +1543,7 @@ async function submitOwnerSeriesUpload(event) {
 
         if (dashboard) {
             ownerSeriesEditId = '';
+            ownerDashboardSnapshot = dashboard;
             renderOwnerDashboard(dashboard);
         }
 
