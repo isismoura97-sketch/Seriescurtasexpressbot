@@ -2585,11 +2585,17 @@ async function getSeriesList(userId = "", includeProtected = false) {
     const episodeData = buildEpisodeAugmentation(episodes, seriesId);
     const free = isSeriesFree(row);
     const hasAccess = includeProtected || free || accessibleIds.has(seriesId);
+    const hasVideoUrl = Boolean(extractDirectUrl(row));
+    const hasVideoFileId = Boolean(extractTelegramFileId(row));
+    const hasEpisodePlayback = Number(episodeData.playable_episode_count ?? 0) > 0;
     const output: Record<string, unknown> = {
       ...row,
       ...episodeData,
       is_free: free,
       has_access: hasAccess,
+      has_video_url: hasVideoUrl,
+      has_video_file_id: hasVideoFileId,
+      has_playback: hasVideoUrl || hasVideoFileId || hasEpisodePlayback,
     };
 
     if (!hasAccess) {

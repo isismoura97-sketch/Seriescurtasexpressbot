@@ -82,8 +82,19 @@ function hasSeriesAccess(serie) {
     return isFree(serie) || serie?.has_access === true;
 }
 
+function hasKnownPlayback(serie) {
+    return Boolean(
+        serie?.has_playback ||
+        serie?.has_video_url ||
+        serie?.has_video_file_id ||
+        hasDirectPlaybackUrl(serie) ||
+        getTelegramFileId(serie) ||
+        Number(serie?.playable_episode_count || 0) > 0
+    );
+}
+
 function isPlaybackLocked(serie) {
-    return Boolean(serie && !hasSeriesAccess(serie) && !isFree(serie));
+    return Boolean(serie && !hasSeriesAccess(serie) && !isFree(serie) && hasKnownPlayback(serie));
 }
 
 function normalizeId(value) {
