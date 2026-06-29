@@ -374,7 +374,14 @@ async function main() {
       modalAction: document.querySelector('#modalActions button')?.textContent?.trim(),
     }));
     await page.locator('#modalActions button').click();
-    await page.locator('#cartBtn').click();
+    await page.waitForFunction(() => (
+      document.querySelector('#cartDrawer')?.classList.contains('active')
+      || !document.querySelector('#modalOverlay')?.classList.contains('active')
+    ), null, { timeout: 10000 });
+    const cartAlreadyOpen = await page.evaluate(() => document.querySelector('#cartDrawer')?.classList.contains('active'));
+    if (!cartAlreadyOpen) {
+      await page.locator('#cartBtn').click();
+    }
     await page.fill('#buyerEmailInput', 'teste@example.com');
     await page.locator('#checkoutBtn').click();
     await page.waitForFunction(() => {
@@ -413,7 +420,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260628-05')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260628-07')) failures.push('cache version not updated');
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError) failures.push('direct player failed');
     if (fallbackBeforeClick.title !== 'Abra no Telegram') failures.push('fallback title failed');
     if (!fallbackAfterClick.sent.includes('TG_FALLBACK')) failures.push('fallback telegram send failed');
