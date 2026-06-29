@@ -2685,6 +2685,7 @@ async function buildOwnerDashboardPayload(userId: string) {
         confirmed_at: row.confirmed_at ?? null,
       })),
     },
+    series_items: sortedSeries.map((row) => serializeOwnerSeries(row)),
     recent_series: sortedSeries.slice(0, 8).map((row) => serializeOwnerSeries(row)),
   };
 }
@@ -2746,10 +2747,12 @@ async function handleOwnerSeriesCreate(req: Request) {
   const description = String(form.get("description") ?? "").trim();
   const category = String(form.get("category") ?? "Geral").trim() || "Geral";
   const forceFree = isTruthyInput(form.get("is_free"));
-  const price = normalizeOwnerPrice(form.get("price"), forceFree);
+  const seriesIdInput = String(form.get("series_id") ?? form.get("id") ?? "").trim();
   const cover = form.get("cover_file");
   const video = form.get("video_file");
   const trailer = form.get("trailer_file");
+  const existingRow = seriesIdInput ? await getSeriesById(seriesIdInput) : null;
+  const isEdit = Boolean(existingRow);
 
   if (!title) {
     return json(req, { error: "Informe o título da série" }, 400);
@@ -2760,28 +2763,64 @@ async function handleOwnerSeriesCreate(req: Request) {
   }
 
   if (!(cover instanceof File)) {
-    return json(req, { error: "Envie a imagem de capa" }, 400);
+    if (!existingRow) {
+      return json(req, { error: "Envie a imagem de capa" }, 400);
+    }
   }
 
   if (!(video instanceof File)) {
-    return json(req, { error: "Envie o vídeo completo da série" }, 400);
+    if (!existingRow) {
+      return json(req, { error: "Envie o vídeo principal da série" }, 400);
+    }
   }
 
-  if (!forceFree && price <= 0) {
+  const existingPrice = Number(existingRow?.price ?? 0) || 0;
+  const priceInput = String(form.get("price") ?? "").trim();
+  const normalizedPrice = priceInput === "" ? existingPrice : normalizeOwnerPrice(priceInput, forceFree);
+  const price = forceFree ? 0 : normalizedPrice;
+
+  if (!forceFree && price <= 0 && !isEdit) {
     return json(req, { error: "Informe um valor maior que zero para a série paga" }, 400);
   }
 
-  const seriesId = String(form.get("id") ?? "").trim() || crypto.randomUUID();
-  const coverObjectPath = getStorageObjectName(seriesId, "cover", cover.name || "cover");
-  const videoObjectPath = getStorageObjectName(seriesId, "video", video.name || "video");
+  const seriesId = seriesIdInput || String(existingRow?.id ?? "").trim() || crypto.randomUUID();
+  const coverObjectPath = cover instanceof File && cover.size > 0 ? getStorageObjectName(seriesId, "cover", cover.name || "cover") : "";
+  const videoObjectPath = video instanceof File && video.size > 0 ? getStorageObjectName(seriesId, "video", video.name || "video") : "";
   const trailerFile = trailer instanceof File && trailer.size > 0 ? trailer : null;
   const trailerObjectPath = trailerFile ? getStorageObjectName(seriesId, "trailer", trailerFile.name || "trailer") : "";
 
   const [coverUpload, videoUpload, trailerUpload] = await Promise.all([
-    uploadStorageObject(SERIES_COVER_BUCKET, coverObjectPath, cover),
-    uploadStorageObject(SERIES_VIDEO_BUCKET, videoObjectPath, video),
+    cover instanceof File && cover.size > 0
+      ? uploadStorageObject(SERIES_COVER_BUCKET, coverObjectPath, cover)
+      : Promise.resolve(null),
+    video instanceof File && video.size > 0
+      ? uploadStorageObject(SERIES_VIDEO_BUCKET, videoObjectPath, video)
+      : Promise.resolve(null),
     trailerFile ? uploadStorageObject(SERIES_TRAILER_BUCKET, trailerObjectPath, trailerFile) : Promise.resolve(null),
   ]);
+
+  const coverUrl = coverUpload?.publicUrl
+    || String(existingRow?.cover_url ?? "").trim()
+    || null;
+  const coverPath = coverUpload?.path
+    || String(existingRow?.cover_storage_path ?? "").trim()
+    || null;
+  const videoUrl = videoUpload?.publicUrl
+    || String(existingRow?.video_url ?? "").trim()
+    || null;
+  const videoPath = videoUpload?.path
+    || String(existingRow?.video_storage_path ?? "").trim()
+    || null;
+  const trailerUrl = trailerUpload?.publicUrl
+    || String(existingRow?.trailer_url ?? "").trim()
+    || null;
+  const trailerPath = trailerUpload?.path
+    || String(existingRow?.trailer_storage_path ?? "").trim()
+    || null;
+
+  if (!coverUrl || !videoUrl) {
+    return json(req, { error: "A série precisa de capa e vídeo principal" }, 400);
+  }
 
   const rowPayload: Record<string, unknown> = {
     id: seriesId,
@@ -2789,32 +2828,37 @@ async function handleOwnerSeriesCreate(req: Request) {
     description,
     category,
     price,
-    cover_url: coverUpload.publicUrl,
-    cover_storage_path: coverUpload.path,
-    video_url: videoUpload.publicUrl,
-    video_storage_path: videoUpload.path,
-    trailer_url: trailerUpload?.publicUrl ?? null,
-    trailer_storage_path: trailerUpload?.path ?? null,
+    cover_url: coverUrl,
+    cover_storage_path: coverPath,
+    video_url: videoUrl,
+    video_storage_path: videoPath,
+    trailer_url: trailerUrl,
+    trailer_storage_path: trailerPath,
   };
 
-  const inserted = await supabaseRestRequest(SERIES_TABLE, {
-    method: "POST",
-    headers: {
-      prefer: "return=representation",
-      "content-type": "application/json",
+  const saved = await supabaseRestRequest(
+    isEdit ? `${SERIES_TABLE}?id=eq.${encodeURIComponent(seriesId)}` : SERIES_TABLE,
+    {
+      method: isEdit ? "PATCH" : "POST",
+      headers: {
+        prefer: "return=representation",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(isEdit ? rowPayload : [rowPayload]),
     },
-    body: JSON.stringify([rowPayload]),
-  }) as Record<string, unknown>[] | Record<string, unknown>;
+  ) as Record<string, unknown>[] | Record<string, unknown>;
 
-  const seriesRow = Array.isArray(inserted) ? inserted[0] : inserted;
-  if (!seriesRow || typeof seriesRow !== "object") {
+  const savedRow = Array.isArray(saved) ? saved[0] : saved;
+  const freshRow = await getSeriesById(seriesId);
+  const finalRow = freshRow && typeof freshRow === "object" ? freshRow : savedRow;
+  if (!finalRow || typeof finalRow !== "object") {
     return json(req, { error: "Não foi possível registrar a série" }, 500);
   }
 
   const dashboard = await buildOwnerDashboardPayload(access.userId);
   return json(req, {
     ok: true,
-    series: serializeOwnerSeries(seriesRow as Record<string, unknown>),
+    series: serializeOwnerSeries(finalRow as Record<string, unknown>),
     dashboard,
   }, 201);
 }

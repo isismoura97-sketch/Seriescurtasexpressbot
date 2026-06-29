@@ -1754,6 +1754,62 @@ body.light-mode .cart-item {
     margin-bottom: 12px;
 }
 
+.owner-form-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: flex-start;
+    margin-bottom: 14px;
+}
+
+.owner-form-head h3 {
+    margin: 6px 0 8px;
+    color: var(--text-main);
+    font-size: clamp(1.2rem, 3vw, 1.75rem);
+}
+
+.owner-form-head p {
+    color: var(--text-dim);
+    margin: 0;
+    max-width: 58ch;
+}
+
+.owner-cover-preview {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 14px;
+    align-items: center;
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,215,0,0.12);
+    background: rgba(255,255,255,0.04);
+}
+
+.owner-cover-preview img {
+    width: 120px;
+    height: 160px;
+    object-fit: cover;
+    border-radius: 14px;
+    border: 1px solid rgba(255,215,0,0.16);
+    background: rgba(255,255,255,0.05);
+}
+
+.owner-cover-preview-copy {
+    display: grid;
+    gap: 6px;
+}
+
+.owner-cover-preview-copy strong {
+    color: var(--text-main);
+    font-size: 16px;
+}
+
+.owner-cover-preview-copy span {
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
 .owner-list {
     display: grid;
     gap: 8px;
@@ -1876,6 +1932,15 @@ body.light-mode .cart-item {
     margin: 0;
     color: var(--text-dim);
     line-height: 1.5;
+}
+
+.owner-series-row-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.owner-series-edit-btn {
+    white-space: nowrap;
 }
 
 .owner-series-row-tags {
@@ -2004,7 +2069,8 @@ body.light-mode .cart-item {
     .owner-upload-grid,
     .owner-kpi-grid,
     .owner-dashboard-grid,
-    .owner-series-row {
+    .owner-series-row,
+    .owner-cover-preview {
         grid-template-columns: 1fr;
     }
 
@@ -2013,6 +2079,16 @@ body.light-mode .cart-item {
     }
 
     .owner-series-thumb-wrap {
+        width: 100%;
+        max-width: 180px;
+        height: 140px;
+    }
+
+    .owner-form-head {
+        flex-direction: column;
+    }
+
+    .owner-cover-preview img {
         width: 100%;
         max-width: 180px;
         height: 140px;

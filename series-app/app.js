@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260628-05';
+const BUILD_VERSION = '20260628-06';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 let tg = null;
@@ -62,11 +62,15 @@ let currentHeroIndex = 0;
 let heroInterval = null;
 let playerRetryData = null;
 let playerVideoEventsBound = false;
+let ownerSeriesCatalog = [];
+let ownerSeriesEditId = '';
+let ownerCoverPreviewObjectUrl = '';
 
 // ==================== SHARED UTILITIES ====================
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
 
 function isFree(serie) {
+    if (!serie) return false;
     const price = Number(serie.price);
     return price === 0 || serie.price === null || serie.price === undefined;
 }
@@ -752,6 +756,145 @@ function setOwnerUploadStatus(message = '', type = '') {
     status.className = `owner-status ${type}`.trim();
 }
 
+function releaseOwnerCoverPreviewObjectUrl() {
+    if (ownerCoverPreviewObjectUrl) {
+        URL.revokeObjectURL(ownerCoverPreviewObjectUrl);
+        ownerCoverPreviewObjectUrl = '';
+    }
+}
+
+function getOwnerCoverPreviewImage() {
+    return document.getElementById('ownerCoverPreviewImage');
+}
+
+function getOwnerCoverPreviewCaption() {
+    return document.getElementById('ownerCoverPreviewCaption');
+}
+
+function setOwnerCoverPreview(source = '', caption = 'Pré-visualização da capa') {
+    const img = getOwnerCoverPreviewImage();
+    const text = getOwnerCoverPreviewCaption();
+    if (img instanceof HTMLImageElement) {
+        img.onerror = () => {
+            img.onerror = null;
+            img.src = PLACEHOLDER_IMAGE;
+        };
+        img.src = source || PLACEHOLDER_IMAGE;
+    }
+    if (text) {
+        text.textContent = caption;
+    }
+}
+
+function syncOwnerCoverPreviewFromFile(file) {
+    releaseOwnerCoverPreviewObjectUrl();
+
+    if (file instanceof File && file.size > 0) {
+        ownerCoverPreviewObjectUrl = URL.createObjectURL(file);
+        setOwnerCoverPreview(ownerCoverPreviewObjectUrl, file.name || 'Nova capa');
+        return;
+    }
+
+    const currentPreview = ownerSeriesEditId ? getCoverUrl(ownerSeriesCatalog.find((serie) => sameId(serie.id, ownerSeriesEditId))) : '';
+    setOwnerCoverPreview(currentPreview || PLACEHOLDER_IMAGE, ownerSeriesEditId ? 'Capa atual da série' : 'Pré-visualização da capa');
+}
+
+function updateOwnerFormMode(serie = null) {
+    ownerSeriesEditId = serie?.id ? String(serie.id) : '';
+
+    const form = document.getElementById('ownerSeriesForm');
+    const formTitle = document.getElementById('ownerFormTitle');
+    const formSubtitle = document.getElementById('ownerFormSubtitle');
+    const formBadge = document.getElementById('ownerFormBadge');
+    const cancelBtn = document.getElementById('ownerFormCancelBtn');
+    const submitBtn = document.getElementById('ownerSeriesSubmitBtn');
+    const seriesIdInput = document.getElementById('ownerSeriesId');
+    const coverInput = document.querySelector('input[name="cover_file"]');
+    const videoInput = document.querySelector('input[name="video_file"]');
+    const trailerInput = document.querySelector('input[name="trailer_file"]');
+    const titleInput = document.querySelector('input[name="title"]');
+    const categoryInput = document.querySelector('input[name="category"]');
+    const descriptionInput = document.querySelector('textarea[name="description"]');
+    const freeToggle = document.getElementById('ownerSeriesFree');
+    const priceInput = document.getElementById('ownerSeriesPrice');
+
+    if (seriesIdInput) {
+        seriesIdInput.value = ownerSeriesEditId;
+    }
+
+    const editing = Boolean(serie);
+    if (formTitle) {
+        formTitle.textContent = editing ? `Editar série: ${serie.title || 'Sem título'}` : 'Nova série em vídeo único';
+    }
+    if (formSubtitle) {
+        formSubtitle.textContent = editing
+            ? 'Ajuste texto, preço, capa ou vídeo principal e salve por cima da série já publicada.'
+            : 'Crie uma nova série com um vídeo principal único. O trailer continua opcional.';
+    }
+    if (formBadge) {
+        formBadge.textContent = editing ? 'Modo de edição' : 'Novo cadastro';
+    }
+    if (cancelBtn instanceof HTMLButtonElement) {
+        cancelBtn.hidden = !editing;
+    }
+    if (submitBtn instanceof HTMLButtonElement) {
+        submitBtn.innerHTML = editing
+            ? '<i class="fas fa-floppy-disk"></i> Salvar alterações'
+            : '<i class="fas fa-cloud-arrow-up"></i> Publicar série';
+    }
+
+    if (titleInput instanceof HTMLInputElement) {
+        titleInput.value = serie?.title || '';
+    }
+    if (categoryInput instanceof HTMLInputElement) {
+        categoryInput.value = serie?.category || 'Geral';
+    }
+    if (descriptionInput instanceof HTMLTextAreaElement) {
+        descriptionInput.value = serie?.description || '';
+    }
+    if (freeToggle instanceof HTMLInputElement) {
+        freeToggle.checked = isFree(serie);
+    }
+    if (priceInput instanceof HTMLInputElement) {
+        priceInput.value = editing ? String(Number(serie?.price ?? 0) || 0) : '0';
+        priceInput.disabled = Boolean(freeToggle?.checked);
+        priceInput.required = !Boolean(freeToggle?.checked);
+    }
+    if (coverInput instanceof HTMLInputElement) {
+        coverInput.required = !editing;
+    }
+    if (videoInput instanceof HTMLInputElement) {
+        videoInput.required = !editing;
+    }
+    if (trailerInput instanceof HTMLInputElement) {
+        trailerInput.required = false;
+    }
+
+    setOwnerCoverPreview(editing ? getCoverUrl(serie) : PLACEHOLDER_IMAGE, editing ? 'Capa atual da série' : 'Pré-visualização da capa');
+    if (form) {
+        form.dataset.mode = editing ? 'edit' : 'create';
+    }
+}
+
+function openOwnerSeriesEditor(seriesId) {
+    const serie = ownerSeriesCatalog.find((item) => sameId(item.id, seriesId));
+    if (!serie) {
+        showToast('Não encontrei essa série para edição.', 'error');
+        return;
+    }
+
+    updateOwnerFormMode(serie);
+    setOwnerUploadStatus(`Editando ${serie.title || 'série selecionada'}.`, 'success');
+    DOM.ownerOverlay?.scrollTo?.({ top: 0, behavior: 'smooth' });
+    document.getElementById('ownerSeriesForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function resetOwnerSeriesEditor() {
+    releaseOwnerCoverPreviewObjectUrl();
+    updateOwnerFormMode(null);
+    setOwnerUploadStatus('Pronto para novo cadastro.', '');
+}
+
 function getTrailerUrl(serie) {
     if (!serie) return '';
 
@@ -780,6 +923,8 @@ function wireOwnerUploadForm() {
     const form = document.getElementById('ownerSeriesForm');
     const freeToggle = document.getElementById('ownerSeriesFree');
     const priceInput = document.getElementById('ownerSeriesPrice');
+    const coverInput = document.querySelector('input[name="cover_file"]');
+    const cancelBtn = document.getElementById('ownerFormCancelBtn');
 
     if (freeToggle && priceInput) {
         const syncPriceState = () => {
@@ -793,6 +938,34 @@ function wireOwnerUploadForm() {
 
         freeToggle.onchange = syncPriceState;
         syncPriceState();
+    }
+
+    if (coverInput instanceof HTMLInputElement) {
+        coverInput.onchange = () => {
+            const file = coverInput.files?.[0] || null;
+            syncOwnerCoverPreviewFromFile(file);
+        };
+    }
+
+    if (cancelBtn instanceof HTMLButtonElement) {
+        cancelBtn.onclick = () => {
+            if (form instanceof HTMLFormElement) {
+                form.reset();
+            }
+            resetOwnerSeriesEditor();
+            const coverInputElement = document.querySelector('input[name="cover_file"]');
+            if (coverInputElement instanceof HTMLInputElement) {
+                coverInputElement.value = '';
+            }
+            const videoInput = document.querySelector('input[name="video_file"]');
+            if (videoInput instanceof HTMLInputElement) {
+                videoInput.value = '';
+            }
+            const trailerInput = document.querySelector('input[name="trailer_file"]');
+            if (trailerInput instanceof HTMLInputElement) {
+                trailerInput.value = '';
+            }
+        };
     }
 
     if (form) {
@@ -828,9 +1001,11 @@ function renderOwnerDashboard(data) {
 
     const catalog = data?.catalog || {};
     const payments = data?.payments || {};
-    const recentSeries = Array.isArray(data?.recent_series) ? data.recent_series : [];
+    const seriesItems = Array.isArray(data?.series_items) ? data.series_items : [];
+    const recentSeries = seriesItems.length ? seriesItems : (Array.isArray(data?.recent_series) ? data.recent_series : []);
     const statusCounts = payments.status_counts || {};
     const recentOrders = Array.isArray(payments.recent_orders) ? payments.recent_orders : [];
+    ownerSeriesCatalog = recentSeries;
 
     const statusRows = Object.entries(statusCounts)
         .map(([status, count]) => `
@@ -857,10 +1032,11 @@ function renderOwnerDashboard(data) {
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
             const coverUrl = getCoverUrl(serie);
+            const editId = JSON.stringify(String(serie.id || ''));
             return `
                 <article class="owner-series-row">
                     <div class="owner-series-thumb-wrap">
-                        <img class="owner-series-thumb" src="${escapeHtml(coverUrl)}" alt="${escapeHtml(serie.title || 'Capa da série')}" loading="lazy" onerror=${JSON.stringify(`this.src=${JSON.stringify(PLACEHOLDER_IMAGE)}`)}>
+                        <img class="owner-series-thumb" src="${escapeHtml(coverUrl)}" alt="${escapeHtml(serie.title || 'Capa da série')}" loading="lazy" onerror="${escapeHtml(`this.src=${JSON.stringify(PLACEHOLDER_IMAGE)}`)}">
                     </div>
                     <div class="owner-series-row-main">
                         <strong>${escapeHtml(serie.title || 'Sem título')}</strong>
@@ -871,6 +1047,11 @@ function renderOwnerDashboard(data) {
                         <span class="owner-pill">${escapeHtml(coverLabel)}</span>
                         <span class="owner-pill">${escapeHtml(videoLabel)}</span>
                         <span class="owner-pill">${escapeHtml(trailerLabel)}</span>
+                    </div>
+                    <div class="owner-series-row-actions">
+                        <button type="button" class="btn btn-secondary owner-series-edit-btn" data-owner-edit-id=${editId}>
+                            <i class="fas fa-pen-to-square"></i> Editar
+                        </button>
                     </div>
                 </article>
             `;
@@ -906,50 +1087,67 @@ function renderOwnerDashboard(data) {
         </section>
         <div class="owner-dashboard-grid">
             <div class="owner-section owner-section-featured">
-                <h3>Nova série em vídeo único</h3>
-            <form class="owner-upload-form" id="ownerSeriesForm" enctype="multipart/form-data">
-                <div class="owner-upload-grid">
-                    <label class="payment-field">
-                        <span>Título</span>
-                        <input type="text" name="title" placeholder="Nome da série" required>
-                    </label>
-                    <label class="payment-field">
-                        <span>Categoria</span>
-                        <input type="text" name="category" placeholder="Romance, Drama..." value="Geral" required>
-                    </label>
-                    <label class="payment-field owner-upload-span-2">
-                        <span>Descrição</span>
-                        <textarea name="description" rows="4" placeholder="Descreva a série" required></textarea>
-                    </label>
-                    <label class="owner-upload-toggle">
-                        <input type="checkbox" name="is_free" id="ownerSeriesFree">
-                        <span>Marcar como série gratuita</span>
-                    </label>
-                    <label class="payment-field">
-                        <span>Preço</span>
-                        <input type="number" name="price" id="ownerSeriesPrice" min="0" step="0.01" placeholder="0,00" value="0">
-                    </label>
-                    <label class="payment-field">
-                        <span>Capa</span>
-                        <input type="file" name="cover_file" accept="image/*" required>
-                    </label>
-                    <label class="payment-field">
-                        <span>Trailer opcional</span>
-                        <input type="file" name="trailer_file" accept="video/*">
-                    </label>
-                    <label class="payment-field">
-                        <span>Vídeo principal da série</span>
-                        <input type="file" name="video_file" accept="video/*" required>
-                    </label>
-                </div>
-                <div class="owner-upload-actions">
-                    <button class="btn btn-primary" type="submit">
-                        <i class="fas fa-cloud-arrow-up"></i> Publicar série
+                <div class="owner-form-head">
+                    <div>
+                        <span class="owner-eyebrow" id="ownerFormBadge">Novo cadastro</span>
+                        <h3 id="ownerFormTitle">Nova série em vídeo único</h3>
+                        <p id="ownerFormSubtitle">Crie uma nova série com um vídeo principal único. O trailer continua opcional.</p>
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="ownerFormCancelBtn" hidden>
+                        <i class="fas fa-arrow-rotate-left"></i> Cancelar edição
                     </button>
-                    <p class="owner-upload-note">Envie apenas um vídeo principal por série. O trailer é opcional e pode ser deixado em branco.</p>
                 </div>
-                <div class="owner-status" id="ownerUploadStatus"></div>
-            </form>
+                <form class="owner-upload-form" id="ownerSeriesForm" enctype="multipart/form-data" data-mode="create">
+                    <input type="hidden" name="series_id" id="ownerSeriesId" value="">
+                    <div class="owner-cover-preview">
+                        <img id="ownerCoverPreviewImage" src="${PLACEHOLDER_IMAGE}" alt="Pré-visualização da capa">
+                        <div class="owner-cover-preview-copy">
+                            <strong>Pré-visualização da capa</strong>
+                            <span id="ownerCoverPreviewCaption">Use a imagem da série para ver antes de salvar.</span>
+                        </div>
+                    </div>
+                    <div class="owner-upload-grid">
+                        <label class="payment-field">
+                            <span>Título</span>
+                            <input type="text" name="title" placeholder="Nome da série" required>
+                        </label>
+                        <label class="payment-field">
+                            <span>Categoria</span>
+                            <input type="text" name="category" placeholder="Romance, Drama..." value="Geral" required>
+                        </label>
+                        <label class="payment-field owner-upload-span-2">
+                            <span>Descrição</span>
+                            <textarea name="description" rows="4" placeholder="Descreva a série" required></textarea>
+                        </label>
+                        <label class="owner-upload-toggle">
+                            <input type="checkbox" name="is_free" id="ownerSeriesFree">
+                            <span>Marcar como série gratuita</span>
+                        </label>
+                        <label class="payment-field">
+                            <span>Preço</span>
+                            <input type="number" name="price" id="ownerSeriesPrice" min="0" step="0.01" placeholder="0,00" value="0">
+                        </label>
+                        <label class="payment-field">
+                            <span>Capa</span>
+                            <input type="file" name="cover_file" accept="image/*" required>
+                        </label>
+                        <label class="payment-field">
+                            <span>Trailer opcional</span>
+                            <input type="file" name="trailer_file" accept="video/*">
+                        </label>
+                        <label class="payment-field">
+                            <span>Vídeo principal da série</span>
+                            <input type="file" name="video_file" accept="video/*" required>
+                        </label>
+                    </div>
+                    <div class="owner-upload-actions">
+                        <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
+                            <i class="fas fa-cloud-arrow-up"></i> Publicar série
+                        </button>
+                        <p class="owner-upload-note">Envie apenas um vídeo principal por série. O trailer é opcional e pode ser deixado em branco.</p>
+                    </div>
+                    <div class="owner-status" id="ownerUploadStatus"></div>
+                </form>
             </div>
             <div class="owner-section">
                 <h3>Saúde do Catálogo</h3>
@@ -968,7 +1166,7 @@ function renderOwnerDashboard(data) {
                 </div>
             </div>
             <div class="owner-section owner-series-section">
-                <h3>Séries recentes</h3>
+                <h3>Séries cadastradas</h3>
                 <div class="owner-series-list">${recentSeriesRows}</div>
             </div>
             <div class="owner-section">
@@ -979,6 +1177,15 @@ function renderOwnerDashboard(data) {
     `;
     DOM.ownerDashboard.hidden = false;
     wireOwnerUploadForm();
+    const editButtons = DOM.ownerDashboard.querySelectorAll('[data-owner-edit-id]');
+    editButtons.forEach((button) => {
+        if (button instanceof HTMLButtonElement) {
+            button.onclick = () => openOwnerSeriesEditor(button.dataset.ownerEditId || '');
+        }
+    });
+    if (!ownerSeriesEditId) {
+        resetOwnerSeriesEditor();
+    }
 }
 
 async function submitOwnerLogin(event) {
@@ -1022,6 +1229,7 @@ async function submitOwnerSeriesUpload(event) {
     const formData = new FormData(form);
     formData.set('init_data', tg?.initData || '');
     formData.set('password', String(DOM.ownerPasswordInput?.value || ''));
+    formData.set('series_id', ownerSeriesEditId || '');
 
     const submitButton = form.querySelector('button[type="submit"]');
     const previousLabel = submitButton?.innerHTML || '';
@@ -1044,6 +1252,7 @@ async function submitOwnerSeriesUpload(event) {
         }
 
         if (dashboard) {
+            ownerSeriesEditId = '';
             renderOwnerDashboard(dashboard);
         }
 
@@ -1953,5 +2162,7 @@ window.openModal = openModal;
 window.closeModal = closeModal;
 window.checkout = checkout;
 window.searchSeries = searchSeries;
+window.openOwnerSeriesEditor = openOwnerSeriesEditor;
+window.resetOwnerSeriesEditor = resetOwnerSeriesEditor;
 
 
