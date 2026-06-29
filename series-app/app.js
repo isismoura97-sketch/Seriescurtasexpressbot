@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260629-05';
+const BUILD_VERSION = '20260629-06';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -724,7 +724,7 @@ function renderPaymentSummary(order) {
             }
         });
     } else if (method === 'telegram_checkout') {
-        openButton.innerHTML = '<i class="fab fa-telegram"></i> Abrir bot';
+        openButton.innerHTML = '<i class="fab fa-telegram"></i> Abrir checkout no Telegram';
         openButton.addEventListener('click', () => {
             openTelegramBotLink(`https://t.me/${TELEGRAM_BOT_USERNAME}`);
         });
@@ -1688,7 +1688,7 @@ function renderOwnerDashboard(data) {
                     <p>O catálogo foi reorganizado para séries em vídeo único. Priorize as séries com File_ID pendente e publique tudo direto no Mini App com visual mais limpo.</p>
                 </div>
                 <div class="owner-hero-side">
-                    <div class="owner-brand-row">
+                    <div class="owner-brand">
                         <img class="owner-brand-logo" src="${OWNER_LOGO_IMAGE}" alt="Séries Express">
                         <div>
                             <strong>Séries Express</strong>
@@ -2810,7 +2810,9 @@ function checkout() {
         updateCartUI();
         showToast('Pedido criado. Acompanhe o pagamento abaixo.', 'success');
 
-        if (selectedPaymentMethod !== 'pix_qr' && order.checkout_url) {
+        if (selectedPaymentMethod === 'telegram_checkout') {
+            openTelegramBotLink(`https://t.me/${TELEGRAM_BOT_USERNAME}`);
+        } else if (selectedPaymentMethod !== 'pix_qr' && order.checkout_url) {
             openExternalLink(order.checkout_url);
         }
     }).catch((err) => {

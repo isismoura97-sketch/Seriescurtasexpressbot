@@ -643,7 +643,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260629-05')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260629-06')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
