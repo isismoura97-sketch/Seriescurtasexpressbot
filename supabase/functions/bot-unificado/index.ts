@@ -1432,52 +1432,14 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
   };
 }
 
-function withTelegramUrlFallbackButtons(payload: Record<string, string | number | boolean>) {
-  const replyMarkup = typeof payload.reply_markup === "string" ? payload.reply_markup : "";
-  if (!replyMarkup) return payload;
-
-  try {
-    const parsed = JSON.parse(replyMarkup) as Record<string, unknown>;
-    const keyboard = parsed.inline_keyboard;
-    if (!Array.isArray(keyboard)) return payload;
-
-    let miniAppUrl = SERIES_WEBAPP_URL;
-    let catalogUrl = CATALOG_URL;
-
-    for (const row of keyboard) {
-      if (!Array.isArray(row)) continue;
-      for (const button of row) {
-        if (!button || typeof button !== "object") continue;
-        const candidate = button as Record<string, unknown>;
-        const url = typeof candidate.url === "string" ? candidate.url : "";
-        const webApp = candidate.web_app as Record<string, unknown> | undefined;
-        const webAppUrl = typeof webApp?.url === "string" ? webApp.url : "";
-        if (webAppUrl) miniAppUrl = webAppUrl;
-        if (url && url !== SUPPORT_URL) catalogUrl = url;
-      }
-    }
-
-    parsed.inline_keyboard = [
-      [{ text: "Catálogo", url: catalogUrl }],
-      [{ text: "Mini App", web_app: { url: miniAppUrl } }],
-      [{ text: "Suporte", url: SUPPORT_URL }],
-    ];
-
-    return { ...payload, reply_markup: stringifyJson(parsed) };
-  } catch {
-    return payload;
-  }
-}
-
 async function telegramRequest(method: string, payload: Record<string, string | number | boolean>) {
-  const finalPayload = withTelegramUrlFallbackButtons(payload);
   const res = await fetch(telegramApiUrl(method), {
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
     },
     body: new URLSearchParams(
-      Object.entries(finalPayload).reduce<Record<string, string>>((acc, [key, value]) => {
+      Object.entries(payload).reduce<Record<string, string>>((acc, [key, value]) => {
         acc[key] = String(value);
         return acc;
       }, {}),
@@ -1515,6 +1477,7 @@ async function configureTelegramBotSurface() {
       { command: "catalogo", description: "Ver series disponiveis" },
       { command: "menu", description: "Mostrar opcoes" },
       { command: "ajuda", description: "Receber ajuda" },
+      { command: "fileid", description: "Receber File_ID de midias" },
     ]),
   });
 
@@ -1887,6 +1850,23 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
     return json(req, { ok: true, action: "menu_sent" });
   }
 
+  if (/^(?:\/fileid|fileid)$/i.test(text)) {
+    await telegramRequest("sendMessage", {
+      chat_id: chatId,
+      text: [
+        "Envie uma foto, vídeo, documento, áudio ou outro arquivo no privado.",
+        "Eu vou responder com o File_ID e o File Unique ID da mídia enviada.",
+      ].join("\n"),
+      reply_markup: JSON.stringify({
+        inline_keyboard: [
+          [{ text: "Mini App", web_app: { url: SERIES_WEBAPP_URL } }],
+          [{ text: "Suporte", url: SUPPORT_URL }],
+        ],
+      }),
+    });
+    return json(req, { ok: true, action: "fileid_help_sent" });
+  }
+
   if (chatType === "private" && text) {
     await sendBotWelcomeMessage(chatId);
     return json(req, { ok: true, action: "private_help_sent" });
@@ -2204,6 +2184,7 @@ async function sendBotWelcomeMessage(chatId: string | number) {
   const text = [
     "Bem-vindo ao Séries Express.",
     "Abra o catálogo para ver as séries gratuitas e as séries com liberação por pagamento.",
+    "Se quiser o File_ID de uma imagem ou vídeo, envie a mídia no privado ou use /fileid.",
     "Se você já começou uma série, também pode reabri-la pelo Mini App.",
   ].join("\n");
   const replyMarkup = JSON.stringify({
