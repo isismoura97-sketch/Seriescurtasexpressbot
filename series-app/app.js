@@ -7,9 +7,10 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260629-04';
+const BUILD_VERSION = '20260629-08';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
+const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
 let tg = null;
 let userId = null;
 const APP_LAUNCH_SERIE_ID = new URLSearchParams(window.location.search).get('play')
@@ -161,6 +162,14 @@ const DOM = {
     playerLoadingTitle: document.getElementById('playerLoadingTitle'),
     playerLoadingSubtitle: document.getElementById('playerLoadingSubtitle'),
     playerError: document.getElementById('playerError'),
+    playerControls: document.getElementById('playerControls'),
+    playerSeekInput: document.getElementById('playerSeekInput'),
+    playerCurrentTime: document.getElementById('playerCurrentTime'),
+    playerDuration: document.getElementById('playerDuration'),
+    playerPlayBtn: document.getElementById('playerPlayBtn'),
+    playerVolumeInput: document.getElementById('playerVolumeInput'),
+    playerMuteBtn: document.getElementById('playerMuteBtn'),
+    playerFullscreenBtn: document.getElementById('playerFullscreenBtn'),
     watermarkId: document.getElementById('watermarkId'),
     cartOverlay: document.getElementById('cartOverlay'),
     cartDrawer: document.getElementById('cartDrawer'),
@@ -256,10 +265,123 @@ function setPlayerErrorView({ iconClass, iconColor, title, description, buttonHt
     }
 }
 
+function formatPlayerTime(seconds) {
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value < 0) return '00:00';
+    const total = Math.floor(value);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    if (hours > 0) {
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function updatePlayerMuteButton() {
+    if (!DOM.mainVideo || !DOM.playerMuteBtn) return;
+    const isMuted = DOM.mainVideo.muted || Number(DOM.mainVideo.volume) === 0;
+    DOM.playerMuteBtn.innerHTML = isMuted
+        ? '<i class="fas fa-volume-xmark"></i>'
+        : Number(DOM.mainVideo.volume) < 0.5
+            ? '<i class="fas fa-volume-low"></i>'
+            : '<i class="fas fa-volume-high"></i>';
+    DOM.playerMuteBtn.setAttribute('aria-label', isMuted ? 'Ativar som' : 'Silenciar');
+}
+
+function updatePlayerPlayButton() {
+    if (!DOM.mainVideo || !DOM.playerPlayBtn) return;
+    const isPaused = DOM.mainVideo.paused || DOM.mainVideo.ended;
+    DOM.playerPlayBtn.innerHTML = isPaused
+        ? '<i class="fas fa-play"></i>'
+        : '<i class="fas fa-pause"></i>';
+    DOM.playerPlayBtn.setAttribute('aria-label', isPaused ? 'Reproduzir' : 'Pausar');
+}
+
+async function togglePlayerPlayback() {
+    if (!DOM.mainVideo) return;
+    try {
+        if (DOM.mainVideo.paused || DOM.mainVideo.ended) {
+            await DOM.mainVideo.play();
+        } else {
+            DOM.mainVideo.pause();
+        }
+    } catch (error) {
+        console.warn('[PLAYER] Falha ao alternar reprodução:', error?.message || error);
+        showToast('Toque em reproduzir novamente para iniciar o vídeo.', 'info');
+    } finally {
+        updatePlayerPlayButton();
+    }
+}
+
+function updatePlayerControlsFromVideo() {
+    if (!DOM.mainVideo) return;
+
+    const duration = Number.isFinite(DOM.mainVideo.duration) ? DOM.mainVideo.duration : 0;
+    const currentTime = Number.isFinite(DOM.mainVideo.currentTime) ? DOM.mainVideo.currentTime : 0;
+    const progress = duration > 0 ? Math.max(0, Math.min(1000, Math.round((currentTime / duration) * 1000))) : 0;
+
+    if (DOM.playerSeekInput instanceof HTMLInputElement) {
+        DOM.playerSeekInput.max = '1000';
+        DOM.playerSeekInput.value = String(progress);
+        DOM.playerSeekInput.disabled = !duration;
+    }
+
+    if (DOM.playerCurrentTime) {
+        DOM.playerCurrentTime.textContent = formatPlayerTime(currentTime);
+    }
+
+    if (DOM.playerDuration) {
+        DOM.playerDuration.textContent = formatPlayerTime(duration);
+    }
+
+    if (DOM.playerVolumeInput instanceof HTMLInputElement) {
+        DOM.playerVolumeInput.value = String(Number.isFinite(DOM.mainVideo.volume) ? DOM.mainVideo.volume : 1);
+    }
+
+    updatePlayerMuteButton();
+    updatePlayerPlayButton();
+}
+
+async function requestPlayerFullscreen() {
+    const target = DOM.playerOverlay || DOM.mainVideo;
+    const webApp = tg;
+
+    try {
+        if (webApp?.requestFullscreen) {
+            await webApp.requestFullscreen();
+            return true;
+        }
+    } catch (error) {
+        debugLog('[PLAYER] Telegram fullscreen indisponível:', error?.message || error);
+    }
+
+    const fullscreenTarget = target || DOM.mainVideo;
+    try {
+        if (fullscreenTarget?.requestFullscreen) {
+            await fullscreenTarget.requestFullscreen();
+            return true;
+        }
+        if (fullscreenTarget?.webkitRequestFullscreen) {
+            await fullscreenTarget.webkitRequestFullscreen();
+            return true;
+        }
+        if (DOM.mainVideo?.webkitEnterFullscreen) {
+            DOM.mainVideo.webkitEnterFullscreen();
+            return true;
+        }
+    } catch (error) {
+        debugLog('[PLAYER] Erro ao solicitar fullscreen:', error?.message || error);
+    }
+
+    return false;
+}
+
 function bindPlayerVideoEvents() {
     if (playerVideoEventsBound || !DOM.mainVideo) return;
     playerVideoEventsBound = true;
     DOM.mainVideo.disableRemotePlayback = true;
+    DOM.mainVideo.controls = false;
 
     DOM.mainVideo.addEventListener('contextmenu', (event) => {
         event.preventDefault();
@@ -267,14 +389,28 @@ function bindPlayerVideoEvents() {
 
     DOM.mainVideo.addEventListener('loadeddata', () => {
         DOM.playerLoading?.classList.remove('active');
+        updatePlayerControlsFromVideo();
     });
 
     DOM.mainVideo.addEventListener('canplay', () => {
         DOM.playerLoading?.classList.remove('active');
+        updatePlayerControlsFromVideo();
     });
 
     DOM.mainVideo.addEventListener('playing', () => {
         DOM.playerLoading?.classList.remove('active');
+        updatePlayerControlsFromVideo();
+    });
+
+    DOM.mainVideo.addEventListener('play', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('pause', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('ended', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('loadedmetadata', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('timeupdate', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('durationchange', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('volumechange', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('click', () => {
+        void togglePlayerPlayback();
     });
 
     DOM.mainVideo.addEventListener('waiting', () => {
@@ -289,6 +425,50 @@ function bindPlayerVideoEvents() {
             showPlayerError();
         }
     });
+}
+
+function wirePlayerControls() {
+    if (!(DOM.playerSeekInput instanceof HTMLInputElement) || !(DOM.playerVolumeInput instanceof HTMLInputElement) || !DOM.mainVideo) {
+        return;
+    }
+
+    DOM.playerSeekInput.oninput = () => {
+        const duration = Number(DOM.mainVideo.duration);
+        if (!Number.isFinite(duration) || duration <= 0) return;
+        const ratio = Number(DOM.playerSeekInput.value) / 1000;
+        DOM.mainVideo.currentTime = Math.max(0, Math.min(duration, duration * ratio));
+    };
+
+    DOM.playerVolumeInput.oninput = () => {
+        const value = Number(DOM.playerVolumeInput.value);
+        DOM.mainVideo.volume = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1;
+        DOM.mainVideo.muted = DOM.mainVideo.volume === 0;
+        updatePlayerMuteButton();
+    };
+
+    if (DOM.playerMuteBtn instanceof HTMLButtonElement) {
+        DOM.playerMuteBtn.onclick = () => {
+            DOM.mainVideo.muted = !DOM.mainVideo.muted;
+            if (!DOM.mainVideo.muted && Number(DOM.mainVideo.volume) === 0) {
+                DOM.mainVideo.volume = 0.8;
+            }
+            updatePlayerControlsFromVideo();
+        };
+    }
+
+    if (DOM.playerPlayBtn instanceof HTMLButtonElement) {
+        DOM.playerPlayBtn.onclick = () => {
+            void togglePlayerPlayback();
+        };
+    }
+
+    if (DOM.playerFullscreenBtn instanceof HTMLButtonElement) {
+        DOM.playerFullscreenBtn.onclick = async () => {
+            await requestPlayerFullscreen();
+        };
+    }
+
+    updatePlayerControlsFromVideo();
 }
 
 async function fetchWithTimeout(url, options = {}, timeout = 15000) {
@@ -410,6 +590,17 @@ function getPaymentMethodLabel(method = selectedPaymentMethod) {
         default:
             return 'Link Mercado Pago';
     }
+}
+
+function buildTelegramCheckoutUrl(orderId = '') {
+    const safeOrderId = String(orderId || '').trim();
+    const suffix = safeOrderId ? `checkout_${encodeURIComponent(safeOrderId)}` : '';
+    return `https://t.me/${TELEGRAM_BOT_USERNAME}${suffix ? `?start=${suffix}` : ''}`;
+}
+
+function getOrderPaymentUrl(order) {
+    const checkoutUrl = String(order?.checkout_url || '').trim();
+    return checkoutUrl || buildTelegramCheckoutUrl(order?.order_id || '');
 }
 
 function restoreActivePaymentOrder() {
@@ -542,6 +733,10 @@ function renderPaymentSummary(order) {
         details.push(`<div class="payment-detail"><span>Mercado Pago</span><strong>Página disponível</strong></div>`);
     }
 
+    if (method === 'telegram_checkout') {
+        details.push(`<div class="payment-detail"><span>Telegram</span><strong>Confirmação pelo bot</strong></div>`);
+    }
+
     if (order.pix_qr_code) {
         details.push(`<div class="payment-detail"><span>Pix</span><strong>Código gerado</strong></div>`);
         const qrBase64 = String(order.pix_qr_code_base64 || '').trim();
@@ -583,9 +778,9 @@ function renderPaymentSummary(order) {
             }
         });
     } else if (method === 'telegram_checkout') {
-        openButton.innerHTML = '<i class="fab fa-telegram"></i> Abrir bot';
+        openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Abrir pagamento';
         openButton.addEventListener('click', () => {
-            openTelegramBotLink(`https://t.me/${TELEGRAM_BOT_USERNAME}`);
+            openExternalLink(getOrderPaymentUrl(order));
         });
     } else {
         openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Abrir página Mercado Pago';
@@ -607,6 +802,16 @@ function renderPaymentSummary(order) {
             showToast('Link de pagamento copiado!', 'success');
         });
         DOM.paymentSummaryActions.appendChild(copyLinkButton);
+    }
+
+    if (method === 'telegram_checkout') {
+        const guideButton = document.createElement('button');
+        guideButton.className = 'btn btn-secondary';
+        guideButton.innerHTML = '<i class="fab fa-telegram"></i> Abrir bot';
+        guideButton.addEventListener('click', () => {
+            openTelegramBotLink(buildTelegramCheckoutUrl(order.order_id || ''));
+        });
+        DOM.paymentSummaryActions.appendChild(guideButton);
     }
 
     if (order.ticket_url) {
@@ -903,6 +1108,90 @@ async function submitOwnerQuickUpload(seriesId, fieldName, file) {
     }
 }
 
+async function requestOwnerSeriesMigrate(seriesId) {
+    return requestJson(`${API_URL}?action=owner-series-migrate`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        series_id: seriesId,
+    }, 120000);
+}
+
+async function migrateOwnerSeriesVideo(seriesId, options = {}) {
+    const { silent = false } = options;
+    const serie = ownerSeriesCatalog.find((item) => sameId(item.id, seriesId));
+    if (!serie) {
+        if (!silent) showToast('Não encontrei a série para migrar.', 'error');
+        return null;
+    }
+
+    if (!needsOwnerSeriesMigration(serie)) {
+        if (!silent) showToast('Essa série já está pronta no player interno.', 'info');
+        return null;
+    }
+
+    const previousStatus = document.getElementById('ownerUploadStatus')?.textContent || '';
+
+    try {
+        if (!silent) {
+            setOwnerUploadStatus(`Migrando "${serie.title || 'série'}" para o player interno...`, '');
+        }
+
+        const payload = await requestOwnerSeriesMigrate(seriesId);
+        const updated = payload?.series || null;
+        const dashboard = payload?.dashboard || null;
+
+        if (updated) {
+            allSeries = [updated, ...allSeries.filter((item) => !sameId(item.id, updated.id))];
+            refreshCatalog();
+            initHero();
+        }
+
+        if (dashboard) {
+            ownerDashboardSnapshot = dashboard;
+            renderOwnerDashboard(dashboard);
+        }
+
+        if (!silent) {
+            setOwnerUploadStatus(`"${serie.title || 'série'}" migrada com sucesso.`, 'success');
+            showToast(`"${serie.title || 'série'}" migrada para o player interno.`, 'success');
+        }
+
+        return payload;
+    } catch (error) {
+        if (!silent) {
+            setOwnerUploadStatus(error.message || 'Não foi possível migrar a série.', 'error');
+            showToast(error.message || 'Falha ao migrar a série.', 'error');
+        }
+        return null;
+    } finally {
+        if (!silent && !document.getElementById('ownerUploadStatus')?.textContent) {
+            setOwnerUploadStatus(previousStatus, '');
+        }
+    }
+}
+
+async function migrateOwnerPrioritySeries() {
+    const queue = ownerSeriesCatalog.filter((item) => needsOwnerSeriesMigration(item));
+    if (!queue.length) {
+        showToast('Não há File_ID pendente para migrar.', 'info');
+        return;
+    }
+
+    let migratedCount = 0;
+    setOwnerUploadStatus(`Migrando fila urgente (${queue.length})...`, '');
+
+    for (const serie of queue) {
+        const result = await migrateOwnerSeriesVideo(String(serie.id || ''), { silent: true });
+        if (result?.ok) migratedCount += 1;
+    }
+
+    const message = migratedCount
+        ? `${migratedCount} série(s) migrada(s) com sucesso.`
+        : 'Nenhuma série pôde ser migrada agora.';
+    setOwnerUploadStatus(message, migratedCount ? 'success' : 'error');
+    showToast(message, migratedCount ? 'success' : 'error');
+}
+
 function requestOwnerSeriesDelete(seriesId) {
     return requestJson(`${API_URL}?action=owner-series-delete`, {
         init_data: tg?.initData || '',
@@ -974,12 +1263,28 @@ function wireOwnerDashboardControls() {
         button.onclick = () => setOwnerSeriesFilterMode(button.dataset.ownerFilterMode || 'all');
     });
 
+    const resetEditorButtons = document.querySelectorAll('[data-owner-reset-editor]');
+    resetEditorButtons.forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.onclick = () => resetOwnerSeriesEditor();
+    });
+
+    const migratePriorityButtons = document.querySelectorAll('[data-owner-migrate-priority]');
+    migratePriorityButtons.forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.onclick = () => migrateOwnerPrioritySeries();
+    });
+
     const quickActionButtons = document.querySelectorAll('[data-owner-quick-action]');
     quickActionButtons.forEach((button) => {
         if (!(button instanceof HTMLButtonElement)) return;
         button.onclick = () => {
             const action = button.dataset.ownerQuickAction || '';
             const seriesId = button.dataset.ownerSeriesId || '';
+            if (action === 'migrate') {
+                void migrateOwnerSeriesVideo(seriesId);
+                return;
+            }
             const input = document.getElementById(`ownerQuick${action[0]?.toUpperCase() ?? ''}${action.slice(1)}Input`);
             if (input instanceof HTMLInputElement) {
                 input.dataset.seriesId = seriesId;
@@ -1267,7 +1572,7 @@ function openOwnerMigrationForSeries(serie) {
     }
 
     openOwnerArea();
-    setOwnerStatus('Entre na área do proprietário e envie o vídeo principal em arquivo MP4/WebM. File_ID grande do Telegram não toca dentro do Mini App.', 'info');
+    setOwnerStatus('Entre na área do proprietário e envie o vídeo principal em arquivo MP4/WebM. Se o conteúdo estiver só com File_ID do Telegram, ele precisa ser migrado para tocar no Mini App.', 'info');
 
     if (ownerDashboardSnapshot && serie?.id) {
         setTimeout(() => openOwnerSeriesEditor(serie.id), 120);
@@ -1293,6 +1598,20 @@ function renderOwnerDashboard(data) {
     const visibleSeries = filterOwnerSeries(ownerSeriesCatalog);
     const filterCounts = getOwnerSeriesFilterCounts(ownerSeriesCatalog);
     const visibleSeriesLabel = `${visibleSeries.length} de ${ownerSeriesCatalog.length}`;
+    const freeSeriesCount = ownerSeriesCatalog.filter((item) => isFree(item)).length;
+    const paidSeriesCount = ownerSeriesCatalog.length - freeSeriesCount;
+    const internalSeriesCount = Number(catalog.internal_playback_series ?? catalog.playable_series ?? ownerSeriesCatalog.filter((item) => hasOwnerSeriesInternalPlayback(item)).length ?? 0);
+    const migrationSeries = ownerSeriesCatalog.filter((item) => needsOwnerSeriesMigration(item));
+    const missingPlaybackSeries = ownerSeriesCatalog.filter((item) => !hasOwnerSeriesAnyVideo(item));
+    const migrationSeriesCount = Number(catalog.migration_needed ?? migrationSeries.length ?? 0);
+    const missingPlaybackCount = Number(catalog.missing_playback ?? missingPlaybackSeries.length ?? 0);
+    const prioritySeriesCount = migrationSeriesCount + missingPlaybackCount;
+    const prioritySeries = [];
+    [...migrationSeries, ...missingPlaybackSeries].forEach((serie) => {
+        if (!prioritySeries.some((item) => sameId(item.id, serie.id))) {
+            prioritySeries.push(serie);
+        }
+    });
 
     const statusRows = Object.entries(statusCounts)
         .map(([status, count]) => `
@@ -1312,18 +1631,69 @@ function renderOwnerDashboard(data) {
         `)
         .join('') || '<div class="owner-list-row"><span>Nenhum pedido recente</span><strong>-</strong></div>';
 
+    const prioritySeriesRows = prioritySeries.slice(0, 4)
+        .map((serie) => {
+            const trailerLabel = serie.has_trailer ? 'Trailer' : 'Sem trailer';
+            const videoLabel = hasOwnerSeriesInternalPlayback(serie)
+                ? 'Player interno OK'
+                : needsOwnerSeriesMigration(serie)
+                    ? 'Migrar File_ID'
+                    : 'Sem vídeo';
+            const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
+            const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
+            const coverUrl = getCoverUrl(serie);
+            const editId = String(serie.id || '');
+            const quickAction = needsOwnerSeriesMigration(serie) ? 'migrate' : 'video';
+            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Migrar File_ID' : 'Trocar vídeo';
+            const quickActionIcon = needsOwnerSeriesMigration(serie) ? 'fa-wand-magic-sparkles' : 'fa-film';
+            return `
+                <article class="owner-series-row owner-series-row-priority">
+                    <div class="owner-series-thumb-wrap">
+                        <img class="owner-series-thumb" src="${escapeHtml(coverUrl)}" alt="${escapeHtml(serie.title || 'Capa da série')}" loading="lazy" onerror="${escapeHtml(`this.src=${JSON.stringify(PLACEHOLDER_IMAGE)}`)}">
+                    </div>
+                    <div class="owner-series-row-main">
+                        <strong>${escapeHtml(serie.title || 'Sem título')}</strong>
+                        <span>${escapeHtml([serie.category || 'Geral', freeLabel, formatOwnerDate(serie.created_at)].join(' • '))}</span>
+                        <p>${escapeHtml(serie.description || 'Sem descrição')}</p>
+                    </div>
+                    <div class="owner-series-row-tags">
+                        <span class="owner-pill">${escapeHtml(coverLabel)}</span>
+                        <span class="owner-pill">${escapeHtml(videoLabel)}</span>
+                        <span class="owner-pill">${escapeHtml(trailerLabel)}</span>
+                    </div>
+                    <div class="owner-series-row-actions">
+                        <button type="button" class="btn btn-secondary owner-series-edit-btn" data-owner-edit-id="${escapeAttr(editId)}">
+                            <i class="fas fa-pen-to-square"></i> Abrir
+                        </button>
+                        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="${escapeAttr(quickAction)}" data-owner-series-id="${escapeAttr(editId)}">
+                            <i class="fas ${escapeAttr(quickActionIcon)}"></i> ${escapeHtml(quickActionLabel)}
+                        </button>
+                    </div>
+                </article>
+            `;
+        })
+        .join('') || `
+            <div class="owner-empty-state">
+                <strong>${escapeHtml(String(prioritySeriesCount))} itens ainda pedem atenção.</strong>
+                <span>O backend está enviando apenas os contadores resumidos neste momento.</span>
+            </div>
+        `;
+
     const recentSeriesRows = visibleSeries
         .map((serie) => {
             const trailerLabel = serie.has_trailer ? 'Trailer' : 'Sem trailer';
             const videoLabel = hasOwnerSeriesInternalPlayback(serie)
                 ? 'Player interno OK'
                 : needsOwnerSeriesMigration(serie)
-                    ? 'File_ID - migrar'
+                    ? 'Migrar File_ID'
                     : 'Sem vídeo';
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
             const coverUrl = getCoverUrl(serie);
             const editId = String(serie.id || '');
+            const quickAction = needsOwnerSeriesMigration(serie) ? 'migrate' : 'video';
+            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Migrar File_ID' : 'Trocar vídeo';
+            const quickActionIcon = needsOwnerSeriesMigration(serie) ? 'fa-wand-magic-sparkles' : 'fa-film';
             return `
                 <article class="owner-series-row">
                     <div class="owner-series-thumb-wrap">
@@ -1346,8 +1716,8 @@ function renderOwnerDashboard(data) {
                         <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="cover" data-owner-series-id="${escapeAttr(editId)}">
                             <i class="fas fa-image"></i> Trocar capa
                         </button>
-                        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="video" data-owner-series-id="${escapeAttr(editId)}">
-                            <i class="fas fa-film"></i> Trocar vídeo
+                        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="${escapeAttr(quickAction)}" data-owner-series-id="${escapeAttr(editId)}">
+                            <i class="fas ${escapeAttr(quickActionIcon)}"></i> ${escapeHtml(quickActionLabel)}
                         </button>
                         <button type="button" class="btn btn-danger owner-series-mini-btn" data-owner-delete-id="${escapeAttr(editId)}">
                             <i class="fas fa-trash"></i> Excluir
@@ -1375,16 +1745,53 @@ function renderOwnerDashboard(data) {
 
     DOM.ownerDashboard.innerHTML = `
         <section class="owner-hero-card">
-            <div class="owner-hero-copy">
-                <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Administração em vídeo único</span>
-                <h3>Gerencie séries, capa, trailer e vídeo principal em um só painel.</h3>
-                <p>Seu catálogo foi organizado para séries individuais: cada série precisa de um vídeo principal enviado ao Supabase para tocar dentro do Mini App.</p>
-            </div>
-            <div class="owner-hero-actions">
-                <span class="owner-pill">1 vídeo principal por série</span>
-                <span class="owner-pill">Trailer opcional</span>
-                <span class="owner-pill">Upload no Supabase</span>
-                <span class="owner-pill">${escapeHtml(visibleSeriesLabel)} visíveis</span>
+            <div class="owner-hero-layout">
+                <div class="owner-hero-copy">
+                    <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Central do proprietário</span>
+                    <h3>Gerencie séries, capa, trailer e vídeo principal em um só painel.</h3>
+                    <p>O catálogo foi reorganizado para séries em vídeo único. Priorize as séries com File_ID pendente e publique tudo direto no Mini App com visual mais limpo.</p>
+                </div>
+                <div class="owner-hero-side">
+                    <div class="owner-brand">
+                        <img class="owner-brand-logo" src="${OWNER_LOGO_IMAGE}" alt="Séries Express">
+                        <div>
+                            <strong>Séries Express</strong>
+                            <span>Painel do proprietário</span>
+                        </div>
+                    </div>
+                    <div class="owner-side-stack">
+                        <div class="owner-side-item">
+                            <span>Fila urgente</span>
+                            <strong>${escapeHtml(String(prioritySeriesCount))}</strong>
+                        </div>
+                        <div class="owner-side-item">
+                            <span>Pagamentos aprovados</span>
+                            <strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong>
+                        </div>
+                        <div class="owner-side-item">
+                            <span>Pedidos registrados</span>
+                            <strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong>
+                        </div>
+                        <div class="owner-side-item">
+                            <span>Fluxo rápido</span>
+                            <strong>1. Cadastrar 2. Subir mídia 3. Migrar</strong>
+                        </div>
+                    </div>
+                    <div class="owner-hero-actions">
+                        <button type="button" class="btn btn-secondary" data-owner-reset-editor>
+                            <i class="fas fa-plus"></i> Nova série
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-owner-filter-mode="migration">
+                            <i class="fas fa-triangle-exclamation"></i> Priorizar migração
+                        </button>
+                        <button type="button" class="btn btn-primary" data-owner-migrate-priority ${prioritySeriesCount ? '' : 'disabled'}>
+                            <i class="fas fa-wand-magic-sparkles"></i> Migrar fila urgente
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-owner-filter-mode="playable">
+                            <i class="fas fa-circle-play"></i> Player interno
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="owner-kpi-grid">
                 <div class="owner-card">
@@ -1392,14 +1799,28 @@ function renderOwnerDashboard(data) {
                     <strong>${escapeHtml(String(catalog.series_total ?? 0))}</strong>
                 </div>
                 <div class="owner-card">
-                    <span>Player interno</span>
-                    <strong>${escapeHtml(String(catalog.internal_playback_series ?? catalog.playable_series ?? 0))}</strong>
+                    <span>Gratuitas</span>
+                    <strong>${escapeHtml(String(freeSeriesCount))}</strong>
                 </div>
                 <div class="owner-card">
-                    <span>File_ID para migrar</span>
-                    <strong>${escapeHtml(String(catalog.migration_needed ?? 0))}</strong>
+                    <span>Pagas</span>
+                    <strong>${escapeHtml(String(paidSeriesCount))}</strong>
+                </div>
+                <div class="owner-card">
+                    <span>Player interno OK</span>
+                    <strong>${escapeHtml(String(internalSeriesCount))}</strong>
                 </div>
             </div>
+        </section>
+        <section class="owner-section owner-section-priority owner-series-section">
+            <div class="owner-section-head">
+                <div>
+                    <h3>Fila de prioridade</h3>
+                    <p>As séries abaixo precisam de atenção agora. O ideal é resolver primeiro a migração para o player interno.</p>
+                </div>
+                <div class="owner-series-count">${escapeHtml(String(prioritySeriesCount))} itens urgentes</div>
+            </div>
+            <div class="owner-series-list">${prioritySeriesRows}</div>
         </section>
         <div class="owner-dashboard-grid">
             <div class="owner-section owner-section-featured">
@@ -1460,7 +1881,7 @@ function renderOwnerDashboard(data) {
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
                             <i class="fas fa-cloud-arrow-up"></i> Publicar série
                         </button>
-                        <p class="owner-upload-note">Para o player interno funcionar, envie o arquivo de vídeo aqui. File_ID do Telegram grande aparece como “migrar”.</p>
+                        <p class="owner-upload-note">Envie o vídeo principal por arquivo para tocar no player interno. Se ainda existir File_ID do Telegram, ele continuará marcado para migração.</p>
                     </div>
                     <div class="owner-status" id="ownerUploadStatus"></div>
                 </form>
@@ -1468,9 +1889,9 @@ function renderOwnerDashboard(data) {
             <div class="owner-section">
                 <h3>Saúde do Catálogo</h3>
                 <div class="owner-list">
-                    <div class="owner-list-row"><span>Player interno OK</span><strong>${escapeHtml(String(catalog.internal_playback_series ?? catalog.playable_series ?? 0))}</strong></div>
-                    <div class="owner-list-row"><span>File_ID precisa migrar</span><strong>${escapeHtml(String(catalog.migration_needed ?? 0))}</strong></div>
-                    <div class="owner-list-row"><span>Sem arquivo identificado</span><strong>${escapeHtml(String(catalog.missing_playback ?? 0))}</strong></div>
+                    <div class="owner-list-row"><span>Player interno OK</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
+                    <div class="owner-list-row"><span>File_ID precisa migrar</span><strong>${escapeHtml(String(migrationSeriesCount))}</strong></div>
+                    <div class="owner-list-row"><span>Sem arquivo identificado</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
                 </div>
             </div>
             <div class="owner-section">
@@ -1724,6 +2145,7 @@ function getPlaybackMode(serie) {
 async function init() {
     resolveTelegramContext();
     bindPlayerVideoEvents();
+    wirePlayerControls();
     restoreActivePaymentOrder();
 
     if (tg) {
@@ -2074,6 +2496,7 @@ async function openPlayer(serieId, title) {
     setPlayerLoadingView('Preparando player protegido', 'Carregando vídeo dentro do Mini App...');
     DOM.playerError.classList.remove('active');
     DOM.mainVideo.style.display = 'none';
+    void requestPlayerFullscreen();
     if (DOM.playerTitle) DOM.playerTitle.textContent = title || 'Reproduzir';
     if (DOM.playerKicker) {
         DOM.playerKicker.innerHTML = isTelegramPlayback
@@ -2124,6 +2547,7 @@ async function openPlayer(serieId, title) {
             DOM.mainVideo.volume = 1;
             DOM.mainVideo.style.display = 'block';
             DOM.playerOverlay.dataset.state = 'playing';
+            updatePlayerControlsFromVideo();
             
             const playPromise = DOM.mainVideo.play();
             if (playPromise !== undefined) {
@@ -2132,11 +2556,12 @@ async function openPlayer(serieId, title) {
                     showToast('Toque no vídeo para reproduzir', 'info');
                 });
             }
+            void requestPlayerFullscreen();
         } else if (data.type === 'internal_player_unavailable' || data.type === 'telegram_file' || data.file_id) {
             playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: '' };
             const ownerCanMigrate = isOwnerUser();
             const telegramDescription = ownerCanMigrate
-                ? 'Este título tem File_ID do Telegram, mas ainda não tem vídeo interno no Supabase. Envie o arquivo principal pelo painel do proprietário para tocar dentro do Mini App.'
+                ? 'Este título ainda está no fluxo do Telegram. Envie o arquivo principal pelo painel do proprietário para liberar a reprodução interna no Mini App.'
                 : 'Este vídeo está sendo preparado para reprodução protegida dentro do Mini App.';
             DOM.mainVideo.style.display = 'none';
             DOM.playerOverlay.dataset.state = 'unavailable';
@@ -2191,10 +2616,19 @@ function retryPlayer() {
 
 function closePlayer() {
     resetVideo();
+    if (tg?.exitFullscreen) {
+        try {
+            tg.exitFullscreen();
+        } catch (_) {}
+    }
+    if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch?.(() => {});
+    }
     DOM.playerOverlay.classList.remove('active');
     delete DOM.playerOverlay.dataset.state;
     DOM.playerError.classList.remove('active');
     DOM.playerLoading.classList.remove('active');
+    updatePlayerControlsFromVideo();
     if (DOM.playerMeta) DOM.playerMeta.textContent = 'Abra diretamente no player.';
 }
 
@@ -2449,7 +2883,9 @@ function checkout() {
         updateCartUI();
         showToast('Pedido criado. Acompanhe o pagamento abaixo.', 'success');
 
-        if (selectedPaymentMethod !== 'pix_qr' && order.checkout_url) {
+        if (selectedPaymentMethod === 'telegram_checkout') {
+            openExternalLink(getOrderPaymentUrl(order));
+        } else if (selectedPaymentMethod !== 'pix_qr' && order.checkout_url) {
             openExternalLink(order.checkout_url);
         }
     }).catch((err) => {

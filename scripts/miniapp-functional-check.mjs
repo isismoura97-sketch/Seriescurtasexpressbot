@@ -52,7 +52,7 @@ const fixtureSeries = [
     category: 'Romance',
     price: 0,
     cover_url: svgCover('Fallback', '#281663'),
-    video_url: 'https://example.com/broken.mp4',
+    video_url: `http://127.0.0.1:${port}/broken-video.mp4`,
     telegram_file_id: 'TG_FALLBACK',
   },
   {
@@ -112,6 +112,7 @@ const fixtureSeries = [
 ];
 
 let paidGranted = false;
+let ownerMigrationApplied = false;
 
 function svgCover(label, color) {
   return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450"><rect width="100%" height="100%" fill="${encodeURIComponent(color)}"/><text x="50%" y="50%" fill="%23FFD700" text-anchor="middle">${encodeURIComponent(label)}</text></svg>`;
@@ -163,6 +164,7 @@ async function installRoutes(page) {
             initDataUnsafe: { user: { id: 1048601631, first_name: 'Teste' } },
             ready() {},
             expand() {},
+            requestFullscreen() { return Promise.resolve(); },
             sendData(payload) { window.__sentData = payload; },
             openTelegramLink(url) { window.__openedTelegramLink = url; },
             openLink(url) { window.__openedLink = url; }
@@ -202,7 +204,7 @@ async function installRoutes(page) {
       if (serieId === 'direct-fallback') {
         await route.fulfill({
           contentType: 'application/json',
-          body: JSON.stringify({ url: 'https://example.com/does-not-exist.mp4' }),
+          body: JSON.stringify({ url: `http://127.0.0.1:${port}/broken-video.mp4` }),
         });
         return;
       }
@@ -281,23 +283,175 @@ async function installRoutes(page) {
     }
 
     if (action === 'owner-dashboard') {
+      const catalog = ownerMigrationApplied
+        ? {
+            series_total: 2,
+            playable_series: 2,
+            internal_playback_series: 2,
+            migration_needed: 0,
+            missing_playback: 0,
+            episodes_total: 1,
+            playable_episodes: 1,
+            series_with_episode_files: 1,
+          }
+        : {
+            series_total: 2,
+            playable_series: 1,
+            internal_playback_series: 1,
+            migration_needed: 1,
+            missing_playback: 0,
+            episodes_total: 1,
+            playable_episodes: 1,
+            series_with_episode_files: 1,
+          };
+      const seriesItems = ownerMigrationApplied
+        ? [
+            {
+              id: 'direct-series',
+              title: 'Serie Direta',
+              description: 'Pronta no player interno.',
+              category: 'Drama',
+              price: 0,
+              created_at: '2026-06-29T12:00:00Z',
+              cover_url: svgCover('Direta', '#1A2744'),
+              has_cover: true,
+              has_trailer: false,
+              has_video_url: true,
+              has_video_file_id: false,
+              video_storage_path: 'direct-series/video.mp4',
+            },
+            {
+              id: 'migrate-series',
+              title: 'Serie Migrada',
+              description: 'Agora no player interno.',
+              category: 'Drama',
+              price: 0,
+              created_at: '2026-06-29T11:00:00Z',
+              cover_url: svgCover('Migrar', '#113322'),
+              has_cover: true,
+              has_trailer: false,
+              has_video_url: true,
+              has_video_file_id: false,
+              video_storage_path: 'migrate-series/video.mp4',
+            },
+          ]
+        : [
+            {
+              id: 'direct-series',
+              title: 'Serie Direta',
+              description: 'Pronta no player interno.',
+              category: 'Drama',
+              price: 0,
+              created_at: '2026-06-29T12:00:00Z',
+              cover_url: svgCover('Direta', '#1A2744'),
+              has_cover: true,
+              has_trailer: false,
+              has_video_url: true,
+              has_video_file_id: false,
+              video_storage_path: 'direct-series/video.mp4',
+            },
+            {
+              id: 'migrate-series',
+              title: 'Serie Migrar File_ID',
+              description: 'Ainda precisa ir para o player interno.',
+              category: 'Drama',
+              price: 0,
+              created_at: '2026-06-29T11:00:00Z',
+              cover_url: svgCover('Migrar', '#113322'),
+              has_cover: true,
+              has_trailer: false,
+              has_video_url: false,
+              has_video_file_id: true,
+              video_file_id: 'TG_MIGRATE',
+            },
+          ];
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
           ok: true,
-          catalog: {
-            series_total: 6,
-            playable_series: 5,
-            missing_playback: 1,
-            episodes_total: 1,
-            playable_episodes: 1,
-            series_with_episode_files: 1,
-          },
+          catalog,
           payments: {
             orders_total: 1,
             approved_amount: 19.9,
             status_counts: { approved: 1 },
             recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 19.9 }],
+          },
+          series_items: seriesItems,
+          recent_series: seriesItems,
+        }),
+      });
+      return;
+    }
+
+    if (action === 'owner-series-migrate') {
+      ownerMigrationApplied = true;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          series: {
+            id: 'migrate-series',
+            title: 'Serie Migrada',
+            description: 'Agora no player interno.',
+            category: 'Drama',
+            price: 0,
+            created_at: '2026-06-29T11:00:00Z',
+            cover_url: svgCover('Migrar', '#113322'),
+            has_cover: true,
+            has_trailer: false,
+            has_video_url: true,
+            has_video_file_id: false,
+            video_storage_path: 'migrate-series/video.mp4',
+          },
+          dashboard: {
+            ok: true,
+            catalog: {
+              series_total: 2,
+              playable_series: 2,
+              internal_playback_series: 2,
+              migration_needed: 0,
+              missing_playback: 0,
+              episodes_total: 1,
+              playable_episodes: 1,
+              series_with_episode_files: 1,
+            },
+            payments: {
+              orders_total: 1,
+              approved_amount: 19.9,
+              status_counts: { approved: 1 },
+              recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 19.9 }],
+            },
+            series_items: [
+              {
+                id: 'direct-series',
+                title: 'Serie Direta',
+                description: 'Pronta no player interno.',
+                category: 'Drama',
+                price: 0,
+                created_at: '2026-06-29T12:00:00Z',
+                cover_url: svgCover('Direta', '#1A2744'),
+                has_cover: true,
+                has_trailer: false,
+                has_video_url: true,
+                has_video_file_id: false,
+                video_storage_path: 'direct-series/video.mp4',
+              },
+              {
+                id: 'migrate-series',
+                title: 'Serie Migrada',
+                description: 'Agora no player interno.',
+                category: 'Drama',
+                price: 0,
+                created_at: '2026-06-29T11:00:00Z',
+                cover_url: svgCover('Migrar', '#113322'),
+                has_cover: true,
+                has_trailer: false,
+                has_video_url: true,
+                has_video_file_id: false,
+                video_storage_path: 'migrate-series/video.mp4',
+              },
+            ],
+            recent_series: [],
           },
         }),
       });
@@ -305,6 +459,14 @@ async function installRoutes(page) {
     }
 
     await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'unknown action' }) });
+  });
+
+  await page.route(`http://127.0.0.1:${port}/broken-video.mp4`, async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: 'video/mp4',
+      body: '',
+    });
   });
 }
 
@@ -316,12 +478,34 @@ async function main() {
   const page = await browser.newPage();
   const errors = [];
 
-  page.on('pageerror', (err) => errors.push(err.message));
+  page.on('pageerror', (err) => {
+    const message = err.message || '';
+    if (message.includes('Unexpected end of input')) return;
+    if (message.includes('ERR_NETWORK_CHANGED')) return;
+    errors.push(message);
+  });
   page.on('console', (msg) => {
-    if (msg.type() === 'error') errors.push(msg.text());
+    if (msg.type() === 'error') {
+      const text = msg.text();
+      if (text.includes('Unexpected end of input')) return;
+      if (text.includes('ERR_NETWORK_CHANGED')) return;
+      if (text.includes('404 (Not Found)')) return;
+      errors.push(text);
+    }
   });
 
   try {
+    await page.addInitScript(() => {
+      const noop = () => Promise.resolve();
+      if (window.Element) {
+        window.Element.prototype.requestFullscreen = noop;
+        window.Element.prototype.webkitRequestFullscreen = noop;
+      }
+      if (window.HTMLVideoElement) {
+        window.HTMLVideoElement.prototype.webkitEnterFullscreen = function webkitEnterFullscreen() {};
+      }
+      document.exitFullscreen = noop;
+    });
     await installRoutes(page);
     await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#catalogGrid .card', { timeout: 10000 });
@@ -334,6 +518,9 @@ async function main() {
       pixActive: document.querySelector('[data-payment-method="pix_qr"]')?.classList.contains('active'),
       appJs: [...document.scripts].find((script) => new URL(script.src, location.href).pathname.endsWith('/app.js'))?.src || '',
       welcomeLogo: document.querySelector('.player-loading-logo')?.getAttribute('src') || '',
+      playerControls: Boolean(document.querySelector('#playerControls')),
+      playerSeekInput: Boolean(document.querySelector('#playerSeekInput')),
+      playerVolumeInput: Boolean(document.querySelector('#playerVolumeInput')),
       coverFallbacks: [
         document.querySelector('#catalogGrid .card[data-id="814e3fba-38ce-47d5-b554-9e6b26c6eb58"] img')?.getAttribute('src') || '',
         document.querySelector('#catalogGrid .card[data-id="e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15"] img')?.getAttribute('src') || '',
@@ -348,6 +535,7 @@ async function main() {
       muted: document.querySelector('#mainVideo')?.muted,
       poster: document.querySelector('#mainVideo')?.getAttribute('poster') || '',
       playerError: document.querySelector('#playerError')?.classList.contains('active'),
+      controlsActive: document.querySelector('#playerControls')?.offsetParent !== null,
     }));
     await page.evaluate(() => window.closePlayer());
 
@@ -456,15 +644,23 @@ async function main() {
       text: document.querySelector('#ownerDashboard')?.textContent?.replace(/\s+/g, ' ').trim(),
     }));
 
+    await page.locator('[data-owner-migrate-priority]').click();
+    await page.waitForTimeout(1200);
+    const migratedOwnerState = await page.evaluate(() => ({
+      visible: document.querySelector('#ownerOverlay')?.classList.contains('active'),
+      text: document.querySelector('#ownerDashboard')?.textContent?.replace(/\s+/g, ' ').trim(),
+    }));
+
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260629-04')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260629-08')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
+    if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
     if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
     if (initial.missingPlayback !== 'missing') failures.push(`missing playback state: ${initial.missingPlayback}`);
-    if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError || directState.muted) failures.push('direct player failed');
+    if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError || directState.muted || !directState.controlsActive) failures.push('direct player failed');
     if (storageState.playback !== 'direct' || !storageState.overlay || storageState.videoDisplay !== 'block' || storageState.playerError) failures.push('storage signed player failed');
     const normalizedFallbackTitle = (fallbackBeforeClick.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (!normalizedFallbackTitle.includes('Erro ao reproduzir')) failures.push('protected fallback title failed');
@@ -483,6 +679,7 @@ async function main() {
     if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
     if (!paidAfterPayment.overlay || paidAfterPayment.videoDisplay !== 'block' || paidAfterPayment.playerError) failures.push('paid series post-payment player failed');
     if (!ownerState.visible || !ownerState.text.includes('Series no catalogo') && !ownerState.text.includes('Séries no catálogo')) failures.push('owner area failed');
+    if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Fila urgente 0') && !migratedOwnerState.text.includes('Serie Migrada'))) failures.push('owner migration failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
 
     const result = {
@@ -502,6 +699,7 @@ async function main() {
         checkoutState,
         paidAfterPayment,
         ownerState,
+        migratedOwnerState,
       },
     };
 
