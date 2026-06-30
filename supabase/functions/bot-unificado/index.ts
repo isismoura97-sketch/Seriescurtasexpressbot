@@ -1872,7 +1872,7 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
         const order = await getPaymentOrderById(orderId);
         if (order) {
           if (String(order.status ?? "").toLowerCase() === "approved") {
-            await sendPaymentConfirmationMessage(order as Record<string, unknown>, { status_detail: "already_approved" });
+            await sendPaymentConfirmationMessage(order as Record<string, unknown>, { status_detail: "Pagamento já confirmado." });
           } else {
             await sendPaymentCreatedMessage(order as Record<string, unknown>);
           }
