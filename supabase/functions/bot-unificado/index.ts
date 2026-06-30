@@ -9,6 +9,10 @@ const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? 
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
 const CATALOG_URL = Deno.env.get("CATALOG_URL") ?? SERIES_WEBAPP_URL;
 const SUPPORT_URL = Deno.env.get("SUPPORT_URL") ?? Deno.env.get("TELEGRAM_SUPPORT_URL") ?? "https://t.me/ShortNovelsBot";
+const TELEGRAM_BOT_USERNAME = (
+  Deno.env.get("TELEGRAM_BOT_USERNAME") ??
+  SUPPORT_URL.replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "")
+).trim();
 const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-08";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
@@ -128,11 +132,17 @@ function buildSeriesLaunchUrl(seriesId: string) {
 
 function buildTelegramCheckoutUrl(orderId: string) {
   const suffix = String(orderId ?? "").trim();
-  const url = new URL(`https://t.me/${TELEGRAM_BOT_USERNAME}`);
+  const botUsername = TELEGRAM_BOT_USERNAME || "ShortNovelsBot";
+  const url = new URL(`https://t.me/${botUsername}`);
   if (suffix) {
     url.searchParams.set("start", `checkout_${suffix}`);
   }
   return url.toString();
+}
+
+function buildSeriesRowFilter(seriesId: string) {
+  const idColumn = SERIES_ID_COLUMN || "id";
+  return `${SERIES_TABLE}?${idColumn}=eq.${encodeURIComponent(seriesId)}`;
 }
 
 function telegramApiUrl(path: string) {
@@ -824,12 +834,17 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
 
   if (method === "telegram_checkout") {
     baseLines.push("O checkout guiado já está pronto dentro do Telegram.");
-    baseLines.push("Toque no botão para continuar a confirmação do pedido.");
+    baseLines.push("Toque no botão para abrir o pagamento e concluir o pedido.");
     await telegramRequest("sendMessage", {
       chat_id: chatId,
       text: baseLines.join("\n"),
       reply_markup: JSON.stringify({
-        inline_keyboard: [[{ text: "Continuar no Telegram", url: buildTelegramCheckoutUrl(String(order.order_id ?? "")) }]],
+        inline_keyboard: [[{
+          text: "Abrir pagamento",
+          url: typeof order.checkout_url === "string" && order.checkout_url
+            ? order.checkout_url
+            : buildTelegramCheckoutUrl(String(order.order_id ?? "")),
+        }]],
       }),
     });
     return;
@@ -878,9 +893,6 @@ async function sendPaymentConfirmationMessage(order: Record<string, unknown>, pa
       text: primarySeriesTitle ? `Assistir ${primarySeriesTitle}` : "Abrir série",
       web_app: { url: buildSeriesLaunchUrl(primarySeriesId) },
     }]);
-  }
-  if (method === "telegram_checkout") {
-    buttons.push([{ text: "Continuar no Telegram", url: buildTelegramCheckoutUrl(String(order.order_id ?? "")) }]);
   }
   buttons.push([{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]);
 
@@ -3259,7 +3271,7 @@ async function handleOwnerSeriesCreate(req: Request) {
   };
 
   const saved = await supabaseRestRequest(
-    isEdit ? `${SERIES_TABLE}?id=eq.${encodeURIComponent(seriesId)}` : SERIES_TABLE,
+    isEdit ? buildSeriesRowFilter(seriesId) : SERIES_TABLE,
     {
       method: isEdit ? "PATCH" : "POST",
       headers: {
@@ -3286,8 +3298,16 @@ async function handleOwnerSeriesCreate(req: Request) {
 }
 
 async function handleOwnerSeriesMigrate(req: Request) {
-  const form = await req.formData().catch(() => null);
-  const body = form ? Object.fromEntries(form.entries()) : await req.json().catch(() => null) as Record<string, unknown> | null;
+  const contentType = (req.headers.get("content-type") || "").toLowerCase();
+  let body: Record<string, unknown> | null = null;
+
+  if (contentType.includes("application/json")) {
+    body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  } else {
+    const form = await req.formData().catch(() => null);
+    body = form ? Object.fromEntries(form.entries()) : null;
+  }
+
   if (!body) {
     return json(req, { error: "Corpo da requisicao invalido" }, 400);
   }
@@ -3307,7 +3327,12 @@ async function handleOwnerSeriesMigrate(req: Request) {
     return json(req, { error: "Serie nao encontrada" }, 404);
   }
 
-  const fileId = extractTelegramFileId(existingRow as Record<string, unknown>);
+  let fileId = extractTelegramFileId(existingRow as Record<string, unknown>);
+  if (!fileId) {
+    const episodes = await getEpisodesList(seriesId);
+    const firstPlayable = getPlayableEpisodesForSeries(episodes, seriesId)[0] ?? null;
+    fileId = firstPlayable ? getEpisodeFileId(firstPlayable) : "";
+  }
   if (!fileId) {
     return json(req, { error: "Nao foi encontrado File_ID para migrar" }, 400);
   }
@@ -3340,7 +3365,7 @@ async function handleOwnerSeriesMigrate(req: Request) {
   };
 
   await supabaseRestRequest(
-    `${SERIES_TABLE}?id=eq.${encodeURIComponent(seriesId)}`,
+    buildSeriesRowFilter(seriesId),
     {
       method: "PATCH",
       headers: {
@@ -3389,7 +3414,7 @@ async function handleOwnerSeriesDelete(req: Request) {
   await deleteSeriesMediaAssets(existingRow as Record<string, unknown>);
 
   await supabaseRestRequest(
-    `${SERIES_TABLE}?id=eq.${encodeURIComponent(seriesId)}`,
+    buildSeriesRowFilter(seriesId),
     {
       method: "DELETE",
       headers: {

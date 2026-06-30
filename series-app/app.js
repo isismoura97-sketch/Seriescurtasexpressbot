@@ -166,6 +166,7 @@ const DOM = {
     playerSeekInput: document.getElementById('playerSeekInput'),
     playerCurrentTime: document.getElementById('playerCurrentTime'),
     playerDuration: document.getElementById('playerDuration'),
+    playerPlayBtn: document.getElementById('playerPlayBtn'),
     playerVolumeInput: document.getElementById('playerVolumeInput'),
     playerMuteBtn: document.getElementById('playerMuteBtn'),
     playerFullscreenBtn: document.getElementById('playerFullscreenBtn'),
@@ -288,6 +289,31 @@ function updatePlayerMuteButton() {
     DOM.playerMuteBtn.setAttribute('aria-label', isMuted ? 'Ativar som' : 'Silenciar');
 }
 
+function updatePlayerPlayButton() {
+    if (!DOM.mainVideo || !DOM.playerPlayBtn) return;
+    const isPaused = DOM.mainVideo.paused || DOM.mainVideo.ended;
+    DOM.playerPlayBtn.innerHTML = isPaused
+        ? '<i class="fas fa-play"></i>'
+        : '<i class="fas fa-pause"></i>';
+    DOM.playerPlayBtn.setAttribute('aria-label', isPaused ? 'Reproduzir' : 'Pausar');
+}
+
+async function togglePlayerPlayback() {
+    if (!DOM.mainVideo) return;
+    try {
+        if (DOM.mainVideo.paused || DOM.mainVideo.ended) {
+            await DOM.mainVideo.play();
+        } else {
+            DOM.mainVideo.pause();
+        }
+    } catch (error) {
+        console.warn('[PLAYER] Falha ao alternar reprodução:', error?.message || error);
+        showToast('Toque em reproduzir novamente para iniciar o vídeo.', 'info');
+    } finally {
+        updatePlayerPlayButton();
+    }
+}
+
 function updatePlayerControlsFromVideo() {
     if (!DOM.mainVideo) return;
 
@@ -314,6 +340,7 @@ function updatePlayerControlsFromVideo() {
     }
 
     updatePlayerMuteButton();
+    updatePlayerPlayButton();
 }
 
 async function requestPlayerFullscreen() {
@@ -375,10 +402,16 @@ function bindPlayerVideoEvents() {
         updatePlayerControlsFromVideo();
     });
 
+    DOM.mainVideo.addEventListener('play', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('pause', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('ended', updatePlayerControlsFromVideo);
     DOM.mainVideo.addEventListener('loadedmetadata', updatePlayerControlsFromVideo);
     DOM.mainVideo.addEventListener('timeupdate', updatePlayerControlsFromVideo);
     DOM.mainVideo.addEventListener('durationchange', updatePlayerControlsFromVideo);
     DOM.mainVideo.addEventListener('volumechange', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('click', () => {
+        void togglePlayerPlayback();
+    });
 
     DOM.mainVideo.addEventListener('waiting', () => {
         if (DOM.playerOverlay?.classList.contains('active') && DOM.mainVideo?.style.display === 'block') {
@@ -420,6 +453,12 @@ function wirePlayerControls() {
                 DOM.mainVideo.volume = 0.8;
             }
             updatePlayerControlsFromVideo();
+        };
+    }
+
+    if (DOM.playerPlayBtn instanceof HTMLButtonElement) {
+        DOM.playerPlayBtn.onclick = () => {
+            void togglePlayerPlayback();
         };
     }
 
@@ -559,6 +598,11 @@ function buildTelegramCheckoutUrl(orderId = '') {
     return `https://t.me/${TELEGRAM_BOT_USERNAME}${suffix ? `?start=${suffix}` : ''}`;
 }
 
+function getOrderPaymentUrl(order) {
+    const checkoutUrl = String(order?.checkout_url || '').trim();
+    return checkoutUrl || buildTelegramCheckoutUrl(order?.order_id || '');
+}
+
 function restoreActivePaymentOrder() {
     try {
         const raw = localStorage.getItem(ACTIVE_PAYMENT_ORDER_STORAGE_KEY);
@@ -690,7 +734,7 @@ function renderPaymentSummary(order) {
     }
 
     if (method === 'telegram_checkout') {
-        details.push(`<div class="payment-detail"><span>Telegram</span><strong>Checkout guiado</strong></div>`);
+        details.push(`<div class="payment-detail"><span>Telegram</span><strong>Confirmação pelo bot</strong></div>`);
     }
 
     if (order.pix_qr_code) {
@@ -734,9 +778,9 @@ function renderPaymentSummary(order) {
             }
         });
     } else if (method === 'telegram_checkout') {
-        openButton.innerHTML = '<i class="fab fa-telegram"></i> Continuar no Telegram';
+        openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Abrir pagamento';
         openButton.addEventListener('click', () => {
-            openTelegramBotLink(buildTelegramCheckoutUrl(order.order_id || ''));
+            openExternalLink(getOrderPaymentUrl(order));
         });
     } else {
         openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Abrir página Mercado Pago';
@@ -763,9 +807,9 @@ function renderPaymentSummary(order) {
     if (method === 'telegram_checkout') {
         const guideButton = document.createElement('button');
         guideButton.className = 'btn btn-secondary';
-        guideButton.innerHTML = '<i class="fas fa-circle-info"></i> Como funciona';
+        guideButton.innerHTML = '<i class="fab fa-telegram"></i> Abrir bot';
         guideButton.addEventListener('click', () => {
-            showToast('Abra o Telegram, siga as instruções do bot e acompanhe o pagamento aqui no Mini App.', 'info');
+            openTelegramBotLink(buildTelegramCheckoutUrl(order.order_id || ''));
         });
         DOM.paymentSummaryActions.appendChild(guideButton);
     }
@@ -2572,6 +2616,11 @@ function retryPlayer() {
 
 function closePlayer() {
     resetVideo();
+    if (tg?.exitFullscreen) {
+        try {
+            tg.exitFullscreen();
+        } catch (_) {}
+    }
     if (document.fullscreenElement) {
         document.exitFullscreen?.().catch?.(() => {});
     }
@@ -2835,7 +2884,7 @@ function checkout() {
         showToast('Pedido criado. Acompanhe o pagamento abaixo.', 'success');
 
         if (selectedPaymentMethod === 'telegram_checkout') {
-            openTelegramBotLink(buildTelegramCheckoutUrl(order.order_id || ''));
+            openExternalLink(getOrderPaymentUrl(order));
         } else if (selectedPaymentMethod !== 'pix_qr' && order.checkout_url) {
             openExternalLink(order.checkout_url);
         }
