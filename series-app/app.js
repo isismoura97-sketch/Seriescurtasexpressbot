@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260629-07';
+const BUILD_VERSION = '20260629-08';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -1528,7 +1528,7 @@ function openOwnerMigrationForSeries(serie) {
     }
 
     openOwnerArea();
-    setOwnerStatus('Entre na área do proprietário e envie o vídeo principal em arquivo MP4/WebM. File_ID grande do Telegram não toca dentro do Mini App.', 'info');
+    setOwnerStatus('Entre na área do proprietário e envie o vídeo principal em arquivo MP4/WebM. Se o conteúdo estiver só com File_ID do Telegram, ele precisa ser migrado para tocar no Mini App.', 'info');
 
     if (ownerDashboardSnapshot && serie?.id) {
         setTimeout(() => openOwnerSeriesEditor(serie.id), 120);
@@ -1837,7 +1837,7 @@ function renderOwnerDashboard(data) {
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
                             <i class="fas fa-cloud-arrow-up"></i> Publicar série
                         </button>
-                        <p class="owner-upload-note">Envie o vídeo principal por arquivo para tocar no player interno. File_ID do Telegram continuará marcado para migração.</p>
+                        <p class="owner-upload-note">Envie o vídeo principal por arquivo para tocar no player interno. Se ainda existir File_ID do Telegram, ele continuará marcado para migração.</p>
                     </div>
                     <div class="owner-status" id="ownerUploadStatus"></div>
                 </form>
@@ -2517,7 +2517,7 @@ async function openPlayer(serieId, title) {
             playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: '' };
             const ownerCanMigrate = isOwnerUser();
             const telegramDescription = ownerCanMigrate
-                ? 'Este título tem File_ID do Telegram, mas ainda não tem vídeo interno no Supabase. Envie o arquivo principal pelo painel do proprietário para tocar dentro do Mini App.'
+                ? 'Este título ainda está no fluxo do Telegram. Envie o arquivo principal pelo painel do proprietário para liberar a reprodução interna no Mini App.'
                 : 'Este vídeo está sendo preparado para reprodução protegida dentro do Mini App.';
             DOM.mainVideo.style.display = 'none';
             DOM.playerOverlay.dataset.state = 'unavailable';

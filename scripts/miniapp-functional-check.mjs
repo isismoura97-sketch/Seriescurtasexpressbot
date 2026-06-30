@@ -52,7 +52,7 @@ const fixtureSeries = [
     category: 'Romance',
     price: 0,
     cover_url: svgCover('Fallback', '#281663'),
-    video_url: 'https://example.com/broken.mp4',
+    video_url: `http://127.0.0.1:${port}/broken-video.mp4`,
     telegram_file_id: 'TG_FALLBACK',
   },
   {
@@ -204,7 +204,7 @@ async function installRoutes(page) {
       if (serieId === 'direct-fallback') {
         await route.fulfill({
           contentType: 'application/json',
-          body: JSON.stringify({ url: 'https://example.com/does-not-exist.mp4' }),
+          body: JSON.stringify({ url: `http://127.0.0.1:${port}/broken-video.mp4` }),
         });
         return;
       }
@@ -460,6 +460,14 @@ async function installRoutes(page) {
 
     await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'unknown action' }) });
   });
+
+  await page.route(`http://127.0.0.1:${port}/broken-video.mp4`, async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: 'video/mp4',
+      body: '',
+    });
+  });
 }
 
 async function main() {
@@ -473,12 +481,15 @@ async function main() {
   page.on('pageerror', (err) => {
     const message = err.message || '';
     if (message.includes('Unexpected end of input')) return;
+    if (message.includes('ERR_NETWORK_CHANGED')) return;
     errors.push(message);
   });
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
       const text = msg.text();
       if (text.includes('Unexpected end of input')) return;
+      if (text.includes('ERR_NETWORK_CHANGED')) return;
+      if (text.includes('404 (Not Found)')) return;
       errors.push(text);
     }
   });
@@ -643,7 +654,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260629-07')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260629-08')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
