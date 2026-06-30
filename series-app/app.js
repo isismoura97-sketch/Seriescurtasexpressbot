@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260629-06';
+const BUILD_VERSION = '20260629-07';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -553,6 +553,12 @@ function getPaymentMethodLabel(method = selectedPaymentMethod) {
     }
 }
 
+function buildTelegramCheckoutUrl(orderId = '') {
+    const safeOrderId = String(orderId || '').trim();
+    const suffix = safeOrderId ? `checkout_${encodeURIComponent(safeOrderId)}` : '';
+    return `https://t.me/${TELEGRAM_BOT_USERNAME}${suffix ? `?start=${suffix}` : ''}`;
+}
+
 function restoreActivePaymentOrder() {
     try {
         const raw = localStorage.getItem(ACTIVE_PAYMENT_ORDER_STORAGE_KEY);
@@ -683,6 +689,10 @@ function renderPaymentSummary(order) {
         details.push(`<div class="payment-detail"><span>Mercado Pago</span><strong>Página disponível</strong></div>`);
     }
 
+    if (method === 'telegram_checkout') {
+        details.push(`<div class="payment-detail"><span>Telegram</span><strong>Checkout guiado</strong></div>`);
+    }
+
     if (order.pix_qr_code) {
         details.push(`<div class="payment-detail"><span>Pix</span><strong>Código gerado</strong></div>`);
         const qrBase64 = String(order.pix_qr_code_base64 || '').trim();
@@ -724,9 +734,9 @@ function renderPaymentSummary(order) {
             }
         });
     } else if (method === 'telegram_checkout') {
-        openButton.innerHTML = '<i class="fab fa-telegram"></i> Abrir checkout no Telegram';
+        openButton.innerHTML = '<i class="fab fa-telegram"></i> Continuar no Telegram';
         openButton.addEventListener('click', () => {
-            openTelegramBotLink(`https://t.me/${TELEGRAM_BOT_USERNAME}`);
+            openTelegramBotLink(buildTelegramCheckoutUrl(order.order_id || ''));
         });
     } else {
         openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Abrir página Mercado Pago';
@@ -748,6 +758,16 @@ function renderPaymentSummary(order) {
             showToast('Link de pagamento copiado!', 'success');
         });
         DOM.paymentSummaryActions.appendChild(copyLinkButton);
+    }
+
+    if (method === 'telegram_checkout') {
+        const guideButton = document.createElement('button');
+        guideButton.className = 'btn btn-secondary';
+        guideButton.innerHTML = '<i class="fas fa-circle-info"></i> Como funciona';
+        guideButton.addEventListener('click', () => {
+            showToast('Abra o Telegram, siga as instruções do bot e acompanhe o pagamento aqui no Mini App.', 'info');
+        });
+        DOM.paymentSummaryActions.appendChild(guideButton);
     }
 
     if (order.ticket_url) {
@@ -1707,6 +1727,10 @@ function renderOwnerDashboard(data) {
                         <div class="owner-side-item">
                             <span>Pedidos registrados</span>
                             <strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong>
+                        </div>
+                        <div class="owner-side-item">
+                            <span>Fluxo rápido</span>
+                            <strong>1. Cadastrar 2. Subir mídia 3. Migrar</strong>
                         </div>
                     </div>
                     <div class="owner-hero-actions">
@@ -2811,7 +2835,7 @@ function checkout() {
         showToast('Pedido criado. Acompanhe o pagamento abaixo.', 'success');
 
         if (selectedPaymentMethod === 'telegram_checkout') {
-            openTelegramBotLink(`https://t.me/${TELEGRAM_BOT_USERNAME}`);
+            openTelegramBotLink(buildTelegramCheckoutUrl(order.order_id || ''));
         } else if (selectedPaymentMethod !== 'pix_qr' && order.checkout_url) {
             openExternalLink(order.checkout_url);
         }

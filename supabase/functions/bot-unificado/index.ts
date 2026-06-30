@@ -9,7 +9,7 @@ const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? 
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
 const CATALOG_URL = Deno.env.get("CATALOG_URL") ?? SERIES_WEBAPP_URL;
 const SUPPORT_URL = Deno.env.get("SUPPORT_URL") ?? Deno.env.get("TELEGRAM_SUPPORT_URL") ?? "https://t.me/ShortNovelsBot";
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-06";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-07";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -123,6 +123,15 @@ async function buildSignedPlaybackUrl(req: Request, fileId: string, title = "") 
 function buildSeriesLaunchUrl(seriesId: string) {
   const url = new URL(SERIES_WEBAPP_URL);
   url.searchParams.set("play", seriesId);
+  return url.toString();
+}
+
+function buildTelegramCheckoutUrl(orderId: string) {
+  const suffix = String(orderId ?? "").trim();
+  const url = new URL(`https://t.me/${TELEGRAM_BOT_USERNAME}`);
+  if (suffix) {
+    url.searchParams.set("start", `checkout_${suffix}`);
+  }
   return url.toString();
 }
 
@@ -602,7 +611,7 @@ async function createPaymentOrderRecord(entry: {
         chat_id: entry.chatId,
         status: entry.status ?? "created",
         payment_method: entry.paymentMethod,
-        checkout_mode: entry.paymentMethod === "telegram_checkout" ? "telegram" : "mercado_pago",
+        checkout_mode: entry.paymentMethod,
         currency: "BRL",
         amount: Number(entry.amount.toFixed(2)),
         items: entry.items,
@@ -813,6 +822,19 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
     return;
   }
 
+  if (method === "telegram_checkout") {
+    baseLines.push("O checkout guiado já está pronto dentro do Telegram.");
+    baseLines.push("Toque no botão para continuar a confirmação do pedido.");
+    await telegramRequest("sendMessage", {
+      chat_id: chatId,
+      text: baseLines.join("\n"),
+      reply_markup: JSON.stringify({
+        inline_keyboard: [[{ text: "Continuar no Telegram", url: buildTelegramCheckoutUrl(String(order.order_id ?? "")) }]],
+      }),
+    });
+    return;
+  }
+
   baseLines.push("O checkout foi iniciado dentro do Telegram.");
   await telegramRequest("sendMessage", {
     chat_id: chatId,
@@ -856,6 +878,9 @@ async function sendPaymentConfirmationMessage(order: Record<string, unknown>, pa
       text: primarySeriesTitle ? `Assistir ${primarySeriesTitle}` : "Abrir série",
       web_app: { url: buildSeriesLaunchUrl(primarySeriesId) },
     }]);
+  }
+  if (method === "telegram_checkout") {
+    buttons.push([{ text: "Continuar no Telegram", url: buildTelegramCheckoutUrl(String(order.order_id ?? "")) }]);
   }
   buttons.push([{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]);
 
@@ -1839,6 +1864,20 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
       if (serieId) {
         await sendSeriesLaunchPrompt(chatId, serieId, await resolveSeriesTitle(serieId));
         return json(req, { ok: true, action: "start_playback_received" });
+      }
+    }
+    if (startPayload.startsWith("checkout_")) {
+      const orderId = startPayload.slice("checkout_".length).trim();
+      if (orderId) {
+        const order = await getPaymentOrderById(orderId);
+        if (order) {
+          if (String(order.status ?? "").toLowerCase() === "approved") {
+            await sendPaymentConfirmationMessage(order as Record<string, unknown>, { status_detail: "already_approved" });
+          } else {
+            await sendPaymentCreatedMessage(order as Record<string, unknown>);
+          }
+          return json(req, { ok: true, action: "start_checkout_received" });
+        }
       }
     }
     await sendBotWelcomeMessage(chatId);
