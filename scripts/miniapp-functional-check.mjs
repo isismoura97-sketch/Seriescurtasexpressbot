@@ -666,7 +666,7 @@ async function main() {
     if (!normalizedFallbackTitle.includes('Erro ao reproduzir')) failures.push('protected fallback title failed');
     if (fallbackAfterClick.sent || fallbackAfterClick.opened) failures.push('fallback should not open telegram');
     const normalizedTelegramTitle = (telegramPlayer.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (normalizedTelegramTitle !== 'Envie este video ao player interno') failures.push('telegram player migration prompt failed');
+    if (normalizedTelegramTitle !== 'Envie o video principal') failures.push('telegram player migration prompt failed');
     if (!telegramPlayer.action?.includes('Enviar')) failures.push('telegram player migration action failed');
     if (!migrationOwnerOpened) failures.push('owner migration shortcut failed');
     if (telegramSent) failures.push('telegram-only should not send file_id to bot');

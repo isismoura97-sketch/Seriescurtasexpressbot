@@ -1514,7 +1514,6 @@ async function configureTelegramBotSurface() {
       { command: "catalogo", description: "Ver series disponiveis" },
       { command: "menu", description: "Mostrar opcoes" },
       { command: "ajuda", description: "Receber ajuda" },
-      { command: "fileid", description: "Receber File_ID de midias" },
     ]),
   });
 
@@ -1831,14 +1830,17 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
   }
 
   const chat = message.chat as Record<string, unknown> | undefined;
+  const from = message.from as Record<string, unknown> | undefined;
   const chatType = typeof chat?.type === "string" ? chat.type : "";
   const chatId = chat?.id as string | number | undefined;
+  const senderUserId = from?.id == null ? "" : String(from.id);
+  const isOwnerSender = senderUserId === String(OWNER_TELEGRAM_USER_ID);
   if (chatId == null) {
     return json(req, { ok: true, ignored: true });
   }
 
   const mediaFileEntries = getTelegramMediaFileEntries(message);
-  if (chatType === "private" && mediaFileEntries.length) {
+  if (chatType === "private" && isOwnerSender && mediaFileEntries.length) {
     await sendTelegramFileIdMessage(chatId, mediaFileEntries);
     return json(req, { ok: true, action: "file_id_sent", count: mediaFileEntries.length });
   }
@@ -1902,6 +1904,10 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
   }
 
   if (/^(?:\/fileid|fileid)$/i.test(text)) {
+    if (!isOwnerSender) {
+      await sendBotWelcomeMessage(chatId);
+      return json(req, { ok: true, action: "owner_only_hidden" });
+    }
     await telegramRequest("sendMessage", {
       chat_id: chatId,
       text: [
@@ -2235,7 +2241,6 @@ async function sendBotWelcomeMessage(chatId: string | number) {
   const text = [
     "Bem-vindo ao Séries Express.",
     "Abra o catálogo para ver as séries gratuitas e as séries com liberação por pagamento.",
-    "Se quiser o File_ID de uma imagem ou vídeo, envie a mídia no privado ou use /fileid.",
     "Se você já começou uma série, também pode reabri-la pelo Mini App.",
   ].join("\n");
   const replyMarkup = JSON.stringify({

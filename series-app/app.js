@@ -1173,7 +1173,7 @@ async function migrateOwnerSeriesVideo(seriesId, options = {}) {
 async function migrateOwnerPrioritySeries() {
     const queue = ownerSeriesCatalog.filter((item) => needsOwnerSeriesMigration(item));
     if (!queue.length) {
-        showToast('Não há File_ID pendente para migrar.', 'info');
+        showToast('Não há vídeos pendentes para preparar agora.', 'info');
         return;
     }
 
@@ -1567,12 +1567,12 @@ function closeOwnerArea() {
 function openOwnerMigrationForSeries(serie) {
     closePlayer();
     if (!isOwnerUser()) {
-        showToast('Esse vídeo está sendo preparado para o player interno.', 'info');
+        showToast('Esse vídeo ainda está sendo preparado para reprodução.', 'info');
         return;
     }
 
     openOwnerArea();
-    setOwnerStatus('Entre na área do proprietário e envie o vídeo principal em arquivo MP4/WebM. Se o conteúdo estiver só com File_ID do Telegram, ele precisa ser migrado para tocar no Mini App.', 'info');
+    setOwnerStatus('Entre na área do proprietário e envie o vídeo principal em arquivo MP4/WebM para liberar a reprodução no Mini App.', 'info');
 
     if (ownerDashboardSnapshot && serie?.id) {
         setTimeout(() => openOwnerSeriesEditor(serie.id), 120);
@@ -1637,14 +1637,14 @@ function renderOwnerDashboard(data) {
             const videoLabel = hasOwnerSeriesInternalPlayback(serie)
                 ? 'Player interno OK'
                 : needsOwnerSeriesMigration(serie)
-                    ? 'Migrar File_ID'
+                    ? 'Preparar vídeo'
                     : 'Sem vídeo';
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
             const coverUrl = getCoverUrl(serie);
             const editId = String(serie.id || '');
             const quickAction = needsOwnerSeriesMigration(serie) ? 'migrate' : 'video';
-            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Migrar File_ID' : 'Trocar vídeo';
+            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Preparar vídeo' : 'Trocar vídeo';
             const quickActionIcon = needsOwnerSeriesMigration(serie) ? 'fa-wand-magic-sparkles' : 'fa-film';
             return `
                 <article class="owner-series-row owner-series-row-priority">
@@ -1685,14 +1685,14 @@ function renderOwnerDashboard(data) {
             const videoLabel = hasOwnerSeriesInternalPlayback(serie)
                 ? 'Player interno OK'
                 : needsOwnerSeriesMigration(serie)
-                    ? 'Migrar File_ID'
+                    ? 'Preparar vídeo'
                     : 'Sem vídeo';
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
             const coverUrl = getCoverUrl(serie);
             const editId = String(serie.id || '');
             const quickAction = needsOwnerSeriesMigration(serie) ? 'migrate' : 'video';
-            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Migrar File_ID' : 'Trocar vídeo';
+            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Preparar vídeo' : 'Trocar vídeo';
             const quickActionIcon = needsOwnerSeriesMigration(serie) ? 'fa-wand-magic-sparkles' : 'fa-film';
             return `
                 <article class="owner-series-row">
@@ -1733,7 +1733,7 @@ function renderOwnerDashboard(data) {
         { key: 'free', label: `Grátis (${filterCounts.free})` },
         { key: 'paid', label: `Pagas (${filterCounts.paid})` },
         { key: 'playable', label: `Player interno (${filterCounts.playable})` },
-        { key: 'migration', label: `Migrar File_ID (${filterCounts.migration})` },
+        { key: 'migration', label: `Preparar vídeos (${filterCounts.migration})` },
         { key: 'missing_video', label: `Sem vídeo (${filterCounts.missing_video})` },
     ];
 
@@ -1749,7 +1749,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-hero-copy">
                     <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Central do proprietário</span>
                     <h3>Gerencie séries, capa, trailer e vídeo principal em um só painel.</h3>
-                    <p>O catálogo foi reorganizado para séries em vídeo único. Priorize as séries com File_ID pendente e publique tudo direto no Mini App com visual mais limpo.</p>
+                    <p>O catálogo foi reorganizado para séries em vídeo único. Priorize os vídeos pendentes e publique tudo direto no Mini App com visual mais limpo.</p>
                 </div>
                 <div class="owner-hero-side">
                     <div class="owner-brand">
@@ -1881,7 +1881,7 @@ function renderOwnerDashboard(data) {
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
                             <i class="fas fa-cloud-arrow-up"></i> Publicar série
                         </button>
-                        <p class="owner-upload-note">Envie o vídeo principal por arquivo para tocar no player interno. Se ainda existir File_ID do Telegram, ele continuará marcado para migração.</p>
+                        <p class="owner-upload-note">Envie o vídeo principal por arquivo para tocar no player interno.</p>
                     </div>
                     <div class="owner-status" id="ownerUploadStatus"></div>
                 </form>
@@ -1890,7 +1890,7 @@ function renderOwnerDashboard(data) {
                 <h3>Saúde do Catálogo</h3>
                 <div class="owner-list">
                     <div class="owner-list-row"><span>Player interno OK</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
-                    <div class="owner-list-row"><span>File_ID precisa migrar</span><strong>${escapeHtml(String(migrationSeriesCount))}</strong></div>
+                    <div class="owner-list-row"><span>Vídeos pendentes</span><strong>${escapeHtml(String(migrationSeriesCount))}</strong></div>
                     <div class="owner-list-row"><span>Sem arquivo identificado</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
                 </div>
             </div>
@@ -1906,7 +1906,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-section-head">
                     <div>
                         <h3>Séries cadastradas</h3>
-                        <p>Busque, filtre e troque o vídeo rapidamente. Priorize os itens “File_ID - migrar”.</p>
+                        <p>Busque, filtre e troque o vídeo rapidamente. Priorize os itens que ainda precisam de preparo.</p>
                     </div>
                     <div class="owner-series-count">${escapeHtml(visibleSeriesLabel)} exibidas</div>
                 </div>
@@ -2348,26 +2348,6 @@ function renderNetflixRow(series) {
     row.style.display = 'block';
 }
 
-function renderTelegramRow(series) {
-    const container = DOM.telegramScroll;
-    const row = DOM.telegramRow;
-    if (!container || !row) return;
-
-    const telegramSeries = series.filter(item => getPlaybackMode(item) === 'telegram');
-    container.innerHTML = '';
-
-    if (!telegramSeries.length) {
-        row.style.display = 'none';
-        return;
-    }
-
-    telegramSeries.slice(0, 6).forEach(s => container.appendChild(createCard(s, true)));
-    if (DOM.telegramRowCount) {
-        DOM.telegramRowCount.textContent = `${telegramSeries.length} título${telegramSeries.length === 1 ? '' : 's'}`;
-    }
-    row.style.display = 'block';
-}
-
 function renderGrid(series) {
     const grid = DOM.catalogGrid;
     if (!grid) return;
@@ -2382,9 +2362,7 @@ function renderGrid(series) {
 function getVisibleSeries() {
     let filtered = allSeries.slice();
 
-    if (currentCategory === 'telegram') {
-        filtered = filtered.filter(s => getPlaybackMode(s) === 'telegram');
-    } else if (currentCategory !== 'all') {
+    if (currentCategory !== 'all') {
         filtered = filtered.filter(s => s.category?.toLowerCase() === currentCategory);
     }
 
@@ -2397,7 +2375,6 @@ function getVisibleSeries() {
 
 function refreshCatalog() {
     renderGrid(getVisibleSeries());
-    renderTelegramRow(getVisibleSeries());
 }
 
 function createCard(serie, isNetflix = false) {
@@ -2417,8 +2394,6 @@ function createCard(serie, isNetflix = false) {
             ? `Abrir ${serie.title || 'série'} - vídeo indisponível`
             : lockedPlayback
             ? `Abrir ${serie.title || 'série'} - conteúdo bloqueado até pagamento`
-            : telegramOnly
-            ? `Abrir ${serie.title || 'série'} - player protegido no Mini App`
             : `Abrir ${serie.title || 'série'}`
     );
 
@@ -2561,17 +2536,17 @@ async function openPlayer(serieId, title) {
             playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: '' };
             const ownerCanMigrate = isOwnerUser();
             const telegramDescription = ownerCanMigrate
-                ? 'Este título ainda está no fluxo do Telegram. Envie o arquivo principal pelo painel do proprietário para liberar a reprodução interna no Mini App.'
-                : 'Este vídeo está sendo preparado para reprodução protegida dentro do Mini App.';
+                ? 'Este título ainda precisa do vídeo principal em arquivo para liberar a reprodução interna no Mini App.'
+                : 'Este vídeo ainda está sendo preparado para reprodução nesta tela.';
             DOM.mainVideo.style.display = 'none';
             DOM.playerOverlay.dataset.state = 'unavailable';
             setPlayerErrorView({
                 iconClass: 'fas fa-shield-halved',
                 iconColor: '#FFD700',
-                title: ownerCanMigrate ? 'Envie este vídeo ao player interno' : 'Vídeo em preparação',
+                title: ownerCanMigrate ? 'Envie o vídeo principal' : 'Vídeo em preparação',
                 description: telegramDescription,
                 buttonHtml: ownerCanMigrate
-                    ? '<i class="fas fa-cloud-arrow-up"></i> Enviar vídeo interno'
+                    ? '<i class="fas fa-cloud-arrow-up"></i> Enviar vídeo'
                     : '<i class="fas fa-redo"></i> Tentar novamente',
                 buttonHandler: ownerCanMigrate ? () => openOwnerMigrationForSeries(sourceSerie) : retryPlayer
             });
@@ -2601,7 +2576,7 @@ function showPlayerError() {
         iconClass: 'fas fa-exclamation-triangle',
         iconColor: '#ff4444',
         title: 'Erro ao reproduzir o vídeo',
-        description: 'Tente novamente. Se o erro persistir, este arquivo precisa ser convertido ou migrado para reprodução protegida dentro do Mini App.',
+        description: 'Tente novamente. Se o erro persistir, este vídeo ainda precisa ser preparado para reprodução dentro do Mini App.',
         buttonHtml: '<i class="fas fa-redo"></i> Tentar Novamente',
         buttonHandler: retryPlayer
     });
@@ -2654,7 +2629,7 @@ function openModal(serie) {
 
     const baseDescription = serie.description || 'Sem descrição disponível.';
     DOM.modalDesc.textContent = playbackMode === 'telegram'
-        ? `${baseDescription} A reprodução será carregada dentro do player protegido do Mini App.`
+        ? `${baseDescription} A reprodução será liberada aqui no Mini App assim que o vídeo estiver pronto.`
         : playbackMode === 'locked'
         ? `${baseDescription} Este título está bloqueado até a confirmação do pagamento.`
         : baseDescription;
