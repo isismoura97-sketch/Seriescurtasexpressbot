@@ -87,7 +87,7 @@ const fixtureSeries = [
     title: 'Serie Paga',
     description: 'Compra de teste.',
     category: 'Romance',
-    price: 19.9,
+    price: 5.9,
     cover_url: '',
     has_video_file_id: true,
   },
@@ -257,7 +257,7 @@ async function installRoutes(page) {
             pix_qr_code: '000201TESTEPIX',
             pix_qr_code_base64: '',
             checkout_url: 'https://mp.test/checkout',
-            items: [{ id: 'paid-series', title: 'Serie Paga', price: 19.9, quantity: 1 }],
+            items: [{ id: 'paid-series', title: 'Serie Paga', price: 5.9, quantity: 1 }],
           },
         }),
       });
@@ -274,8 +274,8 @@ async function installRoutes(page) {
             status: 'approved',
             payment_method: 'pix_qr',
             pix_qr_code: '000201TESTEPIX',
-            amount: 19.9,
-            items: [{ id: 'paid-series', title: 'Serie Paga', price: 19.9, quantity: 1 }],
+            amount: 5.9,
+            items: [{ id: 'paid-series', title: 'Serie Paga', price: 5.9, quantity: 1 }],
           },
         }),
       });
@@ -372,9 +372,9 @@ async function installRoutes(page) {
           catalog,
           payments: {
             orders_total: 1,
-            approved_amount: 19.9,
+            approved_amount: 5.9,
             status_counts: { approved: 1 },
-            recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 19.9 }],
+            recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 5.9 }],
           },
           series_items: seriesItems,
           recent_series: seriesItems,
@@ -417,9 +417,9 @@ async function installRoutes(page) {
             },
             payments: {
               orders_total: 1,
-              approved_amount: 19.9,
+              approved_amount: 5.9,
               status_counts: { approved: 1 },
-              recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 19.9 }],
+              recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 5.9 }],
             },
             series_items: [
               {
