@@ -1637,14 +1637,14 @@ function renderOwnerDashboard(data) {
             const videoLabel = hasOwnerSeriesInternalPlayback(serie)
                 ? 'Player interno OK'
                 : needsOwnerSeriesMigration(serie)
-                    ? 'Preparar vídeo'
+                    ? 'Gerenciar vídeo'
                     : 'Sem vídeo';
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
             const coverUrl = getCoverUrl(serie);
             const editId = String(serie.id || '');
             const quickAction = needsOwnerSeriesMigration(serie) ? 'migrate' : 'video';
-            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Preparar vídeo' : 'Trocar vídeo';
+            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Gerenciar vídeo' : 'Trocar vídeo';
             const quickActionIcon = needsOwnerSeriesMigration(serie) ? 'fa-wand-magic-sparkles' : 'fa-film';
             return `
                 <article class="owner-series-row owner-series-row-priority">
@@ -1685,14 +1685,14 @@ function renderOwnerDashboard(data) {
             const videoLabel = hasOwnerSeriesInternalPlayback(serie)
                 ? 'Player interno OK'
                 : needsOwnerSeriesMigration(serie)
-                    ? 'Preparar vídeo'
+                    ? 'Gerenciar vídeo'
                     : 'Sem vídeo';
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
             const coverUrl = getCoverUrl(serie);
             const editId = String(serie.id || '');
             const quickAction = needsOwnerSeriesMigration(serie) ? 'migrate' : 'video';
-            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Preparar vídeo' : 'Trocar vídeo';
+            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Gerenciar vídeo' : 'Trocar vídeo';
             const quickActionIcon = needsOwnerSeriesMigration(serie) ? 'fa-wand-magic-sparkles' : 'fa-film';
             return `
                 <article class="owner-series-row">
@@ -1733,7 +1733,7 @@ function renderOwnerDashboard(data) {
         { key: 'free', label: `Grátis (${filterCounts.free})` },
         { key: 'paid', label: `Pagas (${filterCounts.paid})` },
         { key: 'playable', label: `Player interno (${filterCounts.playable})` },
-        { key: 'migration', label: `Preparar vídeos (${filterCounts.migration})` },
+        { key: 'migration', label: `Gerenciar vídeos (${filterCounts.migration})` },
         { key: 'missing_video', label: `Sem vídeo (${filterCounts.missing_video})` },
     ];
 
@@ -1749,7 +1749,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-hero-copy">
                     <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Central do proprietário</span>
                     <h3>Gerencie séries, capa, trailer e vídeo principal em um só painel.</h3>
-                    <p>O catálogo foi reorganizado para séries em vídeo único. Priorize os vídeos pendentes e publique tudo direto no Mini App com visual mais limpo.</p>
+                    <p>O catálogo foi reorganizado para séries em vídeo único. Revise os vídeos já cadastrados e publique tudo direto no Mini App com visual mais limpo.</p>
                 </div>
                 <div class="owner-hero-side">
                     <div class="owner-brand">
@@ -1890,7 +1890,7 @@ function renderOwnerDashboard(data) {
                 <h3>Saúde do Catálogo</h3>
                 <div class="owner-list">
                     <div class="owner-list-row"><span>Player interno OK</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
-                    <div class="owner-list-row"><span>Vídeos pendentes</span><strong>${escapeHtml(String(migrationSeriesCount))}</strong></div>
+                    <div class="owner-list-row"><span>Vídeos para revisar</span><strong>${escapeHtml(String(migrationSeriesCount))}</strong></div>
                     <div class="owner-list-row"><span>Sem arquivo identificado</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
                 </div>
             </div>
@@ -1906,7 +1906,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-section-head">
                     <div>
                         <h3>Séries cadastradas</h3>
-                        <p>Busque, filtre e troque o vídeo rapidamente. Priorize os itens que ainda precisam de preparo.</p>
+                        <p>Busque, filtre e ajuste o vídeo rapidamente. Priorize os itens que ainda precisam de compatibilidade com o player interno.</p>
                     </div>
                     <div class="owner-series-count">${escapeHtml(visibleSeriesLabel)} exibidas</div>
                 </div>
@@ -2536,17 +2536,17 @@ async function openPlayer(serieId, title) {
             playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: '' };
             const ownerCanMigrate = isOwnerUser();
             const telegramDescription = ownerCanMigrate
-                ? 'Este título ainda precisa do vídeo principal em arquivo para liberar a reprodução interna no Mini App.'
+                ? 'Este título já tem vídeo cadastrado, mas o player interno ainda não consegue abrir esse formato. Abra o painel do proprietário para revisar ou substituir o arquivo.'
                 : 'Este vídeo ainda está sendo preparado para reprodução nesta tela.';
             DOM.mainVideo.style.display = 'none';
             DOM.playerOverlay.dataset.state = 'unavailable';
             setPlayerErrorView({
                 iconClass: 'fas fa-shield-halved',
                 iconColor: '#FFD700',
-                title: ownerCanMigrate ? 'Envie o vídeo principal' : 'Vídeo em preparação',
+                title: ownerCanMigrate ? 'Vídeo cadastrado' : 'Vídeo em preparação',
                 description: telegramDescription,
                 buttonHtml: ownerCanMigrate
-                    ? '<i class="fas fa-cloud-arrow-up"></i> Enviar vídeo'
+                    ? '<i class="fas fa-gear"></i> Gerenciar vídeo'
                     : '<i class="fas fa-redo"></i> Tentar novamente',
                 buttonHandler: ownerCanMigrate ? () => openOwnerMigrationForSeries(sourceSerie) : retryPlayer
             });
