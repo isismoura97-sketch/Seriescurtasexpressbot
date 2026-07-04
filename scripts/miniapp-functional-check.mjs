@@ -361,7 +361,7 @@ async function installRoutes(page) {
               has_cover: true,
               has_trailer: false,
               has_video_url: false,
-              has_video_file_id: true,
+              has_video_file_id: false,
               video_file_id: 'TG_MIGRATE',
             },
           ];

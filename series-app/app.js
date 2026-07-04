@@ -996,11 +996,21 @@ function normalizeOwnerFilterText(value) {
 }
 
 function hasOwnerSeriesInternalPlayback(serie) {
-    return Boolean(serie?.has_video_url);
+    return Boolean(
+        serie?.has_video_url ||
+        hasDirectPlaybackUrl(serie)
+    );
 }
 
 function needsOwnerSeriesMigration(serie) {
-    return Boolean(!hasOwnerSeriesInternalPlayback(serie) && (serie?.has_video_file_id || serie?.playable_episode_count));
+    return Boolean(
+        !hasOwnerSeriesInternalPlayback(serie) &&
+        (
+            serie?.has_video_file_id ||
+            getTelegramFileId(serie) ||
+            Number(serie?.playable_episode_count || 0) > 0
+        )
+    );
 }
 
 function hasOwnerSeriesAnyVideo(serie) {
