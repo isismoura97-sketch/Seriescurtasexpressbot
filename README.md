@@ -63,6 +63,31 @@ Secrets necessários no Supabase:
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
 
+### Migração para player interno protegido
+
+Para tentar migrar em lote as séries que hoje ainda dependem de `video_file_id`, use:
+
+```bash
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... TELEGRAM_BOT_TOKEN=... node scripts/migrate-series-to-internal-player.mjs --json
+```
+
+O script:
+
+- lê `series` e `episodes`
+- tenta baixar o vídeo original pelo `File_ID` do Telegram
+- envia o arquivo para o bucket `videos`
+- grava apenas `video_storage_path` para que o playback use URL assinada temporária
+
+Limite importante:
+
+- se o Telegram responder `Bad Request: file is too big`, a migração automática não consegue concluir
+- nesses casos, o caminho correto passa a ser enviar o arquivo original pelo painel do proprietário para o Supabase Storage
+
+Mesmo após a migração, as séries pagas continuam protegidas:
+
+- o backend verifica o pagamento antes de gerar a URL assinada do vídeo
+- sem pagamento aprovado, o endpoint `action=stream` responde com `payment_required`
+
 ## Área do proprietário
 
 O mini app mostra um botão de coroa apenas para o Telegram ID configurado em `OWNER_TELEGRAM_USER_ID`.

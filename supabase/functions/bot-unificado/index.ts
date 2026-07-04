@@ -3244,9 +3244,10 @@ async function handleOwnerSeriesCreate(req: Request) {
   const coverPath = coverUpload?.path
     || String(existingRow?.cover_storage_path ?? "").trim()
     || null;
-  const videoUrl = videoUpload?.publicUrl
-    || String(existingRow?.video_url ?? "").trim()
-    || null;
+  const videoUrl = videoUpload
+    ? null
+    : String(existingRow?.video_url ?? "").trim()
+      || null;
   const videoPath = videoUpload?.path
     || String(existingRow?.video_storage_path ?? "").trim()
     || null;
@@ -3257,7 +3258,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     || String(existingRow?.trailer_storage_path ?? "").trim()
     || null;
 
-  if (!coverUrl || !videoUrl) {
+  if (!coverUrl || (!videoPath && !videoUrl)) {
     return json(req, { error: "A série precisa de capa e vídeo principal" }, 400);
   }
 
@@ -3365,7 +3366,7 @@ async function handleOwnerSeriesMigrate(req: Request) {
   const uploaded = await uploadStorageObject(SERIES_VIDEO_BUCKET, objectPath, migratedFile);
 
   const rowPayload: Record<string, unknown> = {
-    video_url: uploaded.publicUrl,
+    video_url: null,
     video_storage_path: uploaded.path,
   };
 
