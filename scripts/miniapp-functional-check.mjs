@@ -514,6 +514,7 @@ async function main() {
       cards: document.querySelectorAll('#catalogGrid .card').length,
       groupTitles: [...document.querySelectorAll('#catalogGrid .catalog-group-title')].map((node) => node.textContent?.trim() || ''),
       groupCounts: [...document.querySelectorAll('#catalogGrid .catalog-group-count')].map((node) => node.textContent?.trim() || ''),
+      paidCardAction: document.querySelector('#catalogGrid .card[data-id="paid-series"] .card-cart-btn')?.textContent?.replace(/\s+/g, ' ').trim() || '',
       topBadges: document.querySelectorAll('#catalogGrid .badge-gratis-landscape, #catalogGrid .badge-telegram-landscape, #catalogGrid .badge-locked-landscape, #catalogGrid .badge-unavailable-landscape').length,
       lockedPaidPlayback: document.querySelector('#catalogGrid .card[data-id="paid-series"]')?.dataset.playback || '',
       missingPlayback: document.querySelector('#catalogGrid .card[data-id="missing-video"]')?.dataset.playback || '',
@@ -622,6 +623,9 @@ async function main() {
       summaryHidden: document.querySelector('#paymentSummaryPanel')?.hidden,
       summaryText: document.querySelector('#paymentSummaryPanel')?.textContent?.replace(/\s+/g, ' ').trim(),
     }));
+    const paidCardAfterPayment = await page.evaluate(() => ({
+      action: document.querySelector('#catalogGrid .card[data-id="paid-series"] .card-cart-btn')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+    }));
 
     await page.evaluate(() => window.toggleCart(false));
     await page.waitForFunction(() => (
@@ -661,6 +665,7 @@ async function main() {
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.groupTitles.includes('Séries Gratuitas') || !initial.groupTitles.includes('Séries Pagas')) failures.push(`catalog groups missing: ${initial.groupTitles.join(', ')}`);
     if (!initial.groupCounts.includes('8 títulos') || !initial.groupCounts.includes('1 título')) failures.push(`catalog group counts unexpected: ${initial.groupCounts.join(', ')}`);
+    if (!initial.paidCardAction.includes('Comprar')) failures.push(`paid card action before payment: ${initial.paidCardAction}`);
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
     if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
     if (initial.missingPlayback !== 'missing') failures.push(`missing playback state: ${initial.missingPlayback}`);
@@ -681,6 +686,7 @@ async function main() {
     if (!initial.coverFallbacks[1].includes('assets/covers/o-quaterback-perdido-retorna.webp')) failures.push('quarterback cover fallback failed');
     if (!paidBeforePayment.modalActive || paidBeforePayment.playerActive || !paidBeforePayment.modalAction) failures.push('paid series pre-payment gating failed');
     if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
+    if (!paidCardAfterPayment.action.includes('Assistir agora')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
     if (!paidAfterPayment.overlay || paidAfterPayment.videoDisplay !== 'block' || paidAfterPayment.playerError) failures.push('paid series post-payment player failed');
     if (!ownerState.visible || !ownerState.text.includes('Series no catalogo') && !ownerState.text.includes('Séries no catálogo')) failures.push('owner area failed');
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Fila urgente 0') && !migratedOwnerState.text.includes('Serie Migrada'))) failures.push('owner migration failed');
@@ -701,6 +707,7 @@ async function main() {
         missingModal,
         paidBeforePayment,
         checkoutState,
+        paidCardAfterPayment,
         paidAfterPayment,
         ownerState,
         migratedOwnerState,

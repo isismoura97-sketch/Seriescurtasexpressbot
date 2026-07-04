@@ -2450,7 +2450,7 @@ function createCard(serie, isNetflix = false) {
     card.tabIndex = 0;
     card.setAttribute('role', 'button');
     const playbackMode = getPlaybackMode(serie);
-    const telegramOnly = playbackMode === 'telegram';
+    const hasAccess = hasSeriesAccess(serie);
     const lockedPlayback = playbackMode === 'locked';
     const missingPlayback = playbackMode === 'missing';
     card.dataset.id = normalizeId(serie.id);
@@ -2465,6 +2465,12 @@ function createCard(serie, isNetflix = false) {
     );
 
     const free = isFree(serie);
+    if (!isNetflix) {
+        card.classList.add(free ? 'card-free' : 'card-paid');
+        if (hasAccess && !free) card.classList.add('card-unlocked');
+        if (lockedPlayback) card.classList.add('card-locked');
+        if (missingPlayback) card.classList.add('card-missing');
+    }
     const coverUrl = getCoverUrl(serie);
     const cover = document.createElement('div');
     cover.className = isNetflix ? 'netflix-cover' : 'card-cover';
@@ -2475,6 +2481,40 @@ function createCard(serie, isNetflix = false) {
     img.loading = 'lazy';
     img.onerror = function() { this.src = PLACEHOLDER_IMAGE; };
     cover.appendChild(img);
+
+    if (!isNetflix) {
+        const coverBadges = document.createElement('div');
+        coverBadges.className = 'card-top-badges';
+
+        const accessBadge = document.createElement('span');
+        accessBadge.className = 'card-top-badge';
+        if (free) {
+            accessBadge.classList.add('card-top-badge-free');
+            accessBadge.innerHTML = '<i class="fas fa-gift"></i> Grátis';
+        } else if (hasAccess && !missingPlayback) {
+            accessBadge.classList.add('card-top-badge-unlocked');
+            accessBadge.innerHTML = '<i class="fas fa-circle-check"></i> Liberado';
+        } else if (lockedPlayback) {
+            accessBadge.classList.add('card-top-badge-paid');
+            accessBadge.innerHTML = `<i class="fas fa-lock"></i> ${escapeHtml(formatPrice(serie.price))}`;
+        } else if (missingPlayback) {
+            accessBadge.classList.add('card-top-badge-missing');
+            accessBadge.innerHTML = '<i class="fas fa-ban"></i> Sem vídeo';
+        } else {
+            accessBadge.classList.add('card-top-badge-paid');
+            accessBadge.innerHTML = `<i class="fas fa-ticket"></i> ${escapeHtml(formatPrice(serie.price))}`;
+        }
+        coverBadges.appendChild(accessBadge);
+
+        if (!free && playbackMode === 'telegram') {
+            const playerBadge = document.createElement('span');
+            playerBadge.className = 'card-top-badge card-top-badge-protected';
+            playerBadge.innerHTML = '<i class="fas fa-shield-halved"></i> Protegido';
+            coverBadges.appendChild(playerBadge);
+        }
+
+        cover.appendChild(coverBadges);
+    }
     card.appendChild(cover);
 
     const infoDiv = document.createElement('div');
@@ -2485,16 +2525,48 @@ function createCard(serie, isNetflix = false) {
     infoDiv.appendChild(titleDiv);
 
     if (!free) {
+        const meta = document.createElement('div');
+        meta.className = 'card-meta';
+        meta.innerHTML = `
+            <span class="card-price">${escapeHtml(formatPrice(serie.price))}</span>
+            <span class="card-meta-sep">•</span>
+            <span class="card-meta-status">${escapeHtml(
+                hasAccess && !missingPlayback
+                    ? 'Acesso liberado'
+                    : lockedPlayback
+                        ? 'Pagamento necessário'
+                        : missingPlayback
+                            ? 'Vídeo em preparo'
+                            : 'Catálogo premium'
+            )}</span>
+        `;
+        infoDiv.appendChild(meta);
+
         const actions = document.createElement('div');
         actions.className = 'card-actions';
         const buyBtn = document.createElement('button');
         buyBtn.type = 'button';
         buyBtn.className = 'card-cart-btn';
-        buyBtn.innerHTML = '<i class="fas fa-cart-plus"></i> Carrinho';
+        if (hasAccess && !missingPlayback) {
+            buyBtn.classList.add('card-watch-btn');
+            buyBtn.innerHTML = '<i class="fas fa-play"></i> Assistir agora';
+        } else if (missingPlayback) {
+            buyBtn.classList.add('card-disabled-btn');
+            buyBtn.disabled = true;
+            buyBtn.innerHTML = '<i class="fas fa-ban"></i> Vídeo em preparo';
+        } else {
+            buyBtn.innerHTML = `<i class="fas fa-cart-plus"></i> Comprar ${escapeHtml(formatPrice(serie.price))}`;
+        }
         buyBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            addToCart(serie);
+            if (hasAccess && !missingPlayback) {
+                openPlayer(serie.id, serie.title);
+                return;
+            }
+            if (!missingPlayback) {
+                addToCart(serie);
+            }
         });
         actions.appendChild(buyBtn);
         infoDiv.appendChild(actions);
