@@ -2147,7 +2147,7 @@ function findSeriesById(serieId) {
 function getPlaybackMode(serie) {
     if (isPlaybackLocked(serie)) return 'locked';
     if (hasDirectPlaybackUrl(serie)) return 'direct';
-    if (getTelegramFileId(serie) || Number(serie?.playable_episode_count || 0) > 0) return 'telegram';
+    if (serie?.has_video_file_id || getTelegramFileId(serie) || Number(serie?.playable_episode_count || 0) > 0) return 'telegram';
     return 'missing';
 }
 
@@ -2366,7 +2366,64 @@ function renderGrid(series) {
         grid.innerHTML = '<p style="text-align:center; color:var(--gray); padding:40px 0;">Nenhuma série encontrada.</p>';
         return;
     }
-    series.forEach(s => grid.appendChild(createCard(s, false)));
+
+    const freeSeries = series.filter((serie) => isFree(serie));
+    const paidSeries = series.filter((serie) => !isFree(serie));
+    const fragment = document.createDocumentFragment();
+
+    [
+        {
+            key: 'free',
+            title: 'Séries Gratuitas',
+            subtitle: 'Abra direto no Mini App sempre que o conteúdo já estiver liberado.',
+            items: freeSeries,
+        },
+        {
+            key: 'paid',
+            title: 'Séries Pagas',
+            subtitle: 'Adicione ao carrinho, conclua o pagamento e desbloqueie o player.',
+            items: paidSeries,
+        },
+    ].forEach((section) => {
+        if (!section.items.length) return;
+
+        const wrapper = document.createElement('section');
+        wrapper.className = `catalog-group catalog-group-${section.key}`;
+        wrapper.setAttribute('aria-label', section.title);
+
+        const header = document.createElement('div');
+        header.className = 'catalog-group-header';
+
+        const titleWrap = document.createElement('div');
+        titleWrap.className = 'catalog-group-copy';
+
+        const title = document.createElement('h3');
+        title.className = 'catalog-group-title';
+        title.textContent = section.title;
+
+        const subtitle = document.createElement('p');
+        subtitle.className = 'catalog-group-subtitle';
+        subtitle.textContent = section.subtitle;
+
+        const count = document.createElement('span');
+        count.className = 'catalog-group-count';
+        count.textContent = `${section.items.length} título${section.items.length === 1 ? '' : 's'}`;
+
+        titleWrap.appendChild(title);
+        titleWrap.appendChild(subtitle);
+        header.appendChild(titleWrap);
+        header.appendChild(count);
+
+        const cardsGrid = document.createElement('div');
+        cardsGrid.className = 'grid catalog-group-grid';
+        section.items.forEach((serie) => cardsGrid.appendChild(createCard(serie, false)));
+
+        wrapper.appendChild(header);
+        wrapper.appendChild(cardsGrid);
+        fragment.appendChild(wrapper);
+    });
+
+    grid.appendChild(fragment);
 }
 
 function getVisibleSeries() {

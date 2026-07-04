@@ -89,7 +89,7 @@ const fixtureSeries = [
     category: 'Romance',
     price: 19.9,
     cover_url: '',
-    video_file_id: 'TG_PAID',
+    has_video_file_id: true,
   },
   {
     id: '814e3fba-38ce-47d5-b554-9e6b26c6eb58',
@@ -512,6 +512,8 @@ async function main() {
 
     const initial = await page.evaluate(() => ({
       cards: document.querySelectorAll('#catalogGrid .card').length,
+      groupTitles: [...document.querySelectorAll('#catalogGrid .catalog-group-title')].map((node) => node.textContent?.trim() || ''),
+      groupCounts: [...document.querySelectorAll('#catalogGrid .catalog-group-count')].map((node) => node.textContent?.trim() || ''),
       topBadges: document.querySelectorAll('#catalogGrid .badge-gratis-landscape, #catalogGrid .badge-telegram-landscape, #catalogGrid .badge-locked-landscape, #catalogGrid .badge-unavailable-landscape').length,
       lockedPaidPlayback: document.querySelector('#catalogGrid .card[data-id="paid-series"]')?.dataset.playback || '',
       missingPlayback: document.querySelector('#catalogGrid .card[data-id="missing-video"]')?.dataset.playback || '',
@@ -657,6 +659,8 @@ async function main() {
     if (!initial.appJs.includes('20260629-08')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
+    if (!initial.groupTitles.includes('Séries Gratuitas') || !initial.groupTitles.includes('Séries Pagas')) failures.push(`catalog groups missing: ${initial.groupTitles.join(', ')}`);
+    if (!initial.groupCounts.includes('8 títulos') || !initial.groupCounts.includes('1 título')) failures.push(`catalog group counts unexpected: ${initial.groupCounts.join(', ')}`);
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
     if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
     if (initial.missingPlayback !== 'missing') failures.push(`missing playback state: ${initial.missingPlayback}`);

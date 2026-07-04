@@ -1157,6 +1157,69 @@ body.light-mode .modal-title {
     color: var(--primary);
 }
 
+.catalog-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 34px;
+}
+
+.catalog-group {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.catalog-group-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.catalog-group-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.catalog-group-title {
+    margin: 0;
+    font-size: 23px;
+    font-weight: 800;
+    color: var(--text-main);
+}
+
+.catalog-group-paid .catalog-group-title {
+    color: var(--primary);
+}
+
+.catalog-group-subtitle {
+    margin: 0;
+    color: var(--gray);
+    font-size: 14px;
+    max-width: 720px;
+    line-height: 1.55;
+}
+
+.catalog-group-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,215,0,0.22);
+    background: rgba(13,25,45,0.72);
+    color: var(--primary);
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.catalog-group-grid {
+    padding: 0;
+}
+
 .search-box {
     position: relative;
     margin-bottom: 20px;
