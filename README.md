@@ -88,6 +88,45 @@ Mesmo após a migração, as séries pagas continuam protegidas:
 - o backend verifica o pagamento antes de gerar a URL assinada do vídeo
 - sem pagamento aprovado, o endpoint `action=stream` responde com `payment_required`
 
+### Upload em lote dos vídeos originais
+
+Se você já tiver os arquivos originais no computador, o caminho mais rápido é subir tudo em lote para o Supabase Storage:
+
+```bash
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/bulk-upload-series-videos-to-supabase.mjs --dir "C:\\pasta\\dos\\videos"
+```
+
+Modo de teste:
+
+```bash
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/bulk-upload-series-videos-to-supabase.mjs --dir "C:\\pasta\\dos\\videos"
+```
+
+Aplicando de verdade:
+
+```bash
+SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/bulk-upload-series-videos-to-supabase.mjs --dir "C:\\pasta\\dos\\videos" --apply
+```
+
+Regras de correspondência:
+
+- nome do arquivo começando com o `id` da série
+- ou nome do arquivo igual ao título da série
+- ou correspondência aproximada quando houver apenas uma candidata
+
+Exemplos de arquivo:
+
+- `798c4fff-a244-4a46-aed1-eef02e25c76c.mp4`
+- `Um Negócio com Meu Doador Bilionário.mp4`
+
+Depois do upload, o script:
+
+- envia o vídeo para o bucket `videos`
+- grava `video_storage_path`
+- limpa `video_url` pública para priorizar a reprodução protegida
+
+Assim o player interno passa a usar o Supabase diretamente, e as séries pagas continuam bloqueadas até a confirmação do pagamento.
+
 ## Área do proprietário
 
 O mini app mostra um botão de coroa apenas para o Telegram ID configurado em `OWNER_TELEGRAM_USER_ID`.
