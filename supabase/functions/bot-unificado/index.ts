@@ -8,12 +8,13 @@ const CAPTCHA_MAX_AGE_SECONDS = Number(Deno.env.get("CAPTCHA_MAX_AGE_SECONDS") ?
 const WEBAPP_MAX_AGE_SECONDS = Number(Deno.env.get("WEBAPP_MAX_AGE_SECONDS") ?? "600");
 const SERIES_WEBAPP_URL = Deno.env.get("SERIES_WEBAPP_URL") ?? "https://seriescurtasexpressbot.vercel.app/";
 const CATALOG_URL = Deno.env.get("CATALOG_URL") ?? SERIES_WEBAPP_URL;
+const PROTECTED_URL_TTL_SECONDS = Number(Deno.env.get("PROTECTED_URL_TTL_SECONDS") ?? "120") || 120;
 const SUPPORT_URL = Deno.env.get("SUPPORT_URL") ?? Deno.env.get("TELEGRAM_SUPPORT_URL") ?? "https://t.me/ShortNovelsBot";
 const TELEGRAM_BOT_USERNAME = (
   Deno.env.get("TELEGRAM_BOT_USERNAME") ??
   SUPPORT_URL.replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "")
 ).trim();
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260629-08";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260704-01";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -67,6 +68,7 @@ const EPISODE_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("EPISODE_VIDEO_FILE_ID_COLUM
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+const USER_SERIES_PROGRESS_TABLE = Deno.env.get("USER_SERIES_PROGRESS_TABLE") ?? "user_series_progress";
 
 function corsHeaders(req: Request) {
   const origin = req.headers.get("origin") || "*";
@@ -118,7 +120,7 @@ async function buildSignedPlaybackUrl(req: Request, fileId: string, title = "") 
   const token = await encryptChallenge(CAPTCHA_SECRET, {
     v: 1,
     file_id: fileId,
-    expires_at: Math.floor(Date.now() / 1000) + 600,
+    expires_at: Math.floor(Date.now() / 1000) + PROTECTED_URL_TTL_SECONDS,
   });
   url.searchParams.set("token", token);
   return url.toString();
@@ -136,6 +138,15 @@ function buildTelegramCheckoutUrl(orderId: string) {
   const url = new URL(`https://t.me/${botUsername}`);
   if (suffix) {
     url.searchParams.set("start", `checkout_${suffix}`);
+  }
+  return url.toString();
+}
+
+function buildBotStartUrl(payload: string) {
+  const botUsername = TELEGRAM_BOT_USERNAME || "ShortNovelsBot";
+  const url = new URL(`https://t.me/${botUsername}`);
+  if (payload) {
+    url.searchParams.set("start", payload);
   }
   return url.toString();
 }
@@ -331,7 +342,7 @@ function encodeStorageObjectPath(objectPath: string) {
     .join("/");
 }
 
-async function createStorageSignedUrl(bucket: string, objectPath: string, expiresIn = 600) {
+async function createStorageSignedUrl(bucket: string, objectPath: string, expiresIn = PROTECTED_URL_TTL_SECONDS) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !bucket || !objectPath) return "";
 
   const encodedPath = encodeStorageObjectPath(objectPath);
@@ -662,6 +673,80 @@ async function getPaymentOrderByPaymentId(paymentId: string) {
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 }
 
+async function getUserSeriesProgressRow(userId: string, seriesId: string) {
+  const rows = await supabaseRestRequest(
+    `${USER_SERIES_PROGRESS_TABLE}?select=*&user_id=eq.${encodeURIComponent(userId)}&series_id=eq.${encodeURIComponent(seriesId)}&limit=1`,
+  );
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] as Record<string, unknown> : null;
+}
+
+async function getLatestUserSeriesProgress(userId: string) {
+  const rows = await supabaseRestRequest(
+    `${USER_SERIES_PROGRESS_TABLE}?select=*&user_id=eq.${encodeURIComponent(userId)}&order=last_opened_at.desc&limit=1`,
+  );
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] as Record<string, unknown> : null;
+}
+
+async function upsertUserSeriesProgress(entry: {
+  userId: string;
+  seriesId: string;
+  seriesTitle: string;
+  category?: string | null;
+  lastPositionSeconds?: number;
+  durationSeconds?: number | null;
+  completionPercent?: number;
+  lastEvent?: string;
+  lastPlaybackMode?: string;
+}) {
+  const existing = await getUserSeriesProgressRow(entry.userId, entry.seriesId).catch(() => null);
+  const now = new Date().toISOString();
+  const normalizedPosition = Number.isFinite(entry.lastPositionSeconds)
+    ? Number(Math.max(0, Number(entry.lastPositionSeconds || 0)).toFixed(2))
+    : 0;
+  const normalizedDuration = Number.isFinite(entry.durationSeconds)
+    ? Number(Math.max(0, Number(entry.durationSeconds || 0)).toFixed(2))
+    : null;
+  const normalizedCompletion = Number.isFinite(entry.completionPercent)
+    ? Number(Math.max(0, Math.min(100, Number(entry.completionPercent || 0))).toFixed(2))
+    : 0;
+  const previousCompletion = Number(existing?.completion_percent ?? 0) || 0;
+  const previousWatchCount = Number(existing?.watch_count ?? 0) || 0;
+  const eventName = String(entry.lastEvent || "progress").trim() || "progress";
+  const shouldIncrementWatchCount = ["opened", "launched", "telegram_delivery", "continue"].includes(eventName);
+  const completed = normalizedCompletion >= 95 || eventName === "completed" || existing?.completed === true;
+
+  const payload = {
+    user_id: entry.userId,
+    series_id: entry.seriesId,
+    series_title: entry.seriesTitle || null,
+    category: entry.category ?? null,
+    last_position_seconds: normalizedPosition,
+    duration_seconds: normalizedDuration,
+    completion_percent: Math.max(previousCompletion, normalizedCompletion),
+    last_event: eventName,
+    last_playback_mode: entry.lastPlaybackMode || "direct",
+    watch_count: shouldIncrementWatchCount ? previousWatchCount + 1 : previousWatchCount,
+    completed,
+    first_opened_at: String(existing?.first_opened_at ?? now),
+    last_opened_at: now,
+    updated_at: now,
+  };
+
+  const rows = await supabaseRestRequest(
+    `${USER_SERIES_PROGRESS_TABLE}?on_conflict=user_id,series_id`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        prefer: "resolution=merge-duplicates,return=representation",
+      },
+      body: stringifyJson([payload]),
+    },
+  );
+
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] as Record<string, unknown> : rows as Record<string, unknown>;
+}
+
 async function createMercadoPagoPreference(order: {
   orderId: string;
   userId: string;
@@ -860,7 +945,14 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
   });
 }
 
-async function sendPaymentConfirmationMessage(order: Record<string, unknown>, payment: Record<string, unknown>) {
+async function sendPaymentConfirmationMessage(
+  order: Record<string, unknown>,
+  payment: Record<string, unknown>,
+  deliverySummary?: {
+    delivered: Array<{ seriesId: string; title: string; deliveryType: "telegram_file" | "direct" }>;
+    failed: Array<{ seriesId: string; title: string; reason: string }>;
+  },
+) {
   const chatId = String(order.chat_id ?? order.user_id ?? "");
   if (!chatId) return;
 
@@ -877,7 +969,7 @@ async function sendPaymentConfirmationMessage(order: Record<string, unknown>, pa
     ? String(items[0].title ?? items[0].name ?? "").trim()
     : "";
   const lines = [
-    "Pagamento confirmado com sucesso.",
+    "Pago com sucesso.",
     `Pedido: ${shortOrderId}`,
     `Valor: ${amountText}`,
     `Método: ${method === "pix_qr" ? "Pix" : method === "telegram_checkout" ? "Telegram Checkout" : "Mercado Pago"}`,
@@ -885,6 +977,18 @@ async function sendPaymentConfirmationMessage(order: Record<string, unknown>, pa
 
   if (statusDetail) {
     lines.push(`Detalhe: ${statusDetail}`);
+  }
+
+  const deliveredTelegramCount = deliverySummary?.delivered.filter((entry) => entry.deliveryType === "telegram_file").length ?? 0;
+  const deliveredDirectCount = deliverySummary?.delivered.filter((entry) => entry.deliveryType === "direct").length ?? 0;
+  if (deliveredTelegramCount > 0) {
+    lines.push(`Sua serie ja foi liberada no Telegram: ${deliveredTelegramCount} titulo(s).`);
+  }
+  if (deliveredDirectCount > 0) {
+    lines.push(`Serie liberada no Mini App: ${deliveredDirectCount}.`);
+  }
+  if ((deliverySummary?.failed.length ?? 0) > 0) {
+    lines.push("Se algo nao abrir, toque em Abrir catalogo e tente de novo.");
   }
 
   const buttons: Array<Array<{ text: string; url?: string; web_app?: { url: string } }>> = [];
@@ -1053,7 +1157,8 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
     : order;
 
   if (currentStatus === "approved" && previousStatus !== "approved") {
-    await sendPaymentConfirmationMessage(updatedOrder, payment);
+    const deliverySummary = await deliverApprovedOrderSeries(updatedOrder);
+    await sendPaymentConfirmationMessage(updatedOrder, payment, deliverySummary);
   }
 
   return updatedOrder;
@@ -1512,6 +1617,8 @@ async function configureTelegramBotSurface() {
     commands: stringifyJson([
       { command: "start", description: "Abrir o catalogo" },
       { command: "catalogo", description: "Ver series disponiveis" },
+      { command: "continuar", description: "Retomar ultima serie" },
+      { command: "recomendar", description: "Receber recomendacoes" },
       { command: "menu", description: "Mostrar opcoes" },
       { command: "ajuda", description: "Receber ajuda" },
     ]),
@@ -1894,18 +2001,36 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
         }
       }
     }
-    await sendBotWelcomeMessage(chatId);
+    if (startPayload === "continue") {
+      await sendContinueWatchingMessage(chatId, String(chatId));
+      return json(req, { ok: true, action: "start_continue_sent" });
+    }
+    if (startPayload === "recommend") {
+      await sendRecommendationsMessage(chatId, String(chatId));
+      return json(req, { ok: true, action: "start_recommend_sent" });
+    }
+    await sendBotWelcomeMessageRich(chatId);
     return json(req, { ok: true, action: "start_welcome_sent" });
   }
 
   if (/^(?:\/menu|menu|\/catalogo|catalogo|\/catálogo|catálogo|\/ajuda|ajuda|\/help|help)$/i.test(text)) {
-    await sendBotWelcomeMessage(chatId);
+    await sendBotWelcomeMessageRich(chatId);
     return json(req, { ok: true, action: "menu_sent" });
+  }
+
+  if (/^(?:\/continuar|continuar)$/i.test(text)) {
+    await sendContinueWatchingMessage(chatId, String(chatId));
+    return json(req, { ok: true, action: "continue_sent" });
+  }
+
+  if (/^(?:\/recomendar|recomendar|\/recomendacoes|recomendacoes)$/i.test(text)) {
+    await sendRecommendationsMessage(chatId, String(chatId));
+    return json(req, { ok: true, action: "recommend_sent" });
   }
 
   if (/^(?:\/fileid|fileid)$/i.test(text)) {
     if (!isOwnerSender) {
-      await sendBotWelcomeMessage(chatId);
+      await sendBotWelcomeMessageRich(chatId);
       return json(req, { ok: true, action: "owner_only_hidden" });
     }
     await telegramRequest("sendMessage", {
@@ -1925,7 +2050,7 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
   }
 
   if (chatType === "private" && text) {
-    await sendBotWelcomeMessage(chatId);
+    await sendBotWelcomeMessageRich(chatId);
     return json(req, { ok: true, action: "private_help_sent" });
   }
 
@@ -2224,10 +2349,32 @@ async function sendSeriesLaunchPrompt(chatId: string | number, serieId: string, 
   });
 }
 
+async function sendSeriesTelegramDelivery(chatId: string | number, fileId: string, title: string, isFree: boolean) {
+  const captionLines = [
+    isFree ? "Serie gratuita liberada." : "Serie liberada com sucesso.",
+    title ? `Titulo: ${title}` : "",
+    "Este video foi enviado com protecao dentro do Telegram.",
+  ].filter(Boolean);
+
+  return await telegramRequest("sendVideo", {
+    chat_id: chatId,
+    video: fileId,
+    caption: captionLines.join("\n"),
+    supports_streaming: true,
+    protect_content: true,
+    reply_markup: stringifyJson({
+      inline_keyboard: [
+        [{ text: "Abrir catalogo", web_app: { url: SERIES_WEBAPP_URL } }],
+        [{ text: "Suporte", url: SUPPORT_URL }],
+      ],
+    }),
+  });
+}
+
 async function sendCheckoutAck(chatId: string | number, itemCount: number, total: string) {
   return await telegramRequest("sendMessage", {
     chat_id: chatId,
-    text: `Recebemos seu carrinho com ${itemCount} item${itemCount === 1 ? "" : "s"} no total de ${total}.`,
+    text: `Seu carrinho esta pronto: ${itemCount} item${itemCount === 1 ? "" : "s"} por ${total}.`,
     reply_markup: JSON.stringify({
       inline_keyboard: [[{
         text: "Abrir catálogo",
@@ -2239,9 +2386,9 @@ async function sendCheckoutAck(chatId: string | number, itemCount: number, total
 
 async function sendBotWelcomeMessage(chatId: string | number) {
   const text = [
-    "Bem-vindo ao Séries Express.",
-    "Abra o catálogo para ver as séries gratuitas e as séries com liberação por pagamento.",
-    "Se você já começou uma série, também pode reabri-la pelo Mini App.",
+    "Bem-vindo ao Series Express.",
+    "Abra o catalogo e escolha sua proxima serie.",
+    "Toque, assista e volte quando quiser.",
   ].join("\n");
   const replyMarkup = JSON.stringify({
     inline_keyboard: [
@@ -2268,6 +2415,139 @@ async function sendBotWelcomeMessage(chatId: string | number) {
     text,
     protect_content: true,
     reply_markup: replyMarkup,
+  });
+}
+
+async function sendBotWelcomeMessageRich(chatId: string | number) {
+  const text = [
+    "Bem-vindo ao Series Express.",
+    "Abra o Mini App e escolha sua proxima serie.",
+    "Gratis para comecar. Pagas para liberar na hora.",
+  ].join("\n");
+  const replyMarkup = stringifyJson({
+    inline_keyboard: [
+      [{ text: "Catalogo", url: CATALOG_URL }],
+      [{ text: "Mini App", web_app: { url: SERIES_WEBAPP_URL } }],
+      [
+        { text: "Continuar", url: buildBotStartUrl("continue") },
+        { text: "Recomendacoes", url: buildBotStartUrl("recommend") },
+      ],
+      [{ text: "Suporte", url: SUPPORT_URL }],
+    ],
+  });
+
+  try {
+    return await telegramRequest("sendPhoto", {
+      chat_id: chatId,
+      photo: WELCOME_LOGO_URL,
+      caption: text,
+      protect_content: true,
+      reply_markup: replyMarkup,
+    });
+  } catch (error) {
+    console.warn("[WELCOME] Falha ao enviar logo nas boas-vindas:", error instanceof Error ? error.message : String(error));
+  }
+
+  return await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text,
+    protect_content: true,
+    reply_markup: replyMarkup,
+  });
+}
+
+async function sendContinueWatchingMessage(chatId: string | number, userId: string) {
+  const progress = await getLatestUserSeriesProgress(userId);
+  if (!progress) {
+    await telegramRequest("sendMessage", {
+      chat_id: chatId,
+      text: "Ainda nao achei sua ultima serie. Abra o catalogo e comece agora.",
+      reply_markup: stringifyJson({
+        inline_keyboard: [[{ text: "Abrir catalogo", web_app: { url: SERIES_WEBAPP_URL } }]],
+      }),
+    });
+    return;
+  }
+
+  const seriesId = String(progress.series_id ?? "").trim();
+  const title = String(progress.series_title ?? "Sua serie").trim() || "Sua serie";
+  const completion = Number(progress.completion_percent ?? 0) || 0;
+  const position = Number(progress.last_position_seconds ?? 0) || 0;
+  const duration = Number(progress.duration_seconds ?? 0) || 0;
+  const summary = duration > 0
+    ? `${Math.round(position / 60)} min de ${Math.round(duration / 60)} min`
+    : `${Math.round(completion)}% concluido`;
+
+  await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: [
+      `Voce parou em ${title}.`,
+      `Falta pouco: ${summary}.`,
+      "Toque abaixo para continuar.",
+    ].join("\n"),
+    reply_markup: stringifyJson({
+      inline_keyboard: [[{ text: "Retomar serie", web_app: { url: buildSeriesLaunchUrl(seriesId) } }]],
+    }),
+  });
+}
+
+async function getRecommendedSeriesForUser(userId: string, limit = 3) {
+  const [catalog, latestProgress] = await Promise.all([
+    getSeriesList(userId),
+    getLatestUserSeriesProgress(userId).catch(() => null),
+  ]);
+
+  const latestSeriesId = String(latestProgress?.series_id ?? "").trim();
+  const latestCategory = String(latestProgress?.category ?? "").trim().toLowerCase();
+  const series = Array.isArray(catalog) ? catalog as Record<string, unknown>[] : [];
+  const playable = series.filter((row) => row.has_playback);
+
+  const preferred = playable
+    .filter((row) => String(row.id ?? "") !== latestSeriesId)
+    .filter((row) => latestCategory ? String(row.category ?? "").trim().toLowerCase() === latestCategory : true)
+    .sort((left, right) => Number(Boolean(right.has_access)) - Number(Boolean(left.has_access)));
+
+  const fallback = playable
+    .filter((row) => String(row.id ?? "") !== latestSeriesId)
+    .sort((left, right) => Number(Boolean(right.is_free)) - Number(Boolean(left.is_free)));
+
+  const merged: Record<string, unknown>[] = [];
+  for (const item of [...preferred, ...fallback]) {
+    if (merged.some((entry) => String(entry.id ?? "") === String(item.id ?? ""))) continue;
+    merged.push(item);
+    if (merged.length >= limit) break;
+  }
+
+  return merged;
+}
+
+async function sendRecommendationsMessage(chatId: string | number, userId: string) {
+  const items = await getRecommendedSeriesForUser(userId, 3);
+  if (!items.length) {
+    await telegramRequest("sendMessage", {
+      chat_id: chatId,
+      text: "Ainda nao separei recomendacoes. Abra o catalogo e eu aprendo seu gosto.",
+      reply_markup: stringifyJson({
+        inline_keyboard: [[{ text: "Abrir catalogo", web_app: { url: SERIES_WEBAPP_URL } }]],
+      }),
+    });
+    return;
+  }
+
+  const buttons = items.map((item) => ([{
+    text: String(item.title ?? "Abrir serie"),
+    web_app: { url: buildSeriesLaunchUrl(String(item.id ?? "")) },
+  }]));
+
+  await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: "Essas series podem te prender hoje:",
+    reply_markup: stringifyJson({
+      inline_keyboard: [
+        ...buttons,
+        [{ text: "Abrir catalogo completo", web_app: { url: SERIES_WEBAPP_URL } }],
+      ],
+    }),
   });
 }
 
@@ -2684,7 +2964,8 @@ function buildEpisodeAugmentation(episodes: Record<string, unknown>[], seriesId:
 
 async function getSeriesList(userId = "", includeProtected = false) {
   const data = await supabaseFetch(`${SERIES_TABLE}?select=*`);
-  const series = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+  const series = (Array.isArray(data) ? data as Record<string, unknown>[] : [])
+    .filter((row) => includeProtected || isSeriesActive(row));
 
   let episodes: Record<string, unknown>[] = [];
   try {
@@ -2850,7 +3131,7 @@ async function resolveStoragePlayback(row: Record<string, unknown>, title: strin
   if (!storagePath) return null;
 
   return {
-    url: await createStorageSignedUrl(SERIES_VIDEO_BUCKET, storagePath, 600),
+    url: await createStorageSignedUrl(SERIES_VIDEO_BUCKET, storagePath, PROTECTED_URL_TTL_SECONDS),
     type: "storage_signed",
     title,
   };
@@ -2877,6 +3158,160 @@ async function getFirstEpisodeFileForSeries(seriesId: string) {
     title: String(firstPlayable[EPISODE_TITLE_COLUMN] ?? ""),
     episodeNumber: firstPlayable[EPISODE_NUMBER_COLUMN] ?? null,
   };
+}
+
+type SeriesTelegramDeliveryResolution =
+  | {
+    ok: true;
+    title: string;
+    isFree: boolean;
+    deliveryType: "telegram_file";
+    fileId: string;
+    source: "series" | "episode";
+  }
+  | {
+    ok: true;
+    title: string;
+    isFree: boolean;
+    deliveryType: "direct";
+  }
+  | {
+    ok: false;
+    title: string;
+    isFree: boolean;
+    code: "series_not_found" | "video_not_available";
+  };
+
+async function resolveSeriesTelegramDelivery(seriesId: string, fallbackTitle = ""): Promise<SeriesTelegramDeliveryResolution> {
+  const row = await getSeriesById(seriesId);
+  if (!row) {
+    return {
+      ok: false,
+      title: fallbackTitle,
+      isFree: false,
+      code: "series_not_found",
+    };
+  }
+
+  const rowRecord = row as Record<string, unknown>;
+  const title = String(rowRecord[SERIES_TITLE_COLUMN] ?? fallbackTitle).trim() || fallbackTitle;
+  const isFree = isSeriesFree(rowRecord);
+
+  const fileId = extractTelegramFileId(rowRecord);
+  if (fileId) {
+    return {
+      ok: true,
+      title,
+      isFree,
+      deliveryType: "telegram_file",
+      fileId,
+      source: "series",
+    };
+  }
+
+  const episode = await getFirstEpisodeFileForSeries(seriesId);
+  if (episode?.fileId) {
+    return {
+      ok: true,
+      title: episode.title ? `${title} - ${episode.title}` : title,
+      isFree,
+      deliveryType: "telegram_file",
+      fileId: episode.fileId,
+      source: "episode",
+    };
+  }
+
+  if (extractVideoStoragePath(rowRecord) || extractDirectUrl(rowRecord)) {
+    return {
+      ok: true,
+      title,
+      isFree,
+      deliveryType: "direct",
+    };
+  }
+
+  return {
+    ok: false,
+    title,
+    isFree,
+    code: "video_not_available",
+  };
+}
+
+async function deliverSeriesToTelegramChat(chatId: string | number, seriesId: string, fallbackTitle = "") {
+  const delivery = await resolveSeriesTelegramDelivery(seriesId, fallbackTitle);
+  if (!delivery.ok) {
+    return delivery;
+  }
+
+  if (delivery.deliveryType === "telegram_file") {
+    await sendSeriesTelegramDelivery(chatId, delivery.fileId, delivery.title, delivery.isFree);
+    return {
+      ok: true as const,
+      title: delivery.title,
+      isFree: delivery.isFree,
+      deliveryType: delivery.deliveryType,
+      source: delivery.source,
+    };
+  }
+
+  await sendSeriesLaunchPrompt(chatId, seriesId, delivery.title);
+  return {
+    ok: true as const,
+    title: delivery.title,
+    isFree: delivery.isFree,
+    deliveryType: "direct" as const,
+  };
+}
+
+async function deliverApprovedOrderSeries(order: Record<string, unknown>) {
+  const chatId = String(order.chat_id ?? order.user_id ?? "").trim();
+  const items = Array.isArray(order.items) ? order.items as Record<string, unknown>[] : [];
+  const uniqueItems = items.filter((item, index, arr) => {
+    const seriesId = String(item.id ?? item.serie_id ?? item.series_id ?? "").trim();
+    if (!seriesId) return false;
+    return arr.findIndex((entry) => String(entry.id ?? entry.serie_id ?? entry.series_id ?? "").trim() === seriesId) === index;
+  });
+
+  const summary = {
+    delivered: [] as Array<{ seriesId: string; title: string; deliveryType: "telegram_file" | "direct" }>,
+    failed: [] as Array<{ seriesId: string; title: string; reason: string }>,
+  };
+
+  if (!chatId || !uniqueItems.length) {
+    return summary;
+  }
+
+  for (const item of uniqueItems) {
+    const seriesId = String(item.id ?? item.serie_id ?? item.series_id ?? "").trim();
+    const title = String(item.title ?? item.name ?? "").trim();
+    if (!seriesId) continue;
+
+    try {
+      const delivery = await deliverSeriesToTelegramChat(chatId, seriesId, title);
+      if (delivery.ok) {
+        summary.delivered.push({
+          seriesId,
+          title: delivery.title,
+          deliveryType: delivery.deliveryType,
+        });
+      } else {
+        summary.failed.push({
+          seriesId,
+          title: delivery.title || title,
+          reason: delivery.code,
+        });
+      }
+    } catch (error) {
+      summary.failed.push({
+        seriesId,
+        title,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return summary;
 }
 
 async function resolveTelegramPlayback(req: Request, fileId: string, title: string) {
@@ -2963,45 +3398,154 @@ async function handleStreamV2(req: Request, url: URL) {
     return json(req, { error: "Serie nao encontrada" }, 404);
   }
 
-  if (!isSeriesFree(row as Record<string, unknown>)) {
-    let userId = "";
-    try {
-      const initData = url.searchParams.get("init_data") || "";
-      const validated = await validateWebAppInitData(initData);
-      userId = validated.userId;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return json(req, { error: message, code: "telegram_auth_required" }, 401);
-    }
+  let userId = "";
+  try {
+    const initData = url.searchParams.get("init_data") || "";
+    const validated = await validateWebAppInitData(initData);
+    userId = validated.userId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logProtectedPlayback("stream_denied", { seriesId: serieId, reason: "telegram_auth_required", detail: message });
+    return json(req, { error: message, code: "telegram_auth_required" }, 401);
+  }
 
-    if (!(await userHasPaidForSeries(userId, serieId))) {
-      return json(req, { error: "Pagamento necessario para assistir esta serie.", code: "payment_required" }, 402);
-    }
+  if (!isSeriesActive(row as Record<string, unknown>)) {
+    logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "series_inactive" });
+    return json(req, { error: "Conteudo protegido", code: "series_inactive" }, 403);
+  }
+
+  if (!isSeriesFree(row as Record<string, unknown>) && !(await userHasPaidForSeries(userId, serieId))) {
+    logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "payment_required" });
+    return json(req, { error: "Pagamento necessario para assistir esta serie.", code: "payment_required" }, 402);
   }
 
   const seriesTitle = String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title);
   const storagePlayback = await resolveStoragePlayback(row as Record<string, unknown>, seriesTitle);
   if (storagePlayback?.url) {
+    logProtectedPlayback("stream_granted", { seriesId: serieId, userId, type: storagePlayback.type });
     return json(req, storagePlayback);
   }
 
   const directUrl = extractDirectUrl(row as Record<string, unknown>);
   if (directUrl) {
+    logProtectedPlayback("stream_granted", { seriesId: serieId, userId, type: "direct" });
     return json(req, { url: directUrl, type: "direct", title: seriesTitle });
   }
 
   const fileId = extractTelegramFileId(row as Record<string, unknown>);
   if (fileId) {
+    logProtectedPlayback("stream_granted", { seriesId: serieId, userId, type: "telegram_proxy" });
     return await resolveTelegramPlayback(req, fileId, seriesTitle);
   }
 
   const episode = await getFirstEpisodeFileForSeries(serieId);
   if (episode?.fileId) {
     const episodeTitle = episode.title ? `${seriesTitle} - ${episode.title}` : seriesTitle;
+    logProtectedPlayback("stream_granted", { seriesId: serieId, userId, type: "telegram_proxy_episode" });
     return await resolveTelegramPlayback(req, episode.fileId, episodeTitle);
   }
 
+  logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "video_not_available" });
   return json(req, { error: "Video nao disponivel" }, 404);
+}
+
+async function handleSeriesDelivery(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  const seriesId = String(body.series_id ?? body.serie_id ?? body.id ?? "").trim();
+  const fallbackTitle = String(body.title ?? "").trim();
+  if (!seriesId) {
+    return json(req, { error: "series_id ausente" }, 400);
+  }
+
+  let userId = "";
+  try {
+    const validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
+    userId = validated.userId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(req, { error: message, code: "telegram_auth_required" }, 401);
+  }
+
+  const row = await getSeriesById(seriesId);
+  if (!row) {
+    return json(req, { error: "Serie nao encontrada", code: "series_not_found" }, 404);
+  }
+
+  if (!isSeriesActive(row as Record<string, unknown>)) {
+    return json(req, { error: "Conteudo protegido", code: "series_inactive" }, 403);
+  }
+
+  if (!isSeriesFree(row as Record<string, unknown>) && !(await userHasPaidForSeries(userId, seriesId))) {
+    return json(req, { error: "Pagamento necessario para liberar esta serie.", code: "payment_required" }, 402);
+  }
+
+  const delivery = await deliverSeriesToTelegramChat(userId, seriesId, fallbackTitle);
+  if (!delivery.ok) {
+    if (delivery.code === "video_not_available") {
+      return json(req, { error: "Video nao disponivel", code: delivery.code }, 404);
+    }
+    return json(req, { error: "Serie nao encontrada", code: delivery.code }, 404);
+  }
+
+  return json(req, {
+    ok: true,
+    delivery: {
+      series_id: seriesId,
+      title: delivery.title,
+      delivery_type: delivery.deliveryType,
+      source: "source" in delivery ? delivery.source : null,
+      sent_to_chat_id: userId,
+    },
+  });
+}
+
+async function handleProgressSync(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  const seriesId = String(body.series_id ?? body.serie_id ?? body.id ?? "").trim();
+  if (!seriesId) {
+    return json(req, { error: "series_id ausente" }, 400);
+  }
+
+  let userId = "";
+  try {
+    const validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
+    userId = validated.userId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(req, { error: message, code: "telegram_auth_required" }, 401);
+  }
+
+  const row = await getSeriesById(seriesId);
+  const rowRecord = row as Record<string, unknown> | null;
+  const seriesTitle = String(body.title ?? rowRecord?.[SERIES_TITLE_COLUMN] ?? "").trim() || "Serie";
+  const category = String(body.category ?? rowRecord?.category ?? "").trim() || null;
+  const lastPositionSeconds = Number(body.last_position_seconds ?? body.position_seconds ?? body.current_time ?? 0) || 0;
+  const durationSeconds = Number(body.duration_seconds ?? body.duration ?? 0) || 0;
+  const completionPercent = Number(body.completion_percent ?? body.progress_percent ?? 0) || 0;
+  const lastEvent = String(body.event_type ?? body.event ?? "progress").trim() || "progress";
+  const lastPlaybackMode = String(body.playback_mode ?? body.mode ?? "direct").trim() || "direct";
+
+  const progress = await upsertUserSeriesProgress({
+    userId,
+    seriesId,
+    seriesTitle,
+    category,
+    lastPositionSeconds,
+    durationSeconds: durationSeconds > 0 ? durationSeconds : null,
+    completionPercent,
+    lastEvent,
+    lastPlaybackMode,
+  });
+
+  return json(req, { ok: true, progress });
 }
 
 function countByStatus(rows: Record<string, unknown>[]) {
@@ -3042,6 +3586,35 @@ function sortByCreatedAtDesc(rows: Record<string, unknown>[]) {
 
 function isTruthyInput(value: unknown) {
   return ["1", "true", "yes", "sim", "on"].includes(String(value ?? "").trim().toLowerCase());
+}
+
+function isSeriesActive(row: Record<string, unknown> | null) {
+  if (!row) return false;
+
+  if (row.is_active != null) {
+    return isTruthyInput(row.is_active);
+  }
+  if (row.active != null) {
+    return isTruthyInput(row.active);
+  }
+  if (row.published != null) {
+    return isTruthyInput(row.published);
+  }
+  if (row.visible != null) {
+    return isTruthyInput(row.visible);
+  }
+
+  const status = String(row.status ?? row.series_status ?? "").trim().toLowerCase();
+  if (!status) return true;
+  return !["inactive", "draft", "archived", "disabled", "hidden", "blocked", "deleted"].includes(status);
+}
+
+function logProtectedPlayback(event: string, payload: Record<string, unknown>) {
+  try {
+    console.info("[PLAYBACK]", event, stringifyJson(payload));
+  } catch {
+    console.info("[PLAYBACK]", event, payload);
+  }
 }
 
 function normalizeOwnerPrice(value: unknown, forceFree: boolean) {
@@ -3465,13 +4038,23 @@ Deno.serve(async (req) => {
       return await handleStreamV2(req, url);
     }
 
+    if (action === "deliver-series") {
+      return await handleSeriesDelivery(req);
+    }
+
+    if (action === "progress-sync") {
+      return await handleProgressSync(req);
+    }
+
     if (action === "playback") {
       const fileId = url.searchParams.get("file_id") || "";
       const title = url.searchParams.get("title") || "";
       if (!fileId) return json(req, { error: "file_id ausente" }, 400);
       if (!(await validatePlaybackToken(fileId, url.searchParams.get("token") || ""))) {
+        logProtectedPlayback("playback_denied", { fileId, reason: "playback_token_invalid" });
         return json(req, { error: "Token de playback invalido", code: "playback_token_invalid" }, 403);
       }
+      logProtectedPlayback("playback_granted", { fileId, title });
       return await proxyTelegramFile(req, fileId, title);
     }
 

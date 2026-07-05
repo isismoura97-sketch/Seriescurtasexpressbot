@@ -465,6 +465,7 @@ body.light-mode .hero h1 {
 }
 
 .player-back,
+.player-share,
 .player-close {
     width: 44px;
     height: 44px;
@@ -480,52 +481,13 @@ body.light-mode .hero h1 {
     justify-content: center;
 }
 
-.player-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 999px;
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,215,0,0.14);
-    color: var(--text-main);
-    font-size: 12px;
-    font-weight: 800;
-    white-space: nowrap;
-    backdrop-filter: blur(12px);
-}
-
-.player-pill i {
-    color: var(--primary);
-}
-
-.player-pill-accent {
-    background: linear-gradient(135deg, rgba(42,171,238,0.18), rgba(29,132,181,0.18));
-    border-color: rgba(42,171,238,0.24);
-}
-
 .player-back:hover,
+.player-share:hover,
 .player-close:hover {
     background: var(--primary);
     color: #000;
     transform: scale(1.1);
     box-shadow: 0 0 20px rgba(255,215,0,0.5);
-}
-
-.player-watermark {
-    position: absolute;
-    bottom: 18px;
-    left: 20px;
-    background: rgba(10,22,40,0.72);
-    color: #ffe58a;
-    font-size: 12px;
-    padding: 8px 12px;
-    border-radius: 999px;
-    z-index: 10;
-    font-family: monospace;
-    border: 1px solid rgba(255,215,0,0.16);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
 }
 
 .player-stage {
@@ -730,6 +692,23 @@ body.light-mode .hero h1 {
     gap: 18px;
 }
 
+.player-error-panel.is-protected {
+    background: #000;
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.02), 0 26px 60px rgba(0,0,0,0.85);
+}
+
+.player-error-panel.is-protected .player-error-icon {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.12);
+    box-shadow: none;
+}
+
+.player-error-panel.is-protected .player-error-copy h3,
+.player-error-panel.is-protected .player-error-copy p {
+    color: #fff;
+}
+
 .player-error-icon {
     width: 72px;
     height: 72px;
@@ -832,11 +811,6 @@ body.light-mode .hero h1 {
         width: 100%;
     }
 
-    .player-pill {
-        flex: 1 1 calc(50% - 6px);
-        justify-content: center;
-    }
-
     .player-stage {
         padding-top: 178px;
         padding-bottom: 56px;
@@ -863,14 +837,10 @@ body.light-mode .hero h1 {
     }
 
     .player-back,
+    .player-share,
     .player-close {
         width: 40px;
         height: 40px;
-    }
-
-    .player-pill {
-        padding: 9px 12px;
-        font-size: 11px;
     }
 
     .player-stage {
@@ -882,12 +852,6 @@ body.light-mode .hero h1 {
 
     #mainVideo {
         border-radius: 18px;
-    }
-
-    .player-watermark {
-        left: 12px;
-        bottom: 12px;
-        font-size: 11px;
     }
 }
 

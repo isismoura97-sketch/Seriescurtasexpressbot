@@ -37,6 +37,8 @@ Há uma Edge Function preparada em `supabase/functions/bot-unificado/index.ts` p
 - retornar a lista de séries em `action=series`
 - resolver `action=stream` para uma `url` reproduzível
 - fazer proxy de arquivos do Telegram em `action=playback`
+- entregar séries via bot em `action=deliver-series`
+- salvar progresso do Mini App em `action=progress-sync`
 
 Secrets necessários no Supabase:
 
@@ -50,6 +52,7 @@ Secrets necessários no Supabase:
 - `MERCADO_PAGO_PIX_QR_CODE_BASE64` com o QR Code em base64, caso você queira mostrar o mesmo QR no mini app
 - `SERIES_WEBAPP_URL` com a URL principal do mini app, por exemplo `https://seriescurtasexpressbot.vercel.app/`
 - `PAYMENT_ORDERS_TABLE` com o nome da tabela de pedidos, padrão `payment_orders`
+- `USER_SERIES_PROGRESS_TABLE` com o nome da tabela de progresso, padrão `user_series_progress`
 - `SERIES_TABLE` se o nome da tabela não for `series`
 - `SERIES_ID_COLUMN` se o identificador não for `id`
 - `SERIES_TITLE_COLUMN` se o título não estiver em `title`
@@ -62,6 +65,18 @@ Secrets necessários no Supabase:
 - `OWNER_AREA_PASSWORD` ou `OWNER_AREA_PASSWORD_SHA256` para a senha da área do proprietário
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
+
+## Bot + Mini App
+
+Fluxo integrado atual:
+
+1. o usuário entra no bot
+2. o bot oferece `Catálogo`, `Mini App`, `Continuar` e `Recomendações`
+3. o Mini App abre o catálogo e o checkout
+4. séries com URL direta continuam no player interno
+5. séries com `File_ID` são entregues pelo próprio bot no Telegram com `protect_content`
+6. o Mini App sincroniza progresso em `user_series_progress`
+7. o bot usa esse histórico para `/continuar` e `/recomendar`
 
 ### Migração para player interno protegido
 
