@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260705-02';
+const BUILD_VERSION = '20260705-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
@@ -1476,6 +1476,26 @@ function buildOwnerInternalUploadLimitMessage(file = null) {
     return `O video ultrapassou o limite do player interno neste projeto.${sizeLabel} No plano atual, so entram arquivos de ate ${getOwnerInternalUploadLimitLabel()} no Supabase Storage. Para videos maiores, mantenha a serie no fluxo Telegram/File_ID.`;
 }
 
+function extractTelegramFileIdInput(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (let i = 0; i < lines.length; i += 1) {
+        if (/^file_id:?$/i.test(lines[i])) {
+            return lines[i + 1] || '';
+        }
+    }
+
+    const match = raw.match(/\b[A-Za-z0-9_-]{30,}\b/);
+    return match ? match[0] : raw;
+}
+
+function getOwnerFileIdCaptureUrl(seriesId = '') {
+    const payload = seriesId ? `fileid_${encodeURIComponent(String(seriesId))}` : 'fileid';
+    return `${TELEGRAM_BOT_LINK}?start=${payload}`;
+}
+
 function getOwnerSeriesFilterCounts(series = []) {
     return {
         all: series.length,
@@ -1881,6 +1901,8 @@ function updateOwnerFormMode(serie = null) {
     const descriptionInput = document.querySelector('textarea[name="description"]');
     const freeToggle = document.getElementById('ownerSeriesFree');
     const priceInput = document.getElementById('ownerSeriesPrice');
+    const videoFileIdInput = document.getElementById('ownerSeriesVideoFileId');
+    const fileIdHelpLink = document.getElementById('ownerFileIdHelpLink');
 
     if (seriesIdInput) {
         seriesIdInput.value = ownerSeriesEditId;
@@ -1924,14 +1946,21 @@ function updateOwnerFormMode(serie = null) {
         priceInput.disabled = Boolean(freeToggle?.checked);
         priceInput.required = !Boolean(freeToggle?.checked);
     }
+    if (videoFileIdInput instanceof HTMLTextAreaElement) {
+        videoFileIdInput.value = editing ? getTelegramFileId(serie) : '';
+    }
     if (coverInput instanceof HTMLInputElement) {
         coverInput.required = !editing;
     }
     if (videoInput instanceof HTMLInputElement) {
-        videoInput.required = !editing;
+        videoInput.required = !editing && !(videoFileIdInput instanceof HTMLTextAreaElement && extractTelegramFileIdInput(videoFileIdInput.value));
     }
     if (trailerInput instanceof HTMLInputElement) {
         trailerInput.required = false;
+    }
+    if (fileIdHelpLink instanceof HTMLAnchorElement) {
+        fileIdHelpLink.href = getOwnerFileIdCaptureUrl(ownerSeriesEditId || '');
+        fileIdHelpLink.textContent = editing ? 'Capturar File_ID desta série no bot' : 'Abrir bot para capturar File_ID';
     }
 
     releaseOwnerCoverPreviewObjectUrl();
@@ -1989,6 +2018,8 @@ function wireOwnerUploadForm() {
     const freeToggle = document.getElementById('ownerSeriesFree');
     const priceInput = document.getElementById('ownerSeriesPrice');
     const coverInput = document.querySelector('input[name="cover_file"]');
+    const videoInput = document.querySelector('input[name="video_file"]');
+    const videoFileIdInput = document.getElementById('ownerSeriesVideoFileId');
     const cancelBtn = document.getElementById('ownerFormCancelBtn');
 
     if (freeToggle && priceInput) {
@@ -2012,6 +2043,39 @@ function wireOwnerUploadForm() {
         };
     }
 
+    const syncOwnerVideoSources = () => {
+        const normalizedFileId = videoFileIdInput instanceof HTMLTextAreaElement
+            ? extractTelegramFileIdInput(videoFileIdInput.value)
+            : '';
+
+        if (videoFileIdInput instanceof HTMLTextAreaElement && normalizedFileId && videoFileIdInput.value.trim() !== normalizedFileId) {
+            videoFileIdInput.value = normalizedFileId;
+        }
+
+        if (videoInput instanceof HTMLInputElement) {
+            const hasUpload = Boolean(videoInput.files?.[0]?.size);
+            videoInput.required = !ownerSeriesEditId && !normalizedFileId;
+            if (normalizedFileId && hasUpload && videoInput.files?.[0] && videoInput.files[0].size > OWNER_INTERNAL_UPLOAD_LIMIT_BYTES) {
+                videoInput.value = '';
+            }
+        }
+    };
+
+    if (videoFileIdInput instanceof HTMLTextAreaElement) {
+        videoFileIdInput.onchange = syncOwnerVideoSources;
+        videoFileIdInput.oninput = () => {
+            if (!videoFileIdInput.value.trim()) return;
+            const normalized = extractTelegramFileIdInput(videoFileIdInput.value);
+            if (normalized && normalized !== videoFileIdInput.value) {
+                videoFileIdInput.value = normalized;
+            }
+        };
+    }
+
+    if (videoInput instanceof HTMLInputElement) {
+        videoInput.onchange = syncOwnerVideoSources;
+    }
+
     if (cancelBtn instanceof HTMLButtonElement) {
         cancelBtn.onclick = () => {
             if (form instanceof HTMLFormElement) {
@@ -2030,12 +2094,17 @@ function wireOwnerUploadForm() {
             if (trailerInput instanceof HTMLInputElement) {
                 trailerInput.value = '';
             }
+            if (videoFileIdInput instanceof HTMLTextAreaElement) {
+                videoFileIdInput.value = '';
+            }
+            syncOwnerVideoSources();
         };
     }
 
     if (form) {
         form.onsubmit = submitOwnerSeriesUpload;
     }
+    syncOwnerVideoSources();
 }
 
 function openOwnerArea() {
@@ -2362,12 +2431,26 @@ function renderOwnerDashboard(data) {
                             <span>Vídeo principal da série</span>
                             <input type="file" name="video_file" accept="video/*" required>
                         </label>
+                        <label class="payment-field owner-upload-span-2">
+                            <span>Video File_ID do Telegram</span>
+                            <textarea name="video_file_id" id="ownerSeriesVideoFileId" rows="3" placeholder="Cole aqui o File_ID bruto ou a mensagem retornada pelo bot"></textarea>
+                        </label>
                     </div>
                     <div class="owner-upload-actions">
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
                             <i class="fas fa-cloud-arrow-up"></i> Publicar série
                         </button>
                         <p class="owner-upload-note">Envie vídeo interno apenas quando o arquivo tiver até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Acima disso, mantenha a série no fluxo Telegram/File_ID.</p>
+                    </div>
+                    <div class="owner-list">
+                        <div class="owner-list-row">
+                            <span>Captura assistida pelo bot</span>
+                            <strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir bot para capturar File_ID</a></strong>
+                        </div>
+                        <div class="owner-list-row">
+                            <span>Como usar</span>
+                            <strong>1. Abra o bot 2. Envie a mídia 3. Cole ou deixe o bot vincular</strong>
+                        </div>
                     </div>
                     <div class="owner-status" id="ownerUploadStatus"></div>
                 </form>
@@ -2464,6 +2547,8 @@ async function submitOwnerSeriesUpload(event) {
     formData.set('init_data', tg?.initData || '');
     formData.set('password', String(DOM.ownerPasswordInput?.value || ''));
     formData.set('series_id', ownerSeriesEditId || '');
+    const normalizedTelegramFileId = extractTelegramFileIdInput(formData.get('video_file_id'));
+    formData.set('video_file_id', normalizedTelegramFileId);
 
     const submitButton = form.querySelector('button[type="submit"]');
     const previousLabel = submitButton?.innerHTML || '';
@@ -2478,18 +2563,25 @@ async function submitOwnerSeriesUpload(event) {
 
         if (videoFile instanceof File && videoFile.size > 0) {
             if (videoFile.size > OWNER_INTERNAL_UPLOAD_LIMIT_BYTES) {
-                throw new Error(buildOwnerInternalUploadLimitMessage(videoFile));
+                if (normalizedTelegramFileId) {
+                    formData.delete('video_file');
+                    setOwnerUploadStatus('Video grande detectado. Vou salvar a série usando o File_ID do Telegram.', '');
+                } else {
+                    throw new Error(buildOwnerInternalUploadLimitMessage(videoFile));
+                }
             }
-            setOwnerUploadStatus('Enviando vídeo principal em upload protegido...', '');
-            const upload = await uploadOwnerMediaViaApi({
-                seriesId: resolvedSeriesId,
-                fieldName: 'video_file',
-                file: videoFile,
-            });
-            resolvedSeriesId = String(upload?.series_id || resolvedSeriesId || '');
-            formData.set('series_id', resolvedSeriesId);
-            formData.set('uploaded_video_path', String(upload?.object_path || ''));
-            formData.delete('video_file');
+            if (formData.get('video_file') instanceof File) {
+                setOwnerUploadStatus('Enviando vídeo principal em upload protegido...', '');
+                const upload = await uploadOwnerMediaViaApi({
+                    seriesId: resolvedSeriesId,
+                    fieldName: 'video_file',
+                    file: videoFile,
+                });
+                resolvedSeriesId = String(upload?.series_id || resolvedSeriesId || '');
+                formData.set('series_id', resolvedSeriesId);
+                formData.set('uploaded_video_path', String(upload?.object_path || ''));
+                formData.delete('video_file');
+            }
         }
 
         setOwnerUploadStatus('Registrando série e demais arquivos no Supabase...', '');

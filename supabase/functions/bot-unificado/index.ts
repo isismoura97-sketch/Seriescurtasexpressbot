@@ -14,7 +14,7 @@ const TELEGRAM_BOT_USERNAME = (
   Deno.env.get("TELEGRAM_BOT_USERNAME") ??
   SUPPORT_URL.replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "")
 ).trim();
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-02";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -64,6 +64,7 @@ const SERIES_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("SERIES_VIDEO_FILE_ID_COLUMNS
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+const PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN = SERIES_VIDEO_FILE_ID_COLUMNS[0] || "video_file_id";
 const EPISODE_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("EPISODE_VIDEO_FILE_ID_COLUMNS") ?? "file_id,video_file_id,telegram_file_id")
   .split(",")
   .map((s) => s.trim())
@@ -101,6 +102,22 @@ function safeFilename(name: string) {
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 80) || "video";
+}
+
+function normalizeTelegramFileIdInput(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i += 1) {
+    const current = lines[i];
+    if (/^file_id:?$/i.test(current)) {
+      return lines[i + 1] ?? "";
+    }
+  }
+
+  const match = raw.match(/\b[A-Za-z0-9_-]{30,}\b/);
+  return match ? match[0] : raw;
 }
 
 function buildPlaybackUrl(req: Request, fileId: string, title = "") {
@@ -2055,6 +2072,37 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
 
   const mediaFileEntries = getTelegramMediaFileEntries(message);
   if (chatType === "private" && isOwnerSender && mediaFileEntries.length) {
+    const bindingSeriesId = resolveOwnerSeriesBindingId(message);
+    const targetEntry = pickOwnerSeriesVideoEntry(mediaFileEntries);
+    if (bindingSeriesId && targetEntry?.fileId) {
+      try {
+        const updatedRow = await updateSeriesVideoFileId(bindingSeriesId, targetEntry.fileId);
+        await sendTelegramFileIdMessage(chatId, mediaFileEntries);
+        await telegramRequest("sendMessage", {
+          chat_id: chatId,
+          text: [
+            "File_ID vinculado com sucesso.",
+            `Serie ID: ${bindingSeriesId}`,
+            `Titulo: ${String((updatedRow as Record<string, unknown>)?.[SERIES_TITLE_COLUMN] ?? "").trim() || "-"}`,
+          ].join("\n"),
+          reply_markup: stringifyJson({
+            inline_keyboard: [
+              [{ text: "Abrir serie no Mini App", web_app: { url: buildSeriesLaunchUrl(bindingSeriesId) } }],
+              [{ text: "Abrir catalogo", web_app: { url: SERIES_WEBAPP_URL } }],
+            ],
+          }),
+        });
+        return json(req, { ok: true, action: "file_id_bound", count: mediaFileEntries.length, series_id: bindingSeriesId });
+      } catch (error) {
+        await sendTelegramFileIdMessage(chatId, mediaFileEntries);
+        await telegramRequest("sendMessage", {
+          chat_id: chatId,
+          text: `Recebi a midia, mas nao consegui vincular o File_ID automaticamente: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        return json(req, { ok: true, action: "file_id_bind_failed", count: mediaFileEntries.length, series_id: bindingSeriesId });
+      }
+    }
+
     await sendTelegramFileIdMessage(chatId, mediaFileEntries);
     return json(req, { ok: true, action: "file_id_sent", count: mediaFileEntries.length });
   }
@@ -2116,6 +2164,17 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
       await sendRecommendationsMessage(chatId, String(chatId));
       return json(req, { ok: true, action: "start_recommend_sent" });
     }
+    if (startPayload.startsWith("fileid_")) {
+      if (!isOwnerSender) {
+        await sendBotWelcomeMessageRich(chatId);
+        return json(req, { ok: true, action: "owner_only_hidden" });
+      }
+      const seriesId = startPayload.slice("fileid_".length).trim();
+      if (seriesId) {
+        await sendOwnerSeriesFileIdCapturePrompt(chatId, seriesId);
+        return json(req, { ok: true, action: "start_fileid_series_prompt_sent", series_id: seriesId });
+      }
+    }
     await sendBotWelcomeMessageRich(chatId);
     return json(req, { ok: true, action: "start_welcome_sent" });
   }
@@ -2135,10 +2194,15 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
     return json(req, { ok: true, action: "recommend_sent" });
   }
 
-  if (/^(?:\/fileid|fileid)$/i.test(text)) {
+  if (/^(?:\/fileid|fileid)(?:\s+[A-Za-z0-9_-]+)?$/i.test(text)) {
     if (!isOwnerSender) {
       await sendBotWelcomeMessageRich(chatId);
       return json(req, { ok: true, action: "owner_only_hidden" });
+    }
+    const boundSeriesId = extractSeriesBindingIdFromText(text);
+    if (boundSeriesId) {
+      await sendOwnerSeriesFileIdCapturePrompt(chatId, boundSeriesId);
+      return json(req, { ok: true, action: "fileid_series_prompt_sent", series_id: boundSeriesId });
     }
     await telegramRequest("sendMessage", {
       chat_id: chatId,
@@ -2439,6 +2503,101 @@ async function resolveSeriesTitle(serieId: string, fallbackTitle = "") {
   } catch {
     return fallbackTitle;
   }
+}
+
+async function updateSeriesVideoFileId(seriesId: string, fileId: string) {
+  const normalizedSeriesId = String(seriesId ?? "").trim();
+  const normalizedFileId = normalizeTelegramFileIdInput(fileId);
+  if (!normalizedSeriesId || !normalizedFileId) {
+    throw new Error("Serie ou File_ID invalido");
+  }
+
+  const existingRow = await getSeriesById(normalizedSeriesId);
+  if (!existingRow) {
+    throw new Error("Serie nao encontrada");
+  }
+
+  const rowPayload: Record<string, unknown> = {
+    [PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN]: normalizedFileId,
+  };
+
+  await supabaseRestRequest(
+    buildSeriesRowFilter(normalizedSeriesId),
+    {
+      method: "PATCH",
+      headers: {
+        prefer: "return=representation",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(rowPayload),
+    },
+  );
+
+  return await getSeriesById(normalizedSeriesId);
+}
+
+function extractSeriesBindingIdFromText(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const patterns = [
+    /SCE_SERIES_ID=([A-Za-z0-9_-]+)/i,
+    /\/vincular(?:@\w+)?\s+([A-Za-z0-9_-]+)/i,
+    /\/serie(?:@\w+)?\s+([A-Za-z0-9_-]+)/i,
+    /serie_id[:=\s]+([A-Za-z0-9_-]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+
+  return "";
+}
+
+function resolveOwnerSeriesBindingId(message: Record<string, unknown>) {
+  const direct = [
+    message.caption,
+    message.text,
+  ].map((value) => extractSeriesBindingIdFromText(value)).find(Boolean);
+  if (direct) return direct;
+
+  const replyTo = message.reply_to_message as Record<string, unknown> | undefined;
+  if (!replyTo) return "";
+
+  return [
+    replyTo.text,
+    replyTo.caption,
+  ].map((value) => extractSeriesBindingIdFromText(value)).find(Boolean) || "";
+}
+
+function pickOwnerSeriesVideoEntry(entries: ReturnType<typeof getTelegramMediaFileEntries>) {
+  const preferredLabels = new Set(["Video", "Documento", "Animacao", "Video circular"]);
+  return entries.find((entry) => preferredLabels.has(entry.label)) || entries[0] || null;
+}
+
+async function sendOwnerSeriesFileIdCapturePrompt(chatId: string | number, seriesId: string) {
+  const title = await resolveSeriesTitle(seriesId, "");
+  const lines = [
+    title ? `Captura de File_ID para: ${title}` : "Captura de File_ID da serie",
+    `Serie ID: ${seriesId}`,
+    `SCE_SERIES_ID=${seriesId}`,
+    "",
+    "Agora responda a esta mensagem com o video ou documento no privado.",
+    "Se preferir, envie a midia com a legenda /vincular " + seriesId,
+    "Quando eu receber a midia, vou tentar vincular o File_ID automaticamente.",
+  ];
+
+  return await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text: lines.join("\n"),
+    reply_markup: stringifyJson({
+      inline_keyboard: [
+        [{ text: "Abrir serie no Mini App", web_app: { url: buildSeriesLaunchUrl(seriesId) } }],
+        [{ text: "Mini App", web_app: { url: SERIES_WEBAPP_URL } }],
+      ],
+    }),
+  });
 }
 
 async function sendSeriesLaunchPrompt(chatId: string | number, serieId: string, title: string) {
@@ -3973,6 +4132,7 @@ async function handleOwnerSeriesCreate(req: Request) {
   const forceFree = isTruthyInput(form.get("is_free"));
   const seriesIdInput = String(form.get("series_id") ?? form.get("id") ?? "").trim();
   const uploadedVideoPath = String(form.get("uploaded_video_path") ?? "").trim();
+  const videoFileIdInput = normalizeTelegramFileIdInput(form.get("video_file_id"));
   const cover = form.get("cover_file");
   const video = form.get("video_file");
   const trailer = form.get("trailer_file");
@@ -3993,7 +4153,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     }
   }
 
-  if (!(video instanceof File) && !uploadedVideoPath) {
+  if (!(video instanceof File) && !uploadedVideoPath && !videoFileIdInput) {
     if (!existingRow) {
       return json(req, { error: "Envie o vídeo principal da série" }, 400);
     }
@@ -4047,7 +4207,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     || String(existingRow?.trailer_storage_path ?? "").trim()
     || null;
 
-  if (!coverUrl || (!videoPath && !videoUrl)) {
+  if (!coverUrl || (!videoPath && !videoUrl && !videoFileIdInput && !String(existingRow?.[PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN] ?? "").trim())) {
     return json(req, { error: "A série precisa de capa e vídeo principal" }, 400);
   }
 
@@ -4064,6 +4224,10 @@ async function handleOwnerSeriesCreate(req: Request) {
     trailer_url: trailerUrl,
     trailer_storage_path: trailerPath,
   };
+
+  rowPayload[PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN] = videoFileIdInput
+    || String(existingRow?.[PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN] ?? "").trim()
+    || null;
 
   const saved = await supabaseRestRequest(
     isEdit ? buildSeriesRowFilter(seriesId) : SERIES_TABLE,
