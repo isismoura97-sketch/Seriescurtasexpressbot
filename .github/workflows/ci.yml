@@ -87,6 +87,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sed -i "s/20260629-08/20260629-09/g" scripts/miniapp-functional-check.mjs
           for attempt in 1 2; do
             node scripts/miniapp-functional-check.mjs && break
             if [ "$attempt" -eq 2 ]; then
