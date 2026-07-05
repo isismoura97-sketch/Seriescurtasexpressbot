@@ -1099,6 +1099,69 @@ async function requestProgressSync(payload) {
     }, 15000);
 }
 
+async function requestOwnerUploadSign(payload) {
+    return await requestJson(`${API_URL}?action=owner-upload-sign`, payload, 20000);
+}
+
+async function uploadFileToSignedStorageUrl(uploadUrl, file) {
+    if (!(file instanceof File) || file.size <= 0) {
+        throw new Error('Arquivo inválido para upload.');
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000);
+
+    try {
+        const res = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+                'content-type': file.type || 'application/octet-stream',
+                'x-upsert': 'true',
+            },
+            body: file,
+            signal: controller.signal,
+        });
+
+        const text = await res.text().catch(() => '');
+        let data = null;
+        try {
+            data = text ? JSON.parse(text) : null;
+        } catch (_) {
+            data = text;
+        }
+
+        if (!res.ok) {
+            throw new Error(data?.error || data?.message || text || `HTTP ${res.status}`);
+        }
+
+        return data;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error('Tempo esgotado no upload direto para o Storage.');
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function uploadOwnerMediaDirect({ seriesId = '', fieldName, file }) {
+    const signed = await requestOwnerUploadSign({
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        series_id: String(seriesId || ''),
+        field_name: String(fieldName || ''),
+        file_name: String(file?.name || ''),
+    });
+
+    if (!signed?.upload_url || !signed?.object_path) {
+        throw new Error('Não foi possível preparar o upload direto no Storage.');
+    }
+
+    await uploadFileToSignedStorageUrl(String(signed.upload_url), file);
+    return signed;
+}
+
 async function requestOwnerSeriesSave(formData) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000);
@@ -1368,7 +1431,9 @@ function buildOwnerQuickUploadFormData(serie, fieldName, file) {
     formData.set('category', String(serie?.category || 'Geral') || 'Geral');
     formData.set('price', String(Number(serie?.price ?? 0) || 0));
     formData.set('is_free', isFree(serie) ? '1' : '0');
-    formData.set(fieldName, file);
+    if (file instanceof File) {
+        formData.set(fieldName, file);
+    }
     return formData;
 }
 
@@ -1393,7 +1458,21 @@ async function submitOwnerQuickUpload(seriesId, fieldName, file) {
 
     try {
         setOwnerUploadStatus(`Enviando nova ${submitLabel} de "${serie.title || 'série'}"...`, '');
-        const payload = await requestOwnerSeriesSave(buildOwnerQuickUploadFormData(serie, fieldName, file));
+        let payload;
+        if (fieldName === 'video_file') {
+            setOwnerUploadStatus(`Subindo ${submitLabel} direto no Storage para "${serie.title || 'série'}"...`, '');
+            const upload = await uploadOwnerMediaDirect({
+                seriesId: String(serie?.id || ''),
+                fieldName,
+                file,
+            });
+            const formData = buildOwnerQuickUploadFormData(serie, fieldName, null);
+            formData.set('series_id', String(upload?.series_id || serie?.id || ''));
+            formData.set('uploaded_video_path', String(upload?.object_path || ''));
+            payload = await requestOwnerSeriesSave(formData);
+        } else {
+            payload = await requestOwnerSeriesSave(buildOwnerQuickUploadFormData(serie, fieldName, file));
+        }
         const updated = payload?.series || null;
         const dashboard = payload?.dashboard || null;
 
@@ -2299,7 +2378,23 @@ async function submitOwnerSeriesUpload(event) {
             submitButton.disabled = true;
             submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Publicando...';
         }
-        setOwnerUploadStatus('Enviando arquivos para o Supabase...', '');
+        let resolvedSeriesId = ownerSeriesEditId || String(formData.get('series_id') || '');
+        const videoFile = formData.get('video_file');
+
+        if (videoFile instanceof File && videoFile.size > 0) {
+            setOwnerUploadStatus('Enviando vídeo principal direto para o Storage...', '');
+            const upload = await uploadOwnerMediaDirect({
+                seriesId: resolvedSeriesId,
+                fieldName: 'video_file',
+                file: videoFile,
+            });
+            resolvedSeriesId = String(upload?.series_id || resolvedSeriesId || '');
+            formData.set('series_id', resolvedSeriesId);
+            formData.set('uploaded_video_path', String(upload?.object_path || ''));
+            formData.delete('video_file');
+        }
+
+        setOwnerUploadStatus('Registrando série e demais arquivos no Supabase...', '');
 
         const payload = await requestOwnerSeriesSave(formData);
         const created = payload?.series || null;

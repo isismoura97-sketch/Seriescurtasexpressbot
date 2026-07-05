@@ -429,6 +429,59 @@ async function uploadStorageObject(bucket: string, objectPath: string, file: Fil
   };
 }
 
+async function createStorageSignedUploadUrl(bucket: string, objectPath: string, upsert = true) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
+  }
+
+  const url = `${SUPABASE_URL}/storage/v1/object/upload/sign/${encodeURIComponent(bucket)}/${encodeStorageObjectPath(objectPath)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ upsert }),
+  });
+
+  const text = await res.text().catch(() => "");
+  let data: unknown = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // keep raw text
+  }
+
+  if (!res.ok) {
+    const error = new Error(
+      typeof data === "object" && data && "message" in data
+        ? String((data as { message?: string }).message)
+        : `Storage signed upload failed (${res.status})`,
+    ) as Error & { status?: number; body?: unknown };
+    error.status = res.status;
+    error.body = data;
+    throw error;
+  }
+
+  const signedUrl = typeof data === "object" && data && "url" in data
+    ? String((data as { url?: string }).url || "")
+    : "";
+  const token = typeof data === "object" && data && "token" in data
+    ? String((data as { token?: string }).token || "")
+    : "";
+
+  if (!signedUrl) {
+    throw new Error("Supabase não retornou a URL assinada de upload");
+  }
+
+  return {
+    path: objectPath,
+    token,
+    uploadUrl: new URL(signedUrl, SUPABASE_URL).toString(),
+  };
+}
+
 function extractStorageObjectPathFromUrl(publicUrl: unknown, bucket: string) {
   if (typeof publicUrl !== "string" || !publicUrl || !bucket) return "";
 
@@ -3743,6 +3796,55 @@ async function handleOwnerDashboard(req: Request) {
   return json(req, payload);
 }
 
+async function handleOwnerUploadSign(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) {
+    return json(req, { error: access.error }, access.status);
+  }
+
+  const fieldName = String(body.field_name ?? "").trim();
+  const fileName = String(body.file_name ?? "").trim();
+  const requestedSeriesId = String(body.series_id ?? body.id ?? "").trim();
+
+  if (!fieldName || !fileName) {
+    return json(req, { error: "field_name e file_name sao obrigatorios" }, 400);
+  }
+
+  const fieldToBucket: Record<string, { bucket: string; kind: string }> = {
+    cover_file: { bucket: SERIES_COVER_BUCKET, kind: "cover" },
+    trailer_file: { bucket: SERIES_TRAILER_BUCKET, kind: "trailer" },
+    video_file: { bucket: SERIES_VIDEO_BUCKET, kind: "video" },
+  };
+
+  const target = fieldToBucket[fieldName];
+  if (!target) {
+    return json(req, { error: "Tipo de upload nao suportado" }, 400);
+  }
+
+  const seriesId = requestedSeriesId || crypto.randomUUID();
+  const objectPath = getStorageObjectName(
+    seriesId,
+    `${target.kind}-${Date.now()}`,
+    fileName,
+  );
+  const signed = await createStorageSignedUploadUrl(target.bucket, objectPath, true);
+
+  return json(req, {
+    ok: true,
+    series_id: seriesId,
+    field_name: fieldName,
+    bucket: target.bucket,
+    object_path: signed.path,
+    upload_url: signed.uploadUrl,
+    expires_in_seconds: 2 * 60 * 60,
+  });
+}
+
 async function handleOwnerSeriesCreate(req: Request) {
   const form = await req.formData().catch(() => null);
   if (!form) {
@@ -3760,6 +3862,7 @@ async function handleOwnerSeriesCreate(req: Request) {
   const category = String(form.get("category") ?? "Geral").trim() || "Geral";
   const forceFree = isTruthyInput(form.get("is_free"));
   const seriesIdInput = String(form.get("series_id") ?? form.get("id") ?? "").trim();
+  const uploadedVideoPath = String(form.get("uploaded_video_path") ?? "").trim();
   const cover = form.get("cover_file");
   const video = form.get("video_file");
   const trailer = form.get("trailer_file");
@@ -3780,7 +3883,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     }
   }
 
-  if (!(video instanceof File)) {
+  if (!(video instanceof File) && !uploadedVideoPath) {
     if (!existingRow) {
       return json(req, { error: "Envie o vídeo principal da série" }, 400);
     }
@@ -3819,9 +3922,12 @@ async function handleOwnerSeriesCreate(req: Request) {
     || null;
   const videoUrl = videoUpload
     ? null
+    : uploadedVideoPath
+      ? null
     : String(existingRow?.video_url ?? "").trim()
       || null;
-  const videoPath = videoUpload?.path
+  const videoPath = uploadedVideoPath
+    || videoUpload?.path
     || String(existingRow?.video_storage_path ?? "").trim()
     || null;
   const trailerUrl = trailerUpload?.publicUrl
@@ -3866,6 +3972,15 @@ async function handleOwnerSeriesCreate(req: Request) {
   const finalRow = freshRow && typeof freshRow === "object" ? freshRow : savedRow;
   if (!finalRow || typeof finalRow !== "object") {
     return json(req, { error: "Não foi possível registrar a série" }, 500);
+  }
+
+  const previousVideoPath = String(existingRow?.video_storage_path ?? "").trim();
+  if (uploadedVideoPath && previousVideoPath && previousVideoPath !== uploadedVideoPath) {
+    try {
+      await deleteStorageObject(SERIES_VIDEO_BUCKET, previousVideoPath);
+    } catch {
+      // best effort cleanup
+    }
   }
 
   const dashboard = await buildOwnerDashboardPayload(access.userId);
@@ -4068,6 +4183,10 @@ Deno.serve(async (req) => {
 
     if (action === "owner-dashboard") {
       return await handleOwnerDashboard(req);
+    }
+
+    if (action === "owner-upload-sign") {
+      return await handleOwnerUploadSign(req);
     }
 
     if (action === "owner-series-save") {
