@@ -14,7 +14,7 @@ const TELEGRAM_BOT_USERNAME = (
   Deno.env.get("TELEGRAM_BOT_USERNAME") ??
   SUPPORT_URL.replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "")
 ).trim();
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260704-01";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-01";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -76,7 +76,7 @@ function corsHeaders(req: Request) {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "authorization,apikey,content-type,x-client-info,range,x-webapp-init-data,x-request-id",
+    "access-control-allow-headers": "authorization,apikey,content-type,x-client-info,range,x-webapp-init-data,x-request-id,x-owner-password,x-owner-field-name,x-owner-file-name,x-owner-series-id",
     "access-control-allow-credentials": "true",
     "access-control-max-age": "86400",
     "vary": "Origin",
@@ -417,6 +417,60 @@ async function uploadStorageObject(bucket: string, objectPath: string, file: Fil
       typeof data === "object" && data && "message" in data
         ? String((data as { message?: string }).message)
         : `Storage upload failed (${res.status})`,
+    ) as Error & { status?: number; body?: unknown };
+    error.status = res.status;
+    error.body = data;
+    throw error;
+  }
+
+  return {
+    path: objectPath,
+    publicUrl: storagePublicUrl(bucket, objectPath),
+  };
+}
+
+async function uploadStorageStream(bucket: string, objectPath: string, req: Request) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃ£o configurado");
+  }
+
+  if (!req.body) {
+    throw new Error("Corpo do upload ausente");
+  }
+
+  const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStorageObjectPath(objectPath)}`;
+  const contentType = req.headers.get("content-type") || "application/octet-stream";
+  const contentLength = req.headers.get("content-length");
+  const headers: Record<string, string> = {
+    apikey: SUPABASE_SERVICE_ROLE_KEY,
+    authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    "content-type": contentType,
+    "x-upsert": "true",
+  };
+
+  if (contentLength) {
+    headers["content-length"] = contentLength;
+  }
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: req.body,
+  });
+
+  const text = await res.text().catch(() => "");
+  let data: unknown = text;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // keep raw text
+  }
+
+  if (!res.ok) {
+    const error = new Error(
+      typeof data === "object" && data && "message" in data
+        ? String((data as { message?: string }).message)
+        : `Storage stream upload failed (${res.status})`,
     ) as Error & { status?: number; body?: unknown };
     error.status = res.status;
     error.body = data;
@@ -3845,6 +3899,62 @@ async function handleOwnerUploadSign(req: Request) {
   });
 }
 
+async function handleOwnerBinaryUpload(req: Request) {
+  const initData = String(req.headers.get("x-webapp-init-data") ?? "").trim();
+  const password = String(req.headers.get("x-owner-password") ?? "").trim();
+  const fieldName = String(req.headers.get("x-owner-field-name") ?? "").trim();
+  const rawFileName = String(req.headers.get("x-owner-file-name") ?? "").trim();
+  const requestedSeriesId = String(req.headers.get("x-owner-series-id") ?? "").trim();
+  const fileName = (() => {
+    if (!rawFileName) return "";
+    try {
+      return decodeURIComponent(rawFileName);
+    } catch {
+      return rawFileName;
+    }
+  })();
+
+  const access = await resolveOwnerRequest({
+    init_data: initData,
+    password,
+  });
+  if ("error" in access) {
+    return json(req, { error: access.error }, access.status);
+  }
+
+  if (!fieldName || !fileName) {
+    return json(req, { error: "field_name e file_name sao obrigatorios" }, 400);
+  }
+
+  const fieldToBucket: Record<string, { bucket: string; kind: string }> = {
+    cover_file: { bucket: SERIES_COVER_BUCKET, kind: "cover" },
+    trailer_file: { bucket: SERIES_TRAILER_BUCKET, kind: "trailer" },
+    video_file: { bucket: SERIES_VIDEO_BUCKET, kind: "video" },
+  };
+
+  const target = fieldToBucket[fieldName];
+  if (!target) {
+    return json(req, { error: "Tipo de upload nao suportado" }, 400);
+  }
+
+  const seriesId = requestedSeriesId || crypto.randomUUID();
+  const objectPath = getStorageObjectName(
+    seriesId,
+    `${target.kind}-${Date.now()}`,
+    fileName,
+  );
+  const uploaded = await uploadStorageStream(target.bucket, objectPath, req);
+
+  return json(req, {
+    ok: true,
+    series_id: seriesId,
+    field_name: fieldName,
+    bucket: target.bucket,
+    object_path: uploaded.path,
+    public_url: uploaded.publicUrl,
+  });
+}
+
 async function handleOwnerSeriesCreate(req: Request) {
   const form = await req.formData().catch(() => null);
   if (!form) {
@@ -4187,6 +4297,9 @@ Deno.serve(async (req) => {
 
     if (action === "owner-upload-sign") {
       return await handleOwnerUploadSign(req);
+    }
+    if (action === "owner-upload-binary") {
+      return await handleOwnerBinaryUpload(req);
     }
 
     if (action === "owner-series-save") {

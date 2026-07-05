@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260704-01';
+const BUILD_VERSION = '20260705-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -1103,6 +1103,25 @@ async function requestOwnerUploadSign(payload) {
     return await requestJson(`${API_URL}?action=owner-upload-sign`, payload, 20000);
 }
 
+async function uploadOwnerMediaViaApi({ seriesId = '', fieldName, file }) {
+    if (!(file instanceof File) || file.size <= 0) {
+        throw new Error('Arquivo inválido para upload.');
+    }
+
+    return await fetchWithTimeout(withCacheBuster(`${API_URL}?action=owner-upload-binary`), {
+        method: 'POST',
+        headers: {
+            'content-type': file.type || 'application/octet-stream',
+            'x-webapp-init-data': tg?.initData || '',
+            'x-owner-password': String(DOM.ownerPasswordInput?.value || ''),
+            'x-owner-field-name': String(fieldName || ''),
+            'x-owner-file-name': encodeURIComponent(String(file.name || 'arquivo.bin')),
+            'x-owner-series-id': String(seriesId || ''),
+        },
+        body: file,
+    }, 10 * 60 * 1000);
+}
+
 async function uploadFileToSignedStorageUrl(uploadUrl, file) {
     if (!(file instanceof File) || file.size <= 0) {
         throw new Error('Arquivo inválido para upload.');
@@ -1460,8 +1479,8 @@ async function submitOwnerQuickUpload(seriesId, fieldName, file) {
         setOwnerUploadStatus(`Enviando nova ${submitLabel} de "${serie.title || 'série'}"...`, '');
         let payload;
         if (fieldName === 'video_file') {
-            setOwnerUploadStatus(`Subindo ${submitLabel} direto no Storage para "${serie.title || 'série'}"...`, '');
-            const upload = await uploadOwnerMediaDirect({
+            setOwnerUploadStatus(`Subindo ${submitLabel} em upload protegido para "${serie.title || 'série'}"...`, '');
+            const upload = await uploadOwnerMediaViaApi({
                 seriesId: String(serie?.id || ''),
                 fieldName,
                 file,
@@ -2382,8 +2401,8 @@ async function submitOwnerSeriesUpload(event) {
         const videoFile = formData.get('video_file');
 
         if (videoFile instanceof File && videoFile.size > 0) {
-            setOwnerUploadStatus('Enviando vídeo principal direto para o Storage...', '');
-            const upload = await uploadOwnerMediaDirect({
+            setOwnerUploadStatus('Enviando vídeo principal em upload protegido...', '');
+            const upload = await uploadOwnerMediaViaApi({
                 seriesId: resolvedSeriesId,
                 fieldName: 'video_file',
                 file: videoFile,
