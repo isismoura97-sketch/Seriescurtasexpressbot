@@ -14,7 +14,7 @@ const TELEGRAM_BOT_USERNAME = (
   Deno.env.get("TELEGRAM_BOT_USERNAME") ??
   SUPPORT_URL.replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "")
 ).trim();
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-01";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-02";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";

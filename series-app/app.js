@@ -7,9 +7,10 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260705-01';
+const BUILD_VERSION = '20260705-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
+const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
 const TELEGRAM_BOT_LINK = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 let tg = null;
@@ -743,6 +744,36 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
+function formatFileSize(bytes) {
+    const value = Number(bytes || 0);
+    if (!Number.isFinite(value) || value <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = value;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+    return `${size.toFixed(size >= 100 || unitIndex === 0 ? 0 : size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+function explainOwnerUploadError(error, file = null) {
+    const rawMessage = String(error?.message || '').trim();
+    const normalized = rawMessage.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+    if (
+        normalized.includes('maximum allowed size')
+        || normalized.includes('exceeded the maximum allowed size')
+        || normalized.includes('entity too large')
+        || normalized.includes('file too big')
+        || Number(error?.status || 0) === 413
+    ) {
+        return buildOwnerInternalUploadLimitMessage(file);
+    }
+
+    return rawMessage || 'Nao foi possivel concluir o upload.';
+}
+
 function savePaymentPrefs() {
     try {
         localStorage.setItem(PAYMENT_METHOD_STORAGE_KEY, selectedPaymentMethod);
@@ -1339,6 +1370,10 @@ function isOwnerUser() {
     return normalizeId(userId) === OWNER_TELEGRAM_USER_ID;
 }
 
+function getOwnerInternalUploadLimitLabel() {
+    return formatFileSize(OWNER_INTERNAL_UPLOAD_LIMIT_BYTES);
+}
+
 function updateOwnerVisibility() {
     if (DOM.ownerBtn) {
         DOM.ownerBtn.hidden = !isOwnerUser();
@@ -1397,8 +1432,48 @@ function needsOwnerSeriesMigration(serie) {
     );
 }
 
+function hasOwnerSeriesTelegramFallback(serie) {
+    return Boolean(
+        !hasOwnerSeriesInternalPlayback(serie) &&
+        (
+            serie?.has_video_file_id ||
+            getTelegramFileId(serie) ||
+            Number(serie?.playable_episode_count || 0) > 0
+        )
+    );
+}
+
 function hasOwnerSeriesAnyVideo(serie) {
     return Boolean(hasOwnerSeriesInternalPlayback(serie) || needsOwnerSeriesMigration(serie));
+}
+
+function getOwnerSeriesVideoStatusLabel(serie) {
+    if (hasOwnerSeriesInternalPlayback(serie)) return 'Player interno OK';
+    if (hasOwnerSeriesTelegramFallback(serie)) return 'Telegram/File_ID';
+    return 'Sem vídeo';
+}
+
+function getOwnerSeriesQuickVideoActionMeta(serie) {
+    if (hasOwnerSeriesTelegramFallback(serie)) {
+        return {
+            action: 'migrate',
+            label: 'Migrar se couber',
+            icon: 'fa-wand-magic-sparkles',
+        };
+    }
+
+    return {
+        action: 'video',
+        label: 'Trocar vídeo interno',
+        icon: 'fa-film',
+    };
+}
+
+function buildOwnerInternalUploadLimitMessage(file = null) {
+    const sizeLabel = file instanceof File && file.size > 0
+        ? ` O arquivo selecionado tem ${formatFileSize(file.size)}.`
+        : '';
+    return `O video ultrapassou o limite do player interno neste projeto.${sizeLabel} No plano atual, so entram arquivos de ate ${getOwnerInternalUploadLimitLabel()} no Supabase Storage. Para videos maiores, mantenha a serie no fluxo Telegram/File_ID.`;
 }
 
 function getOwnerSeriesFilterCounts(series = []) {
@@ -1407,7 +1482,7 @@ function getOwnerSeriesFilterCounts(series = []) {
         free: series.filter((item) => isFree(item)).length,
         paid: series.filter((item) => !isFree(item)).length,
         playable: series.filter((item) => hasOwnerSeriesInternalPlayback(item)).length,
-        migration: series.filter((item) => needsOwnerSeriesMigration(item)).length,
+        migration: series.filter((item) => hasOwnerSeriesTelegramFallback(item)).length,
         missing_video: series.filter((item) => !hasOwnerSeriesAnyVideo(item)).length,
     };
 }
@@ -1466,6 +1541,12 @@ async function submitOwnerQuickUpload(seriesId, fieldName, file) {
         showToast('Selecione um arquivo válido.', 'error');
         return;
     }
+    if (fieldName === 'video_file' && file.size > OWNER_INTERNAL_UPLOAD_LIMIT_BYTES) {
+        const friendlyMessage = buildOwnerInternalUploadLimitMessage(file);
+        setOwnerUploadStatus(friendlyMessage, 'error');
+        showToast(friendlyMessage, 'error');
+        return;
+    }
 
     const labels = {
         cover_file: 'capa',
@@ -1509,8 +1590,9 @@ async function submitOwnerQuickUpload(seriesId, fieldName, file) {
         setOwnerUploadStatus(`Nova ${submitLabel} aplicada com sucesso.`, 'success');
         showToast(`Nova ${submitLabel} aplicada com sucesso!`, 'success');
     } catch (error) {
-        setOwnerUploadStatus(error.message || `Não foi possível trocar a ${submitLabel}.`, 'error');
-        showToast(error.message || `Falha ao trocar a ${submitLabel}.`, 'error');
+        const friendlyMessage = explainOwnerUploadError(error, file);
+        setOwnerUploadStatus(friendlyMessage || `Não foi possível trocar a ${submitLabel}.`, 'error');
+        showToast(friendlyMessage || `Falha ao trocar a ${submitLabel}.`, 'error');
     } finally {
         if (!document.getElementById('ownerUploadStatus')?.textContent) {
             setOwnerUploadStatus(previousStatus, '');
@@ -1569,8 +1651,9 @@ async function migrateOwnerSeriesVideo(seriesId, options = {}) {
         return payload;
     } catch (error) {
         if (!silent) {
-            setOwnerUploadStatus(error.message || 'Não foi possível migrar a série.', 'error');
-            showToast(error.message || 'Falha ao migrar a série.', 'error');
+            const friendlyMessage = explainOwnerUploadError(error);
+            setOwnerUploadStatus(friendlyMessage || 'Não foi possível migrar a série.', 'error');
+            showToast(friendlyMessage || 'Falha ao migrar a série.', 'error');
         }
         return null;
     } finally {
@@ -1583,12 +1666,12 @@ async function migrateOwnerSeriesVideo(seriesId, options = {}) {
 async function migrateOwnerPrioritySeries() {
     const queue = ownerSeriesCatalog.filter((item) => needsOwnerSeriesMigration(item));
     if (!queue.length) {
-        showToast('Não há vídeos pendentes para preparar agora.', 'info');
+        showToast('Não há séries elegíveis para migração agora.', 'info');
         return;
     }
 
     let migratedCount = 0;
-    setOwnerUploadStatus(`Migrando fila urgente (${queue.length})...`, '');
+    setOwnerUploadStatus(`Tentando migrar séries elegíveis (${queue.length})...`, '');
 
     for (const serie of queue) {
         const result = await migrateOwnerSeriesVideo(String(serie.id || ''), { silent: true });
@@ -1597,7 +1680,7 @@ async function migrateOwnerPrioritySeries() {
 
     const message = migratedCount
         ? `${migratedCount} série(s) migrada(s) com sucesso.`
-        : 'Nenhuma série pôde ser migrada agora.';
+        : 'Nenhuma série elegível pôde ser migrada agora.';
     setOwnerUploadStatus(message, migratedCount ? 'success' : 'error');
     showToast(message, migratedCount ? 'success' : 'error');
 }
@@ -2015,9 +2098,10 @@ function renderOwnerDashboard(data) {
     const missingPlaybackSeries = ownerSeriesCatalog.filter((item) => !hasOwnerSeriesAnyVideo(item));
     const migrationSeriesCount = Number(catalog.migration_needed ?? migrationSeries.length ?? 0);
     const missingPlaybackCount = Number(catalog.missing_playback ?? missingPlaybackSeries.length ?? 0);
-    const prioritySeriesCount = migrationSeriesCount + missingPlaybackCount;
+    const telegramFallbackCount = migrationSeriesCount;
+    const prioritySeriesCount = missingPlaybackCount;
     const prioritySeries = [];
-    [...migrationSeries, ...missingPlaybackSeries].forEach((serie) => {
+    [...missingPlaybackSeries].forEach((serie) => {
         if (!prioritySeries.some((item) => sameId(item.id, serie.id))) {
             prioritySeries.push(serie);
         }
@@ -2044,18 +2128,12 @@ function renderOwnerDashboard(data) {
     const prioritySeriesRows = prioritySeries.slice(0, 4)
         .map((serie) => {
             const trailerLabel = serie.has_trailer ? 'Trailer' : 'Sem trailer';
-            const videoLabel = hasOwnerSeriesInternalPlayback(serie)
-                ? 'Player interno OK'
-                : needsOwnerSeriesMigration(serie)
-                    ? 'Gerenciar vídeo'
-                    : 'Sem vídeo';
+            const videoLabel = getOwnerSeriesVideoStatusLabel(serie);
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
             const coverUrl = getCoverUrl(serie);
             const editId = String(serie.id || '');
-            const quickAction = needsOwnerSeriesMigration(serie) ? 'migrate' : 'video';
-            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Gerenciar vídeo' : 'Trocar vídeo';
-            const quickActionIcon = needsOwnerSeriesMigration(serie) ? 'fa-wand-magic-sparkles' : 'fa-film';
+            const quickActionMeta = getOwnerSeriesQuickVideoActionMeta(serie);
             return `
                 <article class="owner-series-row owner-series-row-priority">
                     <div class="owner-series-thumb-wrap">
@@ -2075,8 +2153,8 @@ function renderOwnerDashboard(data) {
                         <button type="button" class="btn btn-secondary owner-series-edit-btn" data-owner-edit-id="${escapeAttr(editId)}">
                             <i class="fas fa-pen-to-square"></i> Abrir
                         </button>
-                        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="${escapeAttr(quickAction)}" data-owner-series-id="${escapeAttr(editId)}">
-                            <i class="fas ${escapeAttr(quickActionIcon)}"></i> ${escapeHtml(quickActionLabel)}
+                        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="${escapeAttr(quickActionMeta.action)}" data-owner-series-id="${escapeAttr(editId)}">
+                            <i class="fas ${escapeAttr(quickActionMeta.icon)}"></i> ${escapeHtml(quickActionMeta.label)}
                         </button>
                     </div>
                 </article>
@@ -2084,26 +2162,20 @@ function renderOwnerDashboard(data) {
         })
         .join('') || `
             <div class="owner-empty-state">
-                <strong>${escapeHtml(String(prioritySeriesCount))} itens ainda pedem atenção.</strong>
-                <span>O backend está enviando apenas os contadores resumidos neste momento.</span>
+                <strong>Nenhuma série está sem mídia neste momento.</strong>
+                <span>As séries com Telegram/File_ID podem continuar no fluxo híbrido sem urgência de migração.</span>
             </div>
         `;
 
     const recentSeriesRows = visibleSeries
         .map((serie) => {
             const trailerLabel = serie.has_trailer ? 'Trailer' : 'Sem trailer';
-            const videoLabel = hasOwnerSeriesInternalPlayback(serie)
-                ? 'Player interno OK'
-                : needsOwnerSeriesMigration(serie)
-                    ? 'Gerenciar vídeo'
-                    : 'Sem vídeo';
+            const videoLabel = getOwnerSeriesVideoStatusLabel(serie);
             const coverLabel = serie.has_cover ? 'Capa OK' : 'Sem capa';
             const freeLabel = serie.is_free ? 'Grátis' : formatPrice(serie.price);
             const coverUrl = getCoverUrl(serie);
             const editId = String(serie.id || '');
-            const quickAction = needsOwnerSeriesMigration(serie) ? 'migrate' : 'video';
-            const quickActionLabel = needsOwnerSeriesMigration(serie) ? 'Gerenciar vídeo' : 'Trocar vídeo';
-            const quickActionIcon = needsOwnerSeriesMigration(serie) ? 'fa-wand-magic-sparkles' : 'fa-film';
+            const quickActionMeta = getOwnerSeriesQuickVideoActionMeta(serie);
             return `
                 <article class="owner-series-row">
                     <div class="owner-series-thumb-wrap">
@@ -2126,8 +2198,8 @@ function renderOwnerDashboard(data) {
                         <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="cover" data-owner-series-id="${escapeAttr(editId)}">
                             <i class="fas fa-image"></i> Trocar capa
                         </button>
-                        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="${escapeAttr(quickAction)}" data-owner-series-id="${escapeAttr(editId)}">
-                            <i class="fas ${escapeAttr(quickActionIcon)}"></i> ${escapeHtml(quickActionLabel)}
+                        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="${escapeAttr(quickActionMeta.action)}" data-owner-series-id="${escapeAttr(editId)}">
+                            <i class="fas ${escapeAttr(quickActionMeta.icon)}"></i> ${escapeHtml(quickActionMeta.label)}
                         </button>
                         <button type="button" class="btn btn-danger owner-series-mini-btn" data-owner-delete-id="${escapeAttr(editId)}">
                             <i class="fas fa-trash"></i> Excluir
@@ -2143,7 +2215,7 @@ function renderOwnerDashboard(data) {
         { key: 'free', label: `Grátis (${filterCounts.free})` },
         { key: 'paid', label: `Pagas (${filterCounts.paid})` },
         { key: 'playable', label: `Player interno (${filterCounts.playable})` },
-        { key: 'migration', label: `Gerenciar vídeos (${filterCounts.migration})` },
+        { key: 'migration', label: `Telegram/File_ID (${filterCounts.migration})` },
         { key: 'missing_video', label: `Sem vídeo (${filterCounts.missing_video})` },
     ];
 
@@ -2159,7 +2231,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-hero-copy">
                     <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Central do proprietário</span>
                     <h3>Gerencie séries, capa, trailer e vídeo principal em um só painel.</h3>
-                    <p>O catálogo foi reorganizado para séries em vídeo único. Revise os vídeos já cadastrados e publique tudo direto no Mini App com visual mais limpo.</p>
+                    <p>Use player interno para vídeos pequenos e mantenha vídeos grandes no fluxo Telegram/File_ID. Assim o catálogo continua funcional sem travar no limite do Storage.</p>
                 </div>
                 <div class="owner-hero-side">
                     <div class="owner-brand">
@@ -2171,7 +2243,7 @@ function renderOwnerDashboard(data) {
                     </div>
                     <div class="owner-side-stack">
                         <div class="owner-side-item">
-                            <span>Fila urgente</span>
+                            <span>Sem mídia</span>
                             <strong>${escapeHtml(String(prioritySeriesCount))}</strong>
                         </div>
                         <div class="owner-side-item">
@@ -2184,7 +2256,7 @@ function renderOwnerDashboard(data) {
                         </div>
                         <div class="owner-side-item">
                             <span>Fluxo rápido</span>
-                            <strong>1. Cadastrar 2. Subir mídia 3. Migrar</strong>
+                            <strong>1. Cadastrar 2. Interno até ${escapeHtml(getOwnerInternalUploadLimitLabel())} 3. Telegram para grandes</strong>
                         </div>
                     </div>
                     <div class="owner-hero-actions">
@@ -2192,10 +2264,10 @@ function renderOwnerDashboard(data) {
                             <i class="fas fa-plus"></i> Nova série
                         </button>
                         <button type="button" class="btn btn-secondary" data-owner-filter-mode="migration">
-                            <i class="fas fa-triangle-exclamation"></i> Priorizar migração
+                            <i class="fab fa-telegram"></i> Ver Telegram/File_ID
                         </button>
-                        <button type="button" class="btn btn-primary" data-owner-migrate-priority ${prioritySeriesCount ? '' : 'disabled'}>
-                            <i class="fas fa-wand-magic-sparkles"></i> Migrar fila urgente
+                        <button type="button" class="btn btn-primary" data-owner-migrate-priority ${telegramFallbackCount ? '' : 'disabled'}>
+                            <i class="fas fa-wand-magic-sparkles"></i> Tentar migrar elegíveis
                         </button>
                         <button type="button" class="btn btn-secondary" data-owner-filter-mode="playable">
                             <i class="fas fa-circle-play"></i> Player interno
@@ -2220,15 +2292,19 @@ function renderOwnerDashboard(data) {
                     <span>Player interno OK</span>
                     <strong>${escapeHtml(String(internalSeriesCount))}</strong>
                 </div>
+                <div class="owner-card">
+                    <span>Telegram/File_ID</span>
+                    <strong>${escapeHtml(String(telegramFallbackCount))}</strong>
+                </div>
             </div>
         </section>
         <section class="owner-section owner-section-priority owner-series-section">
             <div class="owner-section-head">
                 <div>
                     <h3>Fila de prioridade</h3>
-                    <p>As séries abaixo precisam de atenção agora. O ideal é resolver primeiro a migração para o player interno.</p>
+                    <p>Estas séries estão sem mídia disponível. Os títulos com Telegram/File_ID podem seguir no fluxo híbrido normalmente.</p>
                 </div>
-                <div class="owner-series-count">${escapeHtml(String(prioritySeriesCount))} itens urgentes</div>
+                <div class="owner-series-count">${escapeHtml(String(prioritySeriesCount))} itens sem mídia</div>
             </div>
             <div class="owner-series-list">${prioritySeriesRows}</div>
         </section>
@@ -2291,7 +2367,7 @@ function renderOwnerDashboard(data) {
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
                             <i class="fas fa-cloud-arrow-up"></i> Publicar série
                         </button>
-                        <p class="owner-upload-note">Envie o vídeo principal por arquivo para tocar no player interno.</p>
+                        <p class="owner-upload-note">Envie vídeo interno apenas quando o arquivo tiver até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Acima disso, mantenha a série no fluxo Telegram/File_ID.</p>
                     </div>
                     <div class="owner-status" id="ownerUploadStatus"></div>
                 </form>
@@ -2300,7 +2376,7 @@ function renderOwnerDashboard(data) {
                 <h3>Saúde do Catálogo</h3>
                 <div class="owner-list">
                     <div class="owner-list-row"><span>Player interno OK</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
-                    <div class="owner-list-row"><span>Vídeos para revisar</span><strong>${escapeHtml(String(migrationSeriesCount))}</strong></div>
+                    <div class="owner-list-row"><span>Telegram/File_ID</span><strong>${escapeHtml(String(telegramFallbackCount))}</strong></div>
                     <div class="owner-list-row"><span>Sem arquivo identificado</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
                 </div>
             </div>
@@ -2316,7 +2392,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-section-head">
                     <div>
                         <h3>Séries cadastradas</h3>
-                        <p>Busque, filtre e ajuste o vídeo rapidamente. Priorize os itens que ainda precisam de compatibilidade com o player interno.</p>
+                        <p>Busque, filtre e ajuste o vídeo rapidamente. Player interno fica para arquivos pequenos; Telegram/File_ID cobre os vídeos grandes.</p>
                     </div>
                     <div class="owner-series-count">${escapeHtml(visibleSeriesLabel)} exibidas</div>
                 </div>
@@ -2401,6 +2477,9 @@ async function submitOwnerSeriesUpload(event) {
         const videoFile = formData.get('video_file');
 
         if (videoFile instanceof File && videoFile.size > 0) {
+            if (videoFile.size > OWNER_INTERNAL_UPLOAD_LIMIT_BYTES) {
+                throw new Error(buildOwnerInternalUploadLimitMessage(videoFile));
+            }
             setOwnerUploadStatus('Enviando vídeo principal em upload protegido...', '');
             const upload = await uploadOwnerMediaViaApi({
                 seriesId: resolvedSeriesId,
@@ -2445,8 +2524,9 @@ async function submitOwnerSeriesUpload(event) {
 
         showToast('Série publicada com sucesso!', 'success');
     } catch (error) {
-        setOwnerUploadStatus(error.message || 'Não foi possível publicar a série.', 'error');
-        showToast(error.message || 'Falha ao publicar a série.', 'error');
+        const friendlyMessage = explainOwnerUploadError(error, formData.get('video_file'));
+        setOwnerUploadStatus(friendlyMessage || 'Não foi possível publicar a série.', 'error');
+        showToast(friendlyMessage || 'Falha ao publicar a série.', 'error');
     } finally {
         if (submitButton instanceof HTMLButtonElement) {
             submitButton.disabled = false;
@@ -2966,7 +3046,9 @@ function createCard(serie, isNetflix = false) {
             <span class="card-meta-sep">•</span>
             <span class="card-meta-status">${escapeHtml(
                 hasAccess && !missingPlayback
-                    ? 'Acesso liberado'
+                    ? playbackMode === 'telegram'
+                        ? 'Entrega no Telegram'
+                        : 'Acesso liberado'
                     : lockedPlayback
                         ? 'Pagamento necessário'
                         : missingPlayback
@@ -3114,7 +3196,7 @@ async function openPlayer(serieId, title) {
             const ownerCanMigrate = isOwnerUser();
             const telegramDescription = ownerCanMigrate
                 ? 'Este título já tem vídeo cadastrado, mas o player interno ainda não consegue abrir esse formato. Abra o painel do proprietário para revisar ou substituir o arquivo.'
-                : 'Este vídeo ainda está sendo preparado para reprodução nesta tela.';
+                : 'Este título segue no fluxo híbrido e pode ser entregue pelo bot enquanto o player interno não estiver disponível.';
             DOM.mainVideo.style.display = 'none';
             DOM.playerOverlay.dataset.state = 'unavailable';
             setPlayerErrorView({
@@ -3124,8 +3206,8 @@ async function openPlayer(serieId, title) {
                 description: telegramDescription,
                 buttonHtml: ownerCanMigrate
                     ? '<i class="fas fa-gear"></i> Gerenciar vídeo'
-                    : '<i class="fas fa-redo"></i> Tentar novamente',
-                buttonHandler: ownerCanMigrate ? () => openOwnerMigrationForSeries(sourceSerie) : retryPlayer
+                    : '<i class="fab fa-telegram"></i> Receber no Telegram',
+                buttonHandler: ownerCanMigrate ? () => openOwnerMigrationForSeries(sourceSerie) : () => deliverSeriesToTelegram(sourceSerie)
             });
             DOM.playerError.classList.add('active');
             return;
@@ -3215,17 +3297,19 @@ function openModal(serie) {
 
     const baseDescription = serie.description || 'Sem descrição disponível.';
     DOM.modalDesc.textContent = playbackMode === 'telegram'
-        ? `${baseDescription} Abra no player protegido do Mini App.`
+        ? `${baseDescription} Receba e assista pelo bot enquanto este título continua no fluxo híbrido Telegram/File_ID.`
         : playbackMode === 'locked'
         ? `${baseDescription} Quer ver o final agora? Libere todos os episódios.`
         : baseDescription;
 
-    if (!free && hasAccess) {
+    if (!free && hasAccess && playbackMode === 'telegram') {
+        DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> LIBERADO NO TELEGRAM</span>';
+    } else if (!free && hasAccess) {
         DOM.modalPrice.innerHTML = '<span class="free-badge"><i class="fas fa-unlock"></i> ACESSO LIBERADO</span>';
     } else if (!free && playbackMode === 'locked') {
         DOM.modalPrice.innerHTML = `<span class="locked-badge"><i class="fas fa-lock"></i> BLOQUEADO • ${escapeHtml(formatPrice(serie.price))}</span>`;
     } else if (free && playbackMode === 'telegram') {
-        DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fas fa-shield-halved"></i> PLAYER PROTEGIDO</span>';
+        DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> ENTREGA NO TELEGRAM</span>';
     } else {
         DOM.modalPrice.innerHTML = free 
             ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
