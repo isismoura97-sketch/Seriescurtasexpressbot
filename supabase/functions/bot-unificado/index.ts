@@ -14,7 +14,7 @@ const TELEGRAM_BOT_USERNAME = (
   Deno.env.get("TELEGRAM_BOT_USERNAME") ??
   SUPPORT_URL.replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "")
 ).trim();
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-04";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-05";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -23,7 +23,7 @@ const MERCADO_PAGO_PIX_KEY = Deno.env.get("MERCADO_PAGO_PIX_KEY") ?? "";
 const MERCADO_PAGO_PIX_COPY = Deno.env.get("MERCADO_PAGO_PIX_COPY") ?? "";
 const MERCADO_PAGO_PIX_QR_CODE_BASE64 = Deno.env.get("MERCADO_PAGO_PIX_QR_CODE_BASE64") ?? "";
 const PAYMENT_ORDERS_TABLE = Deno.env.get("PAYMENT_ORDERS_TABLE") ?? "payment_orders";
-const OWNER_TELEGRAM_USER_ID = Deno.env.get("OWNER_TELEGRAM_USER_ID") ?? "1048601631";
+const OWNER_TELEGRAM_USER_ID = Deno.env.get("OWNER_TELEGRAM_USER_ID") ?? "";
 const OWNER_AREA_PASSWORD = Deno.env.get("OWNER_AREA_PASSWORD") ?? "";
 const OWNER_AREA_PASSWORD_SHA256 = Deno.env.get("OWNER_AREA_PASSWORD_SHA256") ?? "";
 const SERIES_COVER_BUCKET = Deno.env.get("SERIES_COVER_BUCKET") ?? "covers";
@@ -3722,13 +3722,13 @@ async function handleStreamV2(req: Request, url: URL) {
   }
 
   if (!isSeriesFree(row as Record<string, unknown>) && !isOwnerUserId(userId)) {
-    logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "paid_delivery_only" });
+    logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "access_restricted" });
     return json(
       req,
       {
-        error: "Conteudo protegido",
-        code: "paid_delivery_only",
-        detail: "Series pagas sao liberadas somente no chat protegido do Telegram apos a confirmacao do pagamento.",
+        error: "Conteudo indisponivel",
+        code: "access_restricted",
+        detail: "Abra este conteudo pelo fluxo principal.",
       },
       403,
     );

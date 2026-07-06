@@ -7,9 +7,8 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260705-04';
+const BUILD_VERSION = '20260705-05';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
-const OWNER_TELEGRAM_USER_ID = '1048601631';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
 const TELEGRAM_BOT_LINK = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
@@ -77,6 +76,7 @@ let ownerCoverPreviewObjectUrl = '';
 let ownerDashboardSnapshot = null;
 let ownerSeriesSearchTerm = '';
 let ownerSeriesFilterMode = 'all';
+let ownerSessionAuthorized = false;
 
 // ==================== SHARED UTILITIES ====================
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
@@ -1355,7 +1355,7 @@ async function requestOwnerDashboard(password) {
 }
 
 function isOwnerUser() {
-    return normalizeId(userId) === OWNER_TELEGRAM_USER_ID;
+    return ownerSessionAuthorized;
 }
 
 function getOwnerInternalUploadLimitLabel() {
@@ -1364,7 +1364,7 @@ function getOwnerInternalUploadLimitLabel() {
 
 function updateOwnerVisibility() {
     if (DOM.ownerBtn) {
-        DOM.ownerBtn.hidden = !isOwnerUser();
+        DOM.ownerBtn.hidden = false;
     }
 }
 
@@ -1437,7 +1437,7 @@ function hasOwnerSeriesAnyVideo(serie) {
 
 function getOwnerSeriesVideoStatusLabel(serie) {
     if (hasOwnerSeriesInternalPlayback(serie)) return 'Player interno OK';
-    if (hasOwnerSeriesTelegramFallback(serie)) return 'Telegram/File_ID';
+    if (hasOwnerSeriesTelegramFallback(serie)) return 'Entrega assistida';
     return 'Sem vídeo';
 }
 
@@ -1461,7 +1461,7 @@ function buildOwnerInternalUploadLimitMessage(file = null) {
     const sizeLabel = file instanceof File && file.size > 0
         ? ` O arquivo selecionado tem ${formatFileSize(file.size)}.`
         : '';
-    return `O video ultrapassou o limite do player interno neste projeto.${sizeLabel} No plano atual, so entram arquivos de ate ${getOwnerInternalUploadLimitLabel()} no Supabase Storage. Para videos maiores, mantenha a serie no fluxo Telegram/File_ID.`;
+    return `O arquivo excede o limite desta etapa.${sizeLabel} Para arquivos acima de ${getOwnerInternalUploadLimitLabel()}, use o fluxo assistido.`;
 }
 
 function extractTelegramFileIdInput(value) {
@@ -1948,7 +1948,7 @@ function updateOwnerFormMode(serie = null) {
     }
     if (fileIdHelpLink instanceof HTMLAnchorElement) {
         fileIdHelpLink.href = getOwnerFileIdCaptureUrl(ownerSeriesEditId || '');
-        fileIdHelpLink.textContent = editing ? 'Capturar File_ID desta série no bot' : 'Abrir bot para capturar File_ID';
+        fileIdHelpLink.textContent = editing ? 'Capturar referência desta série no bot' : 'Abrir bot para capturar referência';
     }
 
     releaseOwnerCoverPreviewObjectUrl();
@@ -2096,11 +2096,6 @@ function wireOwnerUploadForm() {
 }
 
 function openOwnerArea() {
-    if (!isOwnerUser()) {
-        showToast('Área restrita ao proprietário', 'error');
-        return;
-    }
-
     DOM.ownerOverlay?.classList.add('active');
     document.body.classList.add('modal-open');
     setOwnerStatus('Digite a senha para carregar os dados.', '');
@@ -2117,12 +2112,12 @@ function closeOwnerArea() {
 function openOwnerMigrationForSeries(serie) {
     closePlayer();
     if (!isOwnerUser()) {
-        showToast('Esse vídeo ainda está sendo preparado para reprodução.', 'info');
+        showToast('Este conteúdo não está disponível no momento.', 'info');
         return;
     }
 
     openOwnerArea();
-    setOwnerStatus('Entre na área do proprietário e envie o vídeo principal em arquivo MP4/WebM para liberar a reprodução no Mini App.', 'info');
+    setOwnerStatus('Entre na área de gestão para revisar este conteúdo.', 'info');
 
     if (ownerDashboardSnapshot && serie?.id) {
         setTimeout(() => openOwnerSeriesEditor(serie.id), 120);
@@ -2220,7 +2215,7 @@ function renderOwnerDashboard(data) {
         .join('') || `
             <div class="owner-empty-state">
                 <strong>Nenhuma série está sem mídia neste momento.</strong>
-                <span>As séries com Telegram/File_ID podem continuar no fluxo híbrido sem urgência de migração.</span>
+                <span>Os títulos com entrega assistida podem continuar ativos sem ajustes imediatos.</span>
             </div>
         `;
 
@@ -2272,7 +2267,7 @@ function renderOwnerDashboard(data) {
         { key: 'free', label: `Grátis (${filterCounts.free})` },
         { key: 'paid', label: `Pagas (${filterCounts.paid})` },
         { key: 'playable', label: `Player interno (${filterCounts.playable})` },
-        { key: 'migration', label: `Telegram/File_ID (${filterCounts.migration})` },
+        { key: 'migration', label: `Entrega assistida (${filterCounts.migration})` },
         { key: 'missing_video', label: `Sem vídeo (${filterCounts.missing_video})` },
     ];
 
@@ -2288,7 +2283,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-hero-copy">
                     <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Central do proprietário</span>
                     <h3>Gerencie séries, capa, trailer e vídeo principal em um só painel.</h3>
-                    <p>Use player interno para vídeos pequenos e mantenha vídeos grandes no fluxo Telegram/File_ID. Assim o catálogo continua funcional sem travar no limite do Storage.</p>
+                    <p>Use o envio padrão para arquivos leves e o envio assistido quando necessário, mantendo o catálogo estável.</p>
                 </div>
                 <div class="owner-hero-side">
                     <div class="owner-brand">
@@ -2313,7 +2308,7 @@ function renderOwnerDashboard(data) {
                         </div>
                         <div class="owner-side-item">
                             <span>Fluxo rápido</span>
-                            <strong>1. Cadastrar 2. Interno até ${escapeHtml(getOwnerInternalUploadLimitLabel())} 3. Telegram para grandes</strong>
+                            <strong>1. Cadastrar 2. Envio direto até ${escapeHtml(getOwnerInternalUploadLimitLabel())} 3. Envio assistido</strong>
                         </div>
                     </div>
                     <div class="owner-hero-actions">
@@ -2321,7 +2316,7 @@ function renderOwnerDashboard(data) {
                             <i class="fas fa-plus"></i> Nova série
                         </button>
                         <button type="button" class="btn btn-secondary" data-owner-filter-mode="migration">
-                            <i class="fab fa-telegram"></i> Ver Telegram/File_ID
+                            <i class="fas fa-link"></i> Ver entrega assistida
                         </button>
                         <button type="button" class="btn btn-primary" data-owner-migrate-priority ${telegramFallbackCount ? '' : 'disabled'}>
                             <i class="fas fa-wand-magic-sparkles"></i> Tentar migrar elegíveis
@@ -2350,7 +2345,7 @@ function renderOwnerDashboard(data) {
                     <strong>${escapeHtml(String(internalSeriesCount))}</strong>
                 </div>
                 <div class="owner-card">
-                    <span>Telegram/File_ID</span>
+                    <span>Entrega assistida</span>
                     <strong>${escapeHtml(String(telegramFallbackCount))}</strong>
                 </div>
             </div>
@@ -2359,7 +2354,7 @@ function renderOwnerDashboard(data) {
             <div class="owner-section-head">
                 <div>
                     <h3>Fila de prioridade</h3>
-                    <p>Estas séries estão sem mídia disponível. Os títulos com Telegram/File_ID podem seguir no fluxo híbrido normalmente.</p>
+                    <p>Estas séries estão sem mídia pronta. Os demais títulos podem continuar ativos normalmente.</p>
                 </div>
                 <div class="owner-series-count">${escapeHtml(String(prioritySeriesCount))} itens sem mídia</div>
             </div>
@@ -2420,20 +2415,20 @@ function renderOwnerDashboard(data) {
                             <input type="file" name="video_file" accept="video/*" required>
                         </label>
                         <label class="payment-field owner-upload-span-2">
-                            <span>Video File_ID do Telegram</span>
-                            <textarea name="video_file_id" id="ownerSeriesVideoFileId" rows="3" placeholder="Cole aqui o File_ID bruto ou a mensagem retornada pelo bot"></textarea>
+                            <span>Referência de vídeo</span>
+                            <textarea name="video_file_id" id="ownerSeriesVideoFileId" rows="3" placeholder="Cole aqui a referência retornada pelo bot"></textarea>
                         </label>
                     </div>
                     <div class="owner-upload-actions">
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
                             <i class="fas fa-cloud-arrow-up"></i> Publicar série
                         </button>
-                        <p class="owner-upload-note">Envie vídeo interno apenas quando o arquivo tiver até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Acima disso, mantenha a série no fluxo Telegram/File_ID.</p>
+                        <p class="owner-upload-note">Use envio direto apenas para arquivos até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Arquivos maiores seguem pelo fluxo assistido.</p>
                     </div>
                     <div class="owner-list">
                         <div class="owner-list-row">
                             <span>Captura assistida pelo bot</span>
-                            <strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir bot para capturar File_ID</a></strong>
+                            <strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir bot para capturar referência</a></strong>
                         </div>
                         <div class="owner-list-row">
                             <span>Como usar</span>
@@ -2447,7 +2442,7 @@ function renderOwnerDashboard(data) {
                 <h3>Saúde do Catálogo</h3>
                 <div class="owner-list">
                     <div class="owner-list-row"><span>Player interno OK</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
-                    <div class="owner-list-row"><span>Telegram/File_ID</span><strong>${escapeHtml(String(telegramFallbackCount))}</strong></div>
+                    <div class="owner-list-row"><span>Entrega assistida</span><strong>${escapeHtml(String(telegramFallbackCount))}</strong></div>
                     <div class="owner-list-row"><span>Sem arquivo identificado</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
                 </div>
             </div>
@@ -2463,7 +2458,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-section-head">
                     <div>
                         <h3>Séries cadastradas</h3>
-                        <p>Busque, filtre e ajuste o vídeo rapidamente. Player interno fica para arquivos pequenos; Telegram/File_ID cobre os vídeos grandes.</p>
+                        <p>Busque, filtre e ajuste o vídeo rapidamente. O painel mostra quando o conteúdo está pronto ou em envio assistido.</p>
                     </div>
                     <div class="owner-series-count">${escapeHtml(visibleSeriesLabel)} exibidas</div>
                 </div>
@@ -2495,7 +2490,6 @@ function renderOwnerDashboard(data) {
 
 async function submitOwnerLogin(event) {
     event?.preventDefault();
-    if (!isOwnerUser()) return;
 
     const password = String(DOM.ownerPasswordInput?.value || '');
     if (!password) {
@@ -2510,10 +2504,13 @@ async function submitOwnerLogin(event) {
     setOwnerStatus('Validando acesso...', '');
 
     try {
+        ownerSessionAuthorized = false;
         const data = await requestOwnerDashboard(password);
+        ownerSessionAuthorized = true;
         renderOwnerDashboard(data);
         setOwnerStatus('Acesso validado.', 'success');
     } catch (error) {
+        ownerSessionAuthorized = false;
         DOM.ownerDashboard.hidden = true;
         setOwnerStatus(error.message || 'Não foi possível abrir a área do proprietário.', 'error');
     } finally {
@@ -3221,14 +3218,14 @@ async function openPlayer(serieId, title) {
     if (DOM.playerTitle) DOM.playerTitle.textContent = title || 'Reproduzir';
     if (DOM.playerKicker) {
         DOM.playerKicker.innerHTML = isTelegramPlayback
-            ? '<i class="fas fa-shield-halved"></i> Player protegido'
+            ? '<i class="fas fa-film"></i> Reprodução'
             : hasAccess
                 ? '<i class="fas fa-circle-check"></i> Reprodução liberada'
                 : '<i class="fas fa-film"></i> Carregando mídia';
     }
     if (DOM.playerMeta) {
         DOM.playerMeta.textContent = isTelegramPlayback
-            ? 'Acesso protegido no Mini App.'
+            ? 'Carregando reprodução.'
             : isFreeContent
                 ? 'Grátis. Toque e assista agora.'
                 : 'Pagou, liberou. Sem espera.';
@@ -3273,8 +3270,8 @@ async function openPlayer(serieId, title) {
             playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: '' };
             const ownerCanMigrate = isOwnerUser();
             const telegramDescription = ownerCanMigrate
-                ? 'Este título já tem vídeo cadastrado, mas o player interno ainda não consegue abrir esse formato. Abra o painel do proprietário para revisar ou substituir o arquivo.'
-                : 'Este título segue no fluxo híbrido e pode ser entregue pelo bot enquanto o player interno não estiver disponível.';
+                ? 'Este título já possui mídia cadastrada, mas precisa de revisão para abrir nesta tela.'
+                : 'Este título pode ser entregue pelo bot enquanto a reprodução nesta tela não estiver disponível.';
             DOM.mainVideo.style.display = 'none';
             DOM.playerOverlay.dataset.state = 'unavailable';
             setPlayerErrorView({
@@ -3295,10 +3292,10 @@ async function openPlayer(serieId, title) {
             throw new Error('URL de vídeo não retornada');
         }
     } catch (err) {
-        if (err?.code === 'paid_delivery_only') {
+        if (err?.code === 'access_restricted') {
             showProtectedPlayerBlock(
-                'Conteúdo protegido',
-                'Séries pagas são liberadas somente no chat protegido do Telegram após o pagamento.'
+                'Conteúdo indisponível',
+                'Abra este conteúdo pelo fluxo principal.'
             );
             return;
         }

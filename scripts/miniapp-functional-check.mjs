@@ -16,6 +16,7 @@ try {
 const root = process.cwd();
 const appDir = path.join(root, 'series-app');
 const port = Number(process.env.MINIAPP_CHECK_PORT || 8137);
+const TEST_OWNER_ID = '123456789';
 
 const mime = {
   '.html': 'text/html; charset=utf-8',
@@ -171,8 +172,8 @@ async function installRoutes(page) {
       body: `
         window.Telegram = {
           WebApp: {
-            initData: 'user=%7B%22id%22%3A1048601631%2C%22first_name%22%3A%22Teste%22%7D',
-            initDataUnsafe: { user: { id: 1048601631, first_name: 'Teste' } },
+            initData: 'user=%7B%22id%22%3A123456789%2C%22first_name%22%3A%22Teste%22%7D',
+            initDataUnsafe: { user: { id: 123456789, first_name: 'Teste' } },
             ready() {},
             expand() {},
             requestFullscreen() { return Promise.resolve(); },
@@ -315,7 +316,7 @@ async function installRoutes(page) {
             title: seriesId,
             delivery_type: 'telegram_file',
             source: seriesId === 'episode-video' ? 'episode' : 'series',
-            sent_to_chat_id: '1048601631',
+            sent_to_chat_id: TEST_OWNER_ID,
           },
         }),
       });
@@ -330,7 +331,7 @@ async function installRoutes(page) {
         body: JSON.stringify({
           ok: true,
           progress: {
-            user_id: '1048601631',
+            user_id: TEST_OWNER_ID,
             series_id: String(payload.series_id || ''),
             last_event: String(payload.event_type || 'progress'),
           },
@@ -741,7 +742,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260705-04')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260705-05')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.groupTitles.includes('Séries Gratuitas') || !initial.groupTitles.includes('Séries Pagas')) failures.push(`catalog groups missing: ${initial.groupTitles.join(', ')}`);
