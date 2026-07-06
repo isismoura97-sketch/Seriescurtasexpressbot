@@ -14,7 +14,7 @@ const TELEGRAM_BOT_USERNAME = (
   Deno.env.get("TELEGRAM_BOT_USERNAME") ??
   SUPPORT_URL.replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "")
 ).trim();
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-03";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-04";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -1073,7 +1073,7 @@ async function sendPaymentConfirmationMessage(
   order: Record<string, unknown>,
   payment: Record<string, unknown>,
   deliverySummary?: {
-    delivered: Array<{ seriesId: string; title: string; deliveryType: "telegram_file" | "direct" }>;
+    delivered: Array<{ seriesId: string; title: string; deliveryType: "telegram_file" | "telegram_url" }>;
     failed: Array<{ seriesId: string; title: string; reason: string }>;
   },
 ) {
@@ -1103,13 +1103,11 @@ async function sendPaymentConfirmationMessage(
     lines.push(`Detalhe: ${statusDetail}`);
   }
 
-  const deliveredTelegramCount = deliverySummary?.delivered.filter((entry) => entry.deliveryType === "telegram_file").length ?? 0;
-  const deliveredDirectCount = deliverySummary?.delivered.filter((entry) => entry.deliveryType === "direct").length ?? 0;
-  if (deliveredTelegramCount > 0) {
-    lines.push(`Sua serie ja foi liberada no Telegram: ${deliveredTelegramCount} titulo(s).`);
-  }
-  if (deliveredDirectCount > 0) {
-    lines.push(`Serie liberada no Mini App: ${deliveredDirectCount}.`);
+  const deliveredChatCount = deliverySummary?.delivered.filter((entry) => (
+    entry.deliveryType === "telegram_file" || entry.deliveryType === "telegram_url"
+  )).length ?? 0;
+  if (deliveredChatCount > 0) {
+    lines.push(`Sua serie ja foi entregue no chat do Telegram: ${deliveredChatCount} titulo(s).`);
   }
   if ((deliverySummary?.failed.length ?? 0) > 0) {
     lines.push("Se algo nao abrir, toque em Abrir catalogo e tente de novo.");
@@ -3439,7 +3437,9 @@ type SeriesTelegramDeliveryResolution =
     ok: true;
     title: string;
     isFree: boolean;
-    deliveryType: "direct";
+    deliveryType: "telegram_url";
+    videoUrl: string;
+    source: "storage" | "direct";
   }
   | {
     ok: false;
@@ -3487,12 +3487,27 @@ async function resolveSeriesTelegramDelivery(seriesId: string, fallbackTitle = "
     };
   }
 
-  if (extractVideoStoragePath(rowRecord) || extractDirectUrl(rowRecord)) {
+  const storagePlayback = await resolveStoragePlayback(rowRecord, title);
+  if (storagePlayback?.url) {
     return {
       ok: true,
       title,
       isFree,
-      deliveryType: "direct",
+      deliveryType: "telegram_url",
+      videoUrl: storagePlayback.url,
+      source: "storage",
+    };
+  }
+
+  const directUrl = extractDirectUrl(rowRecord);
+  if (directUrl) {
+    return {
+      ok: true,
+      title,
+      isFree,
+      deliveryType: "telegram_url",
+      videoUrl: directUrl,
+      source: "direct",
     };
   }
 
@@ -3521,12 +3536,29 @@ async function deliverSeriesToTelegramChat(chatId: string | number, seriesId: st
     };
   }
 
-  await sendSeriesLaunchPrompt(chatId, seriesId, delivery.title);
+  await telegramRequest("sendVideo", {
+    chat_id: chatId,
+    video: delivery.videoUrl,
+    caption: [
+      delivery.isFree ? "Serie gratuita liberada." : "Serie liberada com sucesso.",
+      delivery.title ? `Titulo: ${delivery.title}` : "",
+      "Este video foi entregue no chat do Telegram.",
+    ].filter(Boolean).join("\n"),
+    supports_streaming: true,
+    protect_content: true,
+    reply_markup: stringifyJson({
+      inline_keyboard: [
+        [{ text: "Abrir catalogo", web_app: { url: SERIES_WEBAPP_URL } }],
+        [{ text: "Suporte", url: SUPPORT_URL }],
+      ],
+    }),
+  });
   return {
     ok: true as const,
     title: delivery.title,
     isFree: delivery.isFree,
-    deliveryType: "direct" as const,
+    deliveryType: "telegram_url" as const,
+    source: delivery.source,
   };
 }
 
@@ -3540,7 +3572,7 @@ async function deliverApprovedOrderSeries(order: Record<string, unknown>) {
   });
 
   const summary = {
-    delivered: [] as Array<{ seriesId: string; title: string; deliveryType: "telegram_file" | "direct" }>,
+    delivered: [] as Array<{ seriesId: string; title: string; deliveryType: "telegram_file" | "telegram_url" }>,
     failed: [] as Array<{ seriesId: string; title: string; reason: string }>,
   };
 

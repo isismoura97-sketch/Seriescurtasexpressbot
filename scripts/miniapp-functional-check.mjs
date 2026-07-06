@@ -116,6 +116,15 @@ let ownerMigrationApplied = false;
 const deliveryLog = [];
 const progressLog = [];
 
+async function waitForNodeCondition(predicate, timeoutMs = 10000, intervalMs = 50) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error('Timeout aguardando condição do teste');
+}
+
 function svgCover(label, color) {
   return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="450"><rect width="100%" height="100%" fill="${encodeURIComponent(color)}"/><text x="50%" y="50%" fill="%23FFD700" text-anchor="middle">${encodeURIComponent(label)}</text></svg>`;
 }
@@ -579,6 +588,13 @@ async function main() {
     }));
 
     await page.locator('#catalogGrid .card[data-id="direct-ok"]').click();
+    await waitForNodeCondition(() => deliveryLog.length >= 1);
+    const directDeliveryState = await page.evaluate(() => ({
+      overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
+      modal: document.querySelector('#modalOverlay')?.classList.contains('active'),
+    }));
+
+    await page.evaluate(() => window.openPlayer('direct-ok', 'Direto Funcional'));
     await page.waitForFunction(() => document.querySelector('#mainVideo')?.style.display === 'block', null, { timeout: 10000 });
     await page.waitForTimeout(800);
     const directState = await page.evaluate(() => ({
@@ -591,7 +607,7 @@ async function main() {
     }));
     await page.evaluate(() => window.closePlayer());
 
-    await page.locator('#catalogGrid .card[data-id="direct-fallback"]').click();
+    await page.evaluate(() => window.openPlayer('direct-fallback', 'Direto com Fallback'));
     await page.waitForSelector('#playerError.active', { timeout: 15000 });
     const fallbackBeforeClick = await page.evaluate(() => ({
       title: document.querySelector('#playerErrorTitle')?.textContent?.trim(),
@@ -605,6 +621,12 @@ async function main() {
     await page.evaluate(() => window.closePlayer());
 
     await page.locator('#catalogGrid .card[data-id="storage-direct"]').click();
+    await waitForNodeCondition(() => deliveryLog.length >= 2);
+    const storageDeliveryState = await page.evaluate(() => ({
+      overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
+    }));
+
+    await page.evaluate(() => window.openPlayer('storage-direct', 'Storage Assinado'));
     await page.waitForFunction(() => document.querySelector('#mainVideo')?.style.display === 'block', null, { timeout: 10000 });
     const storageState = await page.evaluate(() => ({
       playback: document.querySelector('#catalogGrid .card[data-id="storage-direct"]')?.dataset.playback || '',
@@ -615,16 +637,29 @@ async function main() {
     await page.evaluate(() => window.closePlayer());
 
     await page.locator('#catalogGrid .card[data-id="telegram-only"]').click();
+    await waitForNodeCondition(() => deliveryLog.length >= 3);
+    const telegramDeliveryState = await page.evaluate(() => ({
+      overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
+    }));
+
+    await page.evaluate(() => window.openPlayer('telegram-only', 'Somente Telegram'));
     await page.waitForTimeout(400);
     const telegramProtectedFallback = await page.evaluate(() => ({
       overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
       state: document.querySelector('#playerOverlay')?.getAttribute('data-state') || '',
       errorActive: document.querySelector('#playerError')?.classList.contains('active'),
       title: document.querySelector('#playerErrorTitle')?.textContent?.trim() || '',
+      button: document.querySelector('#playerErrorAction')?.textContent?.trim() || '',
     }));
     await page.evaluate(() => window.closePlayer());
 
     await page.locator('#catalogGrid .card[data-id="episode-video"]').click();
+    await waitForNodeCondition(() => deliveryLog.length >= 4);
+    const episodeDeliveryState = await page.evaluate(() => ({
+      overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
+    }));
+
+    await page.evaluate(() => window.openPlayer('episode-video', 'Video em Episodio'));
     await page.waitForFunction(() => document.querySelector('#mainVideo')?.style.display === 'block', null, { timeout: 10000 });
     const episodePlayback = await page.evaluate(() => ({
       overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
@@ -678,15 +713,14 @@ async function main() {
       && !document.querySelector('#modalOverlay')?.classList.contains('active')
     ), null, { timeout: 10000 });
     await page.locator('#catalogGrid .card[data-id="paid-series"]').click();
-    await page.waitForFunction(() => document.querySelector('#mainVideo')?.style.display === 'block', null, { timeout: 10000 });
+    await waitForNodeCondition(() => deliveryLog.length >= 5);
     const paidAfterPayment = {
       action: await page.evaluate(() => document.querySelector('#catalogGrid .card[data-id="paid-series"] .card-cart-btn')?.textContent?.replace(/\s+/g, ' ').trim() || ''),
-      deliveries: deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length,
+      deliveries: deliveryLog.length,
       overlay: await page.evaluate(() => document.querySelector('#playerOverlay')?.classList.contains('active')),
-      videoDisplay: await page.evaluate(() => document.querySelector('#mainVideo')?.style.display || ''),
+      modal: await page.evaluate(() => document.querySelector('#modalOverlay')?.classList.contains('active')),
       playerError: await page.evaluate(() => document.querySelector('#playerError')?.classList.contains('active')),
     };
-    await page.evaluate(() => window.closePlayer());
 
     await page.locator('#ownerBtn').click();
     await page.fill('#ownerPasswordInput', 'owner-test');
@@ -707,7 +741,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260705-03')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260705-04')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.groupTitles.includes('Séries Gratuitas') || !initial.groupTitles.includes('Séries Pagas')) failures.push(`catalog groups missing: ${initial.groupTitles.join(', ')}`);
@@ -716,14 +750,21 @@ async function main() {
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
     if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
     if (initial.missingPlayback !== 'missing') failures.push(`missing playback state: ${initial.missingPlayback}`);
+    if (deliveryLog.length !== 5) failures.push(`delivery count mismatch: ${deliveryLog.length}`);
+    if (deliveryLog.filter((entry) => entry.seriesId === 'direct-ok').length !== 1 || directDeliveryState.overlay || directDeliveryState.modal) failures.push('direct telegram delivery failed');
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError || directState.muted || !directState.controlsActive) failures.push('direct player failed');
-    if (!progressLog.some((entry) => entry.series_id === 'direct-ok')) failures.push('direct progress sync failed');
+    if (!progressLog.some((entry) => entry.series_id === 'direct-ok' && entry.event_type === 'telegram_delivery')) failures.push('direct telegram progress sync failed');
+    if (deliveryLog.filter((entry) => entry.seriesId === 'storage-direct').length !== 1 || storageDeliveryState.overlay) failures.push('storage telegram delivery failed');
     if (storageState.playback !== 'direct' || !storageState.overlay || storageState.videoDisplay !== 'block' || storageState.playerError) failures.push('storage signed player failed');
     const normalizedFallbackTitle = (fallbackBeforeClick.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (!normalizedFallbackTitle.includes('Erro ao reproduzir')) failures.push('protected fallback title failed');
     if (fallbackAfterClick.sent || fallbackAfterClick.opened) failures.push('fallback should not open telegram');
     const normalizedProtectedTitle = (telegramProtectedFallback.title || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (!telegramProtectedFallback.overlay || telegramProtectedFallback.state !== 'unavailable' || !telegramProtectedFallback.errorActive || !normalizedProtectedTitle.includes('Video')) failures.push('telegram-only protected fallback failed');
+    const telegramFallbackButton = telegramProtectedFallback.button || '';
+    if (deliveryLog.filter((entry) => entry.seriesId === 'telegram-only').length !== 1 || telegramDeliveryState.overlay) failures.push('telegram-only delivery failed');
+    if (!telegramProtectedFallback.overlay || telegramProtectedFallback.state !== 'unavailable' || !telegramProtectedFallback.errorActive || !normalizedProtectedTitle.includes('Video') || (!telegramFallbackButton.includes('Receber no Telegram') && !telegramFallbackButton.includes('Gerenciar vídeo'))) failures.push('telegram-only protected fallback failed');
+    if (!progressLog.some((entry) => entry.series_id === 'telegram-only' && entry.event_type === 'telegram_delivery')) failures.push('telegram-only progress sync failed');
+    if (deliveryLog.filter((entry) => entry.seriesId === 'episode-video').length !== 1 || episodeDeliveryState.overlay) failures.push('episode telegram delivery failed');
     if (!episodePlayback.overlay || episodePlayback.state !== 'playing' || episodePlayback.videoDisplay !== 'block' || episodePlayback.playerError) failures.push('episode internal playback failed');
     if (!progressLog.some((entry) => entry.series_id === 'episode-video' && entry.event_type === 'opened')) failures.push('episode playback progress sync failed');
     const normalizedMissingAction = (missingModal.action || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -732,8 +773,8 @@ async function main() {
     if (!initial.coverFallbacks[1].includes('assets/covers/o-quaterback-perdido-retorna.webp')) failures.push('quarterback cover fallback failed');
     if (!paidBeforePayment.modalActive || paidBeforePayment.playerActive || !paidBeforePayment.modalAction) failures.push('paid series pre-payment gating failed');
     if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
-    if (!paidCardAfterPayment.action.includes('Assistir agora')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
-    if (!paidAfterPayment.action.includes('Assistir agora') || !paidAfterPayment.overlay || paidAfterPayment.videoDisplay !== 'block' || paidAfterPayment.playerError || paidAfterPayment.deliveries !== 0) failures.push('paid series protected playback failed');
+    if (!paidCardAfterPayment.action.includes('Receber no Telegram')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
+    if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
     if (!ownerState.visible || !ownerState.text.includes('Series no catalogo') && !ownerState.text.includes('Séries no catálogo')) failures.push('owner area failed');
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Fila urgente 0') && !migratedOwnerState.text.includes('Serie Migrada'))) failures.push('owner migration failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
@@ -743,11 +784,15 @@ async function main() {
       failures,
       checks: {
         initial,
+        directDeliveryState,
         directState,
         storageState,
+        storageDeliveryState,
         fallbackBeforeClick,
         fallbackAfterClick,
+        telegramDeliveryState,
         telegramProtectedFallback,
+        episodeDeliveryState,
         episodePlayback,
         missingModal,
         paidBeforePayment,

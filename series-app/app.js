@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260705-03';
+const BUILD_VERSION = '20260705-04';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_TELEGRAM_USER_ID = '1048601631';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
@@ -203,15 +203,9 @@ function setPlayerLoadingView(title = 'Abrindo agora', subtitle = 'Seu vídeo es
 }
 
 function handleSeriesClick(serie) {
-    const playbackMode = getPlaybackMode(serie);
-
-    if (hasSeriesAccess(serie)) {
-        if (playbackMode === 'direct' || playbackMode === 'telegram') {
-            openPlayer(serie.id, serie.title);
-            return;
-        }
-
-        showToast('Essa série ainda não está pronta.', 'info');
+    if (hasSeriesAccess(serie) && getPlaybackMode(serie) !== 'missing') {
+        void deliverSeriesToTelegram(serie);
+        return;
     }
 
     openModal(serie);
@@ -1318,12 +1312,6 @@ async function deliverSeriesToTelegram(serie, options = {}) {
             series_id: seriesId,
             title: serie.title || '',
         });
-
-        const deliveryType = String(result?.delivery?.delivery_type || '').trim();
-        if (deliveryType === 'direct') {
-            openPlayer(seriesId, serie.title);
-            return result;
-        }
 
         await requestProgressSync({
             init_data: tg?.initData || '',
@@ -2930,9 +2918,7 @@ function updateHero(index) {
         : '<i class="fas fa-fire"></i> Destaque da Semana';
 
     DOM.heroPlayBtn.style.display = 'inline-flex';
-    DOM.heroPlayBtn.innerHTML = getPlaybackMode(serie) === 'telegram'
-        ? '<i class="fab fa-telegram"></i> RECEBER'
-        : '<i class="fas fa-play"></i> ASSISTIR';
+    DOM.heroPlayBtn.innerHTML = '<i class="fab fa-telegram"></i> RECEBER';
     DOM.heroPlayBtn.onclick = () => handleSeriesClick(serie);
 }
 
@@ -3157,7 +3143,7 @@ function createCard(serie, isNetflix = false) {
         buyBtn.className = 'card-cart-btn';
         if (hasAccess && !missingPlayback) {
             buyBtn.classList.add('card-watch-btn');
-            buyBtn.innerHTML = '<i class="fas fa-play"></i> Assistir agora';
+            buyBtn.innerHTML = '<i class="fab fa-telegram"></i> Receber no Telegram';
         } else if (missingPlayback) {
             buyBtn.classList.add('card-disabled-btn');
             buyBtn.disabled = true;
@@ -3169,7 +3155,7 @@ function createCard(serie, isNetflix = false) {
             e.preventDefault();
             e.stopPropagation();
             if (hasAccess && !missingPlayback) {
-                openPlayer(serie.id, serie.title);
+                void deliverSeriesToTelegram(serie);
                 return;
             }
             if (!missingPlayback) {
@@ -3388,20 +3374,24 @@ function openModal(serie) {
     }
 
     const baseDescription = serie.description || 'Sem descrição disponível.';
-    DOM.modalDesc.textContent = playbackMode === 'telegram'
-        ? `${baseDescription} Receba e assista pelo bot enquanto este título continua no fluxo híbrido Telegram/File_ID.`
+    const canDeliver = hasAccess && playbackMode !== 'missing';
+
+    DOM.modalDesc.textContent = canDeliver
+        ? `${baseDescription} Toque para receber a série no chat do bot pelo Telegram.`
         : playbackMode === 'locked'
         ? `${baseDescription} Quer ver o final agora? Libere todos os episódios.`
+        : playbackMode === 'missing'
+        ? `${baseDescription} O vídeo desta série ainda está em preparação.`
         : baseDescription;
 
-    if (!free && hasAccess && playbackMode === 'telegram') {
+    if (!free && canDeliver) {
         DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> LIBERADO NO TELEGRAM</span>';
-    } else if (!free && hasAccess) {
-        DOM.modalPrice.innerHTML = '<span class="free-badge"><i class="fas fa-unlock"></i> ACESSO LIBERADO</span>';
     } else if (!free && playbackMode === 'locked') {
         DOM.modalPrice.innerHTML = `<span class="locked-badge"><i class="fas fa-lock"></i> BLOQUEADO • ${escapeHtml(formatPrice(serie.price))}</span>`;
-    } else if (free && playbackMode === 'telegram') {
+    } else if (free && canDeliver) {
         DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> ENTREGA NO TELEGRAM</span>';
+    } else if (playbackMode === 'missing') {
+        DOM.modalPrice.innerHTML = '<span class="unavailable-badge"><i class="fas fa-ban"></i> VÍDEO EM PREPARO</span>';
     } else {
         DOM.modalPrice.innerHTML = free 
             ? '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>'
@@ -3412,16 +3402,10 @@ function openModal(serie) {
     const btn = document.createElement('button');
     btn.className = free ? 'btn btn-free' : 'btn btn-primary';
 
-    if (!free && hasAccess && playbackMode !== 'missing') {
+    if (canDeliver) {
         btn.className = 'btn btn-free';
-        btn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
-    } else if (free && playbackMode === 'direct') {
-        btn.className = 'btn btn-free';
-        btn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
-    } else if (free && playbackMode === 'telegram') {
-        btn.className = 'btn btn-free';
-        btn.innerHTML = '<i class="fas fa-play"></i> ASSISTIR AGORA';
-    } else if (free) {
+        btn.innerHTML = '<i class="fab fa-telegram"></i> RECEBER NO TELEGRAM';
+    } else if (playbackMode === 'missing') {
         btn.className = 'btn btn-secondary';
         btn.innerHTML = '<i class="fas fa-ban"></i> VÍDEO INDISPONÍVEL';
     } else {
@@ -3430,13 +3414,9 @@ function openModal(serie) {
     
     btn.onclick = () => {
         closeModal();
-        if (!free && hasAccess && playbackMode !== 'missing') {
-            openPlayer(serie.id, serie.title);
-        } else if (free && playbackMode === 'direct') {
-            openPlayer(serie.id, serie.title);
-        } else if (free && playbackMode === 'telegram') {
-            openPlayer(serie.id, serie.title);
-        } else if (free) {
+        if (canDeliver) {
+            void deliverSeriesToTelegram(serie);
+        } else if (playbackMode === 'missing') {
             showToast('Essa série ainda não possui vídeo disponível', 'info');
         } else {
             addToCart(serie);
