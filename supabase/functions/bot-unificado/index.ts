@@ -3305,6 +3305,10 @@ function isSeriesFree(row: Record<string, unknown>) {
   return getSeriesPrice(row) <= 0;
 }
 
+function isOwnerUserId(userId: string) {
+  return String(userId ?? "").trim() === String(OWNER_TELEGRAM_USER_ID ?? "").trim();
+}
+
 function orderContainsSeries(order: Record<string, unknown>, seriesId: string) {
   const items = Array.isArray(order.items) ? order.items : [];
   return items.some((item) => {
@@ -3715,6 +3719,19 @@ async function handleStreamV2(req: Request, url: URL) {
   if (!isSeriesFree(row as Record<string, unknown>) && !(await userHasPaidForSeries(userId, serieId))) {
     logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "payment_required" });
     return json(req, { error: "Pagamento necessario para assistir esta serie.", code: "payment_required" }, 402);
+  }
+
+  if (!isSeriesFree(row as Record<string, unknown>) && !isOwnerUserId(userId)) {
+    logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "paid_delivery_only" });
+    return json(
+      req,
+      {
+        error: "Conteudo protegido",
+        code: "paid_delivery_only",
+        detail: "Series pagas sao liberadas somente no chat protegido do Telegram apos a confirmacao do pagamento.",
+      },
+      403,
+    );
   }
 
   const seriesTitle = String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title);

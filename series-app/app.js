@@ -3295,6 +3295,13 @@ async function openPlayer(serieId, title) {
             throw new Error('URL de vídeo não retornada');
         }
     } catch (err) {
+        if (err?.code === 'paid_delivery_only') {
+            showProtectedPlayerBlock(
+                'Conteúdo protegido',
+                'Séries pagas são liberadas somente no chat protegido do Telegram após o pagamento.'
+            );
+            return;
+        }
         if (isAccessDeniedError(err)) {
             const titleText = err.status === 402 || err.code === 'payment_required'
                 ? 'Conteúdo protegido'
