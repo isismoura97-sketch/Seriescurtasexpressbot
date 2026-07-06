@@ -61,7 +61,7 @@ Secrets necessários no Supabase:
 - `EPISODE_VIDEO_FILE_ID_COLUMNS` com colunas de File_ID nos episódios, padrão `file_id,video_file_id,telegram_file_id`
 - `SERIES_VIDEO_URL_COLUMNS` com uma lista separada por vírgulas para URLs diretas
 - `SERIES_VIDEO_FILE_ID_COLUMNS` com uma lista separada por vírgulas para IDs do Telegram
-- `OWNER_TELEGRAM_USER_ID` com o ID do proprietário, padrão `1048601631`
+- `OWNER_TELEGRAM_USER_ID` com o identificador do proprietário
 - `OWNER_AREA_PASSWORD` ou `OWNER_AREA_PASSWORD_SHA256` para a senha da área do proprietário
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
@@ -74,7 +74,7 @@ Fluxo integrado atual:
 2. o bot oferece `Catálogo`, `Mini App`, `Continuar` e `Recomendações`
 3. o Mini App abre o catálogo e o checkout
 4. séries com URL direta continuam no player interno
-5. séries com `File_ID` são entregues pelo próprio bot no Telegram com `protect_content`
+5. séries com mídia assistida são entregues pelo próprio bot no Telegram com proteção de conteúdo
 6. o Mini App sincroniza progresso em `user_series_progress`
 7. o bot usa esse histórico para `/continuar` e `/recomendar`
 
@@ -89,7 +89,7 @@ SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... TELEGRAM_BOT_TOKEN=... node scrip
 O script:
 
 - lê `series` e `episodes`
-- tenta baixar o vídeo original pelo `File_ID` do Telegram
+- tenta baixar a mídia original pelo identificador do Telegram
 - envia o arquivo para o bucket `videos`
 - grava apenas `video_storage_path` para que o playback use URL assinada temporária
 
@@ -144,7 +144,7 @@ Assim o player interno passa a usar o Supabase diretamente, e as séries pagas c
 
 ## Área do proprietário
 
-O mini app mostra um botão de coroa apenas para o Telegram ID configurado em `OWNER_TELEGRAM_USER_ID`.
+O mini app mostra o painel de gestão apenas para a conta configurada em `OWNER_TELEGRAM_USER_ID`.
 
 O acesso exige duas validações no backend:
 

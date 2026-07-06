@@ -577,7 +577,10 @@ async function main() {
       lockedPaidPlayback: document.querySelector('#catalogGrid .card[data-id="paid-series"]')?.dataset.playback || '',
       missingPlayback: document.querySelector('#catalogGrid .card[data-id="missing-video"]')?.dataset.playback || '',
       pixActive: document.querySelector('[data-payment-method="pix_qr"]')?.classList.contains('active'),
-      appJs: [...document.scripts].find((script) => new URL(script.src, location.href).pathname.endsWith('/app.js'))?.src || '',
+      appJs: [...document.scripts].find((script) => {
+        const pathname = new URL(script.src, location.href).pathname;
+        return pathname.endsWith('/app.min.js') || pathname.endsWith('/app.js');
+      })?.src || '',
       welcomeLogo: document.querySelector('.player-loading-logo')?.getAttribute('src') || '',
       playerControls: Boolean(document.querySelector('#playerControls')),
       playerSeekInput: Boolean(document.querySelector('#playerSeekInput')),
