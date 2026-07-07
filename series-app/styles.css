@@ -2699,6 +2699,25 @@ body.light-mode .cart-item {
         gap: 12px;
     }
 
+    .card-info,
+    .netflix-info {
+        min-height: 92px;
+        padding: 10px 8px;
+    }
+
+    .card-title,
+    .netflix-title {
+        font-size: 11px;
+        line-height: 1.4;
+    }
+
+    .card-favorite-btn {
+        width: 26px;
+        height: 26px;
+        top: 8px;
+        right: 8px;
+    }
+
     .cart-drawer {
         max-width: 100%;
     }
