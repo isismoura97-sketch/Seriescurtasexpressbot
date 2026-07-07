@@ -779,8 +779,8 @@ async function main() {
     if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
     if (!paidCardAfterPayment.action.includes('Receber no Telegram')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
     if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
-    if (!ownerState.visible || (!ownerState.text.includes('Painel do proprietário') && !ownerState.text.includes('Resumo'))) failures.push('owner area failed');
-    if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Disponíveis') && !migratedOwnerState.text.includes('Pendentes'))) failures.push('owner migration failed');
+    if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral'))) failures.push('owner area failed');
+    if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Prontas2') && !migratedOwnerState.text.includes('Em fila0'))) failures.push('owner migration failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
 
     const result = {

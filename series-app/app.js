@@ -1440,23 +1440,23 @@ function hasOwnerSeriesAnyVideo(serie) {
 }
 
 function getOwnerSeriesVideoStatusLabel(serie) {
-    if (hasOwnerSeriesInternalPlayback(serie)) return 'Disponível';
-    if (hasOwnerSeriesTelegramFallback(serie)) return 'Pendente';
-    return 'Sem mídia';
+    if (hasOwnerSeriesInternalPlayback(serie)) return 'Pronto';
+    if (hasOwnerSeriesTelegramFallback(serie)) return 'Em fila';
+    return 'Sem vídeo';
 }
 
 function getOwnerSeriesQuickVideoActionMeta(serie) {
     if (hasOwnerSeriesTelegramFallback(serie)) {
         return {
             action: 'migrate',
-            label: 'Atualizar',
+            label: 'Ajustar',
             icon: 'fa-wand-magic-sparkles',
         };
     }
 
     return {
         action: 'video',
-        label: 'Editar',
+        label: 'Abrir',
         icon: 'fa-film',
     };
 }
@@ -1465,7 +1465,7 @@ function buildOwnerInternalUploadLimitMessage(file = null) {
     const sizeLabel = file instanceof File && file.size > 0
         ? ` O arquivo selecionado tem ${formatFileSize(file.size)}.`
         : '';
-    return `O arquivo excede o limite desta etapa.${sizeLabel} Para arquivos acima de ${getOwnerInternalUploadLimitLabel()}, use a etapa alternativa.`;
+    return `O arquivo excede o limite desta etapa.${sizeLabel} Para arquivos acima de ${getOwnerInternalUploadLimitLabel()}, use o fluxo alternativo.`;
 }
 
 function extractTelegramFileIdInput(value) {
@@ -1952,7 +1952,7 @@ function updateOwnerFormMode(serie = null) {
     }
     if (fileIdHelpLink instanceof HTMLAnchorElement) {
         fileIdHelpLink.href = getOwnerFileIdCaptureUrl(ownerSeriesEditId || '');
-        fileIdHelpLink.textContent = editing ? 'Abrir referência desta série' : 'Abrir referência';
+        fileIdHelpLink.textContent = editing ? 'Abrir guia desta série' : 'Abrir guia';
     }
 
     releaseOwnerCoverPreviewObjectUrl();
@@ -2121,7 +2121,7 @@ function openOwnerMigrationForSeries(serie) {
     }
 
     openOwnerArea();
-    setOwnerStatus('Abra a área de gestão para editar este título.', 'info');
+    setOwnerStatus('Abra a área de gestão para continuar.', 'info');
 
     if (ownerDashboardSnapshot && serie?.id) {
         setTimeout(() => openOwnerSeriesEditor(serie.id), 120);
@@ -2285,21 +2285,21 @@ function renderOwnerDashboard(data) {
         <section class="owner-hero-card">
             <div class="owner-hero-layout">
                 <div class="owner-hero-copy">
-                    <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Central do proprietário</span>
-                    <h3>Gerencie séries, capa, trailer e vídeo principal em um só painel.</h3>
-                    <p>Use o envio direto para arquivos leves e outra etapa quando necessário, mantendo o catálogo estável.</p>
+                    <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Área de gestão</span>
+                    <h3>Gerencie séries, capas, trailers e vídeos em um só painel.</h3>
+                    <p>Use o envio rápido para arquivos leves e o fluxo alternativo quando necessário, mantendo o catálogo estável.</p>
                 </div>
                 <div class="owner-hero-side">
                     <div class="owner-brand">
                         <img class="owner-brand-logo" src="${OWNER_LOGO_IMAGE}" alt="Séries Express">
                         <div>
                             <strong>Séries Express</strong>
-                            <span>Painel do proprietário</span>
+                            <span>Área de gestão</span>
                         </div>
                     </div>
                     <div class="owner-side-stack">
                         <div class="owner-side-item">
-                            <span>Sem mídia</span>
+                            <span>Sem vídeo</span>
                             <strong>${escapeHtml(String(prioritySeriesCount))}</strong>
                         </div>
                         <div class="owner-side-item">
@@ -2311,22 +2311,22 @@ function renderOwnerDashboard(data) {
                             <strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong>
                         </div>
                         <div class="owner-side-item">
-                            <span>Rotina</span>
-                            <strong>1. Cadastrar 2. Envio direto até ${escapeHtml(getOwnerInternalUploadLimitLabel())} 3. Outra etapa</strong>
+                            <span>Fluxo</span>
+                            <strong>1. Cadastrar 2. Envio rápido até ${escapeHtml(getOwnerInternalUploadLimitLabel())} 3. Fluxo alternativo</strong>
                         </div>
                     </div>
                     <div class="owner-hero-actions">
                         <button type="button" class="btn btn-secondary" data-owner-reset-editor>
-                            <i class="fas fa-plus"></i> Nova série
+                            <i class="fas fa-plus"></i> Novo item
                         </button>
                         <button type="button" class="btn btn-secondary" data-owner-filter-mode="migration">
-                            <i class="fas fa-link"></i> Ver pendentes
+                            <i class="fas fa-link"></i> Ver fila
                         </button>
                         <button type="button" class="btn btn-primary" data-owner-migrate-priority ${telegramFallbackCount ? '' : 'disabled'}>
-                            <i class="fas fa-wand-magic-sparkles"></i> Atualizar itens
+                            <i class="fas fa-wand-magic-sparkles"></i> Aplicar ajuste
                         </button>
                         <button type="button" class="btn btn-secondary" data-owner-filter-mode="playable">
-                            <i class="fas fa-circle-play"></i> Disponíveis
+                            <i class="fas fa-circle-play"></i> Prontos
                         </button>
                     </div>
                 </div>
@@ -2345,11 +2345,11 @@ function renderOwnerDashboard(data) {
                     <strong>${escapeHtml(String(paidSeriesCount))}</strong>
                 </div>
                 <div class="owner-card">
-                    <span>Disponíveis</span>
+                    <span>Prontas</span>
                     <strong>${escapeHtml(String(internalSeriesCount))}</strong>
                 </div>
                 <div class="owner-card">
-                    <span>Pendentes</span>
+                    <span>Em fila</span>
                     <strong>${escapeHtml(String(telegramFallbackCount))}</strong>
                 </div>
             </div>
@@ -2357,8 +2357,8 @@ function renderOwnerDashboard(data) {
         <section class="owner-section owner-section-priority owner-series-section">
             <div class="owner-section-head">
                 <div>
-                    <h3>Itens pendentes</h3>
-                    <p>Estas séries ainda pedem atenção. Os demais títulos podem continuar ativos normalmente.</p>
+                    <h3>Itens em fila</h3>
+                    <p>Estes títulos ainda pedem ajuste. Os demais seguem ativos normalmente.</p>
                 </div>
                 <div class="owner-series-count">${escapeHtml(String(prioritySeriesCount))} itens</div>
             </div>
@@ -2369,8 +2369,8 @@ function renderOwnerDashboard(data) {
                 <div class="owner-form-head">
                     <div>
                         <span class="owner-eyebrow" id="ownerFormBadge">Novo cadastro</span>
-                        <h3 id="ownerFormTitle">Nova série em mídia única</h3>
-                        <p id="ownerFormSubtitle">Crie uma nova série com um arquivo principal único. O trailer continua opcional.</p>
+                        <h3 id="ownerFormTitle">Nova série</h3>
+                        <p id="ownerFormSubtitle">Crie uma série com um vídeo principal único. O trailer continua opcional.</p>
                     </div>
                     <button type="button" class="btn btn-secondary" id="ownerFormCancelBtn" hidden>
                         <i class="fas fa-arrow-rotate-left"></i> Cancelar edição
@@ -2415,39 +2415,39 @@ function renderOwnerDashboard(data) {
                             <input type="file" name="trailer_file" accept="video/*">
                         </label>
                         <label class="payment-field">
-                            <span>Arquivo principal</span>
+                            <span>Vídeo principal</span>
                             <input type="file" name="video_file" accept="video/*" required>
                         </label>
                         <label class="payment-field owner-upload-span-2">
-                            <span>Referência</span>
-                            <textarea name="video_file_id" id="ownerSeriesVideoFileId" rows="3" placeholder="Cole a referência aqui"></textarea>
+                            <span>Guia</span>
+                            <textarea name="video_file_id" id="ownerSeriesVideoFileId" rows="3" placeholder="Cole o identificador aqui"></textarea>
                         </label>
                     </div>
                     <div class="owner-upload-actions">
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
                             <i class="fas fa-cloud-arrow-up"></i> Publicar série
                         </button>
-                        <p class="owner-upload-note">Use envio direto apenas para arquivos até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Arquivos maiores seguem por outra etapa.</p>
+                        <p class="owner-upload-note">Use envio rápido apenas para arquivos até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Arquivos maiores seguem no fluxo alternativo.</p>
                     </div>
                     <div class="owner-list">
                         <div class="owner-list-row">
-                            <span>Referência</span>
-                            <strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir referência</a></strong>
+                            <span>Guia</span>
+                            <strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir guia</a></strong>
                         </div>
                         <div class="owner-list-row">
-                            <span>Passos</span>
-                            <strong>1. Abra a referência 2. Envie o arquivo 3. Salve</strong>
+                            <span>Fluxo</span>
+                            <strong>1. Abra a guia 2. Envie o arquivo 3. Salve</strong>
                         </div>
                     </div>
                     <div class="owner-status" id="ownerUploadStatus"></div>
                 </form>
             </div>
             <div class="owner-section">
-                <h3>Resumo</h3>
+                <h3>Visão geral</h3>
                 <div class="owner-list">
-                    <div class="owner-list-row"><span>Disponíveis</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
-                    <div class="owner-list-row"><span>Pendentes</span><strong>${escapeHtml(String(telegramFallbackCount))}</strong></div>
-                    <div class="owner-list-row"><span>Sem mídia</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
+                    <div class="owner-list-row"><span>Prontas</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
+                    <div class="owner-list-row"><span>Em fila</span><strong>${escapeHtml(String(telegramFallbackCount))}</strong></div>
+                    <div class="owner-list-row"><span>Sem vídeo</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
                 </div>
             </div>
             <div class="owner-section">
@@ -2461,8 +2461,8 @@ function renderOwnerDashboard(data) {
             <div class="owner-section owner-series-section">
                 <div class="owner-section-head">
                     <div>
-                        <h3>Séries cadastradas</h3>
-                        <p>Busque, filtre e edite rapidamente. O painel mostra quando o conteúdo está pronto ou em revisão.</p>
+                        <h3>Catálogo</h3>
+                        <p>Busque, filtre e edite rapidamente. O painel mostra quando um título está pronto ou aguarda ajuste.</p>
                     </div>
                     <div class="owner-series-count">${escapeHtml(visibleSeriesLabel)} exibidas</div>
                 </div>
@@ -3293,17 +3293,17 @@ async function openPlayer(serieId, title) {
             playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: '' };
             const ownerCanMigrate = isOwnerUser();
             const telegramDescription = ownerCanMigrate
-                ? 'Este título já está disponível para edição neste painel.'
+                ? 'Este título já pode ser ajustado nesta área.'
                 : 'Este título pode ser entregue pelo bot enquanto a reprodução nesta tela não estiver disponível.';
             DOM.mainVideo.style.display = 'none';
             DOM.playerOverlay.dataset.state = 'unavailable';
             setPlayerErrorView({
                 iconClass: 'fas fa-shield-halved',
                 iconColor: '#FFD700',
-                title: ownerCanMigrate ? 'Disponível' : 'Vídeo em preparação',
+                title: ownerCanMigrate ? 'Pronto' : 'Vídeo em preparo',
                 description: telegramDescription,
                 buttonHtml: ownerCanMigrate
-                    ? '<i class="fas fa-gear"></i> Abrir edição'
+                    ? '<i class="fas fa-gear"></i> Abrir ajuste'
                     : '<i class="fab fa-telegram"></i> Receber no Telegram',
                 buttonHandler: ownerCanMigrate ? () => openOwnerMigrationForSeries(sourceSerie) : () => deliverSeriesToTelegram(sourceSerie)
             });
