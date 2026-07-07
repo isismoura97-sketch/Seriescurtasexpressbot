@@ -168,6 +168,16 @@ function buildBotStartUrl(payload: string) {
   return url.toString();
 }
 
+function buildMainBotReplyMarkup() {
+  return stringifyJson({
+    inline_keyboard: [
+      [{ text: "Catálogo", url: CATALOG_URL }],
+      [{ text: "Mini App", web_app: { url: SERIES_WEBAPP_URL } }],
+      [{ text: "Suporte", url: SUPPORT_URL }],
+    ],
+  });
+}
+
 function buildSeriesRowFilter(seriesId: string) {
   const idColumn = SERIES_ID_COLUMN || "id";
   return `${SERIES_TABLE}?${idColumn}=eq.${encodeURIComponent(seriesId)}`;
@@ -2654,13 +2664,7 @@ async function sendBotWelcomeMessage(chatId: string | number) {
     "Abra o catalogo e escolha sua proxima serie.",
     "Toque, assista e volte quando quiser.",
   ].join("\n");
-  const replyMarkup = JSON.stringify({
-    inline_keyboard: [
-      [{ text: "Catálogo", url: CATALOG_URL }],
-      [{ text: "Mini App", web_app: { url: SERIES_WEBAPP_URL } }],
-      [{ text: "Suporte", url: SUPPORT_URL }],
-    ],
-  });
+  const replyMarkup = buildMainBotReplyMarkup();
 
   try {
     return await telegramRequest("sendPhoto", {
@@ -2688,17 +2692,7 @@ async function sendBotWelcomeMessageRich(chatId: string | number) {
     "Abra o Mini App e escolha sua proxima serie.",
     "Gratis para comecar. Pagas para liberar na hora.",
   ].join("\n");
-  const replyMarkup = stringifyJson({
-    inline_keyboard: [
-      [{ text: "Catalogo", url: CATALOG_URL }],
-      [{ text: "Mini App", web_app: { url: SERIES_WEBAPP_URL } }],
-      [
-        { text: "Continuar", url: buildBotStartUrl("continue") },
-        { text: "Recomendacoes", url: buildBotStartUrl("recommend") },
-      ],
-      [{ text: "Suporte", url: SUPPORT_URL }],
-    ],
-  });
+  const replyMarkup = buildMainBotReplyMarkup();
 
   try {
     return await telegramRequest("sendPhoto", {
