@@ -31,6 +31,8 @@ const SERIES_TRAILER_BUCKET = Deno.env.get("SERIES_TRAILER_BUCKET") ?? "trailers
 const SERIES_VIDEO_BUCKET = Deno.env.get("SERIES_VIDEO_BUCKET") ?? "videos";
 const PUBLIC_CHANNEL_USERNAME = Deno.env.get("PUBLIC_CHANNEL_USERNAME") ?? "";
 const PUBLIC_CHANNEL_ID = Deno.env.get("PUBLIC_CHANNEL_ID") ?? "";
+const SERIES_ANNOUNCE_CHANNEL_USERNAME = (Deno.env.get("SERIES_ANNOUNCE_CHANNEL_USERNAME") || PUBLIC_CHANNEL_USERNAME || "curtasexpress").trim();
+const SERIES_ANNOUNCE_CHANNEL_ID = (Deno.env.get("SERIES_ANNOUNCE_CHANNEL_ID") || PUBLIC_CHANNEL_ID).trim();
 const PUBLIC_CHANNEL_ALERT_CHAT_ID = Deno.env.get("PUBLIC_CHANNEL_ALERT_CHAT_ID") ?? "";
 const PUBLIC_CHANNEL_AUTO_BAN = (Deno.env.get("PUBLIC_CHANNEL_AUTO_BAN") ?? "true").toLowerCase() !== "false";
 const PUBLIC_CHANNEL_STRICTNESS = (Deno.env.get("PUBLIC_CHANNEL_STRICTNESS") ?? "conservative").toLowerCase();
@@ -103,6 +105,13 @@ function safeFilename(name: string) {
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 80) || "video";
+}
+
+function resolveSeriesAnnouncementChannelTarget() {
+  if (SERIES_ANNOUNCE_CHANNEL_ID) return SERIES_ANNOUNCE_CHANNEL_ID;
+  const handle = normalizeHandle(SERIES_ANNOUNCE_CHANNEL_USERNAME);
+  if (!handle) return "";
+  return `@${handle}`;
 }
 
 function normalizeTelegramFileIdInput(value: unknown) {
@@ -3467,6 +3476,68 @@ function extractDirectUrl(row: Record<string, unknown>) {
   return null;
 }
 
+function resolveSeriesCoverPublicUrl(row: Record<string, unknown>) {
+  const directCover = String(row.cover_url ?? "").trim();
+  if (directCover) return directCover;
+
+  const storagePath = String(row.cover_storage_path ?? "").trim()
+    || extractStorageObjectPathFromUrl(row.cover_url, SERIES_COVER_BUCKET);
+  if (!storagePath) return "";
+
+  return storagePublicUrl(SERIES_COVER_BUCKET, storagePath);
+}
+
+function truncateTelegramCaption(text: string, maxLength = 1024) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function buildSeriesAnnouncementCaption(row: Record<string, unknown>) {
+  const description = String(row.description ?? "").trim() || String(row.title ?? "Nova série").trim() || "Nova série no catálogo.";
+  const lines = [
+    "NO AR! ✅",
+    "",
+    description,
+  ];
+
+  if (isSeriesFree(row)) {
+    lines.push("", "Série gratuita.");
+  }
+
+  return truncateTelegramCaption(lines.join("\n"));
+}
+
+async function postSeriesAnnouncementToChannel(row: Record<string, unknown>) {
+  const chatId = resolveSeriesAnnouncementChannelTarget();
+  if (!chatId) return null;
+
+  const caption = buildSeriesAnnouncementCaption(row);
+  const coverUrl = resolveSeriesCoverPublicUrl(row);
+
+  if (coverUrl) {
+    try {
+      return await telegramRequest("sendPhoto", {
+        chat_id: chatId,
+        photo: coverUrl,
+        caption,
+      });
+    } catch (error) {
+      console.warn("[CHANNEL] Falha ao publicar capa da série:", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  try {
+    return await telegramRequest("sendMessage", {
+      chat_id: chatId,
+      text: caption,
+    });
+  } catch (error) {
+    console.warn("[CHANNEL] Falha ao publicar aviso de nova série:", error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
 function extractVideoStoragePath(row: Record<string, unknown>) {
   const explicitPath = String(row.video_storage_path ?? row.storage_path ?? "").trim();
   if (explicitPath) return explicitPath;
@@ -4427,6 +4498,14 @@ async function handleOwnerSeriesCreate(req: Request) {
       await deleteStorageObject(cleanup.bucket, cleanup.previous);
     } catch {
       // best effort cleanup
+    }
+  }
+
+  if (!isEdit) {
+    try {
+      await postSeriesAnnouncementToChannel(finalRow as Record<string, unknown>);
+    } catch (error) {
+      console.warn("[CHANNEL] Falha ao anunciar nova série no canal:", error instanceof Error ? error.message : String(error));
     }
   }
 
