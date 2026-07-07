@@ -3716,12 +3716,14 @@ async function handleStreamV2(req: Request, url: URL) {
     return json(req, { error: "Conteudo protegido", code: "series_inactive" }, 403);
   }
 
-  if (!isSeriesFree(row as Record<string, unknown>) && !(await userHasPaidForSeries(userId, serieId))) {
+  const isOwner = isOwnerUserId(userId);
+
+  if (!isSeriesFree(row as Record<string, unknown>) && !isOwner && !(await userHasPaidForSeries(userId, serieId))) {
     logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "payment_required" });
     return json(req, { error: "Pagamento necessario para assistir esta serie.", code: "payment_required" }, 402);
   }
 
-  if (!isSeriesFree(row as Record<string, unknown>) && !isOwnerUserId(userId)) {
+  if (!isSeriesFree(row as Record<string, unknown>) && !isOwner) {
     logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "access_restricted" });
     return json(
       req,
@@ -3794,7 +3796,9 @@ async function handleSeriesDelivery(req: Request) {
     return json(req, { error: "Conteudo protegido", code: "series_inactive" }, 403);
   }
 
-  if (!isSeriesFree(row as Record<string, unknown>) && !(await userHasPaidForSeries(userId, seriesId))) {
+  const isOwner = isOwnerUserId(userId);
+
+  if (!isSeriesFree(row as Record<string, unknown>) && !isOwner && !(await userHasPaidForSeries(userId, seriesId))) {
     return json(req, { error: "Pagamento necessario para liberar esta serie.", code: "payment_required" }, 402);
   }
 

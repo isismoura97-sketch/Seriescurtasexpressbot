@@ -112,7 +112,7 @@ function getSeriesPriceValue(serie) {
 }
 
 function hasSeriesAccess(serie) {
-    return isFree(serie) || serie?.has_access === true;
+    return isFree(serie) || serie?.has_access === true || isOwnerUser();
 }
 
 function hasKnownPlayback(serie) {
@@ -204,6 +204,10 @@ function setPlayerLoadingView(title = 'Abrindo agora', subtitle = 'Seu vídeo es
 
 function handleSeriesClick(serie) {
     if (hasSeriesAccess(serie) && getPlaybackMode(serie) !== 'missing') {
+        if (isOwnerUser()) {
+            void openPlayer(serie.id, serie.title || 'Reproduzir');
+            return;
+        }
         void deliverSeriesToTelegram(serie);
         return;
     }
@@ -2508,6 +2512,7 @@ async function submitOwnerLogin(event) {
         const data = await requestOwnerDashboard(password);
         ownerSessionAuthorized = true;
         renderOwnerDashboard(data);
+        refreshCatalog();
         setOwnerStatus('Acesso validado.', 'success');
     } catch (error) {
         ownerSessionAuthorized = false;
@@ -3402,7 +3407,11 @@ function openModal(serie) {
         ? `${baseDescription} O vídeo desta série ainda está em preparação.`
         : baseDescription;
 
-    if (!free && canDeliver) {
+    const ownerCanWatch = canDeliver && isOwnerUser();
+
+    if (ownerCanWatch) {
+        DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fas fa-circle-play"></i> LIBERADO PARA TESTE</span>';
+    } else if (!free && canDeliver) {
         DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> LIBERADO NO TELEGRAM</span>';
     } else if (!free && playbackMode === 'locked') {
         DOM.modalPrice.innerHTML = `<span class="locked-badge"><i class="fas fa-lock"></i> BLOQUEADO • ${escapeHtml(formatPrice(serie.price))}</span>`;
@@ -3420,7 +3429,10 @@ function openModal(serie) {
     const btn = document.createElement('button');
     btn.className = free ? 'btn btn-free' : 'btn btn-primary';
 
-    if (canDeliver) {
+    if (ownerCanWatch) {
+        btn.className = 'btn btn-primary';
+        btn.innerHTML = '<i class="fas fa-circle-play"></i> Assistir no Mini App';
+    } else if (canDeliver) {
         btn.className = 'btn btn-free';
         btn.innerHTML = '<i class="fab fa-telegram"></i> RECEBER NO TELEGRAM';
     } else if (playbackMode === 'missing') {
@@ -3432,7 +3444,9 @@ function openModal(serie) {
     
     btn.onclick = () => {
         closeModal();
-        if (canDeliver) {
+        if (ownerCanWatch) {
+            void openPlayer(serie.id, serie.title || 'Reproduzir');
+        } else if (canDeliver) {
             void deliverSeriesToTelegram(serie);
         } else if (playbackMode === 'missing') {
             showToast('Essa série ainda não possui vídeo disponível', 'info');
