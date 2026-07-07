@@ -3532,11 +3532,28 @@ function buildSeriesAnnouncementCaptionV2(row: Record<string, unknown>) {
   return truncateTelegramCaption(lines.join("\n"));
 }
 
+function buildSeriesAnnouncementCaptionV3(row: Record<string, unknown>) {
+  const title = normalizeAnnouncementTextV2(row.title ?? "Nova serie") || "Nova serie";
+  const description = normalizeAnnouncementTextV2(row.description ?? "") || title;
+  const lines = [
+    "NO AR! \u2705",
+    title,
+    "",
+    description,
+  ];
+
+  if (isSeriesFree(row)) {
+    lines.push("", "Disponivel gratuitamente no catalogo.");
+  }
+
+  return truncateTelegramCaption(lines.join("\n"));
+}
+
 async function postSeriesAnnouncementToChannel(row: Record<string, unknown>) {
   const chatId = resolveSeriesAnnouncementChannelTarget();
   if (!chatId) return null;
 
-  const caption = buildSeriesAnnouncementCaptionV2(row);
+  const caption = buildSeriesAnnouncementCaptionV3(row);
   const coverUrl = resolveSeriesCoverPublicUrl(row);
 
   if (coverUrl) {
