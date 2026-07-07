@@ -3508,11 +3508,35 @@ function buildSeriesAnnouncementCaption(row: Record<string, unknown>) {
   return truncateTelegramCaption(lines.join("\n"));
 }
 
+function normalizeAnnouncementTextV2(value: unknown) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function buildSeriesAnnouncementCaptionV2(row: Record<string, unknown>) {
+  const title = normalizeAnnouncementTextV2(row.title ?? "Nova sÃ©rie") || "Nova sÃ©rie";
+  const description = normalizeAnnouncementTextV2(row.description ?? "") || title;
+  const lines = [
+    "NO AR! âœ…",
+    title,
+    "",
+    description,
+  ];
+
+  if (isSeriesFree(row)) {
+    lines.push("", "SÃ©rie gratuita.");
+  }
+
+  return truncateTelegramCaption(lines.join("\n"));
+}
+
 async function postSeriesAnnouncementToChannel(row: Record<string, unknown>) {
   const chatId = resolveSeriesAnnouncementChannelTarget();
   if (!chatId) return null;
 
-  const caption = buildSeriesAnnouncementCaption(row);
+  const caption = buildSeriesAnnouncementCaptionV2(row);
   const coverUrl = resolveSeriesCoverPublicUrl(row);
 
   if (coverUrl) {
