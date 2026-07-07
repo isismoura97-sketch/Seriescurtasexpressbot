@@ -3717,19 +3717,6 @@ async function handleStreamV2(req: Request, url: URL) {
     return json(req, { error: "Pagamento necessario para assistir esta serie.", code: "payment_required" }, 402);
   }
 
-  if (!isSeriesFree(row as Record<string, unknown>) && !isOwner) {
-    logProtectedPlayback("stream_denied", { seriesId: serieId, userId, reason: "access_restricted" });
-    return json(
-      req,
-      {
-        error: "Conteudo indisponivel",
-        code: "access_restricted",
-        detail: "Abra este conteudo pelo fluxo principal.",
-      },
-      403,
-    );
-  }
-
   const seriesTitle = String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title);
   const storagePlayback = await resolveStoragePlayback(row as Record<string, unknown>, seriesTitle);
   if (storagePlayback?.url) {
