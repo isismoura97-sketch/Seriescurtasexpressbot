@@ -2734,7 +2734,6 @@ body.light-mode .cart-item {
     .owner-upload-grid,
     .owner-kpi-grid,
     .owner-dashboard-grid,
-    .owner-section-head,
     .owner-series-row,
     .owner-cover-preview {
         grid-template-columns: 1fr;
@@ -2774,12 +2773,12 @@ body.light-mode .cart-item {
         grid-column: auto;
     }
 
-    .owner-form-head {
+    .owner-form-head,
+    .owner-section-head {
         flex-direction: column;
     }
 
     .owner-section-head {
-        flex-direction: column;
         align-items: stretch;
     }
 
