@@ -3535,15 +3535,32 @@ function buildSeriesAnnouncementCaptionV2(row: Record<string, unknown>) {
 function buildSeriesAnnouncementCaptionV3(row: Record<string, unknown>) {
   const title = normalizeAnnouncementTextV2(row.title ?? "Nova serie") || "Nova serie";
   const description = normalizeAnnouncementTextV2(row.description ?? "") || title;
+  const key = String(row.id ?? row.title ?? "serie").trim() || "serie";
+  let variantSeed = 0;
+  for (let index = 0; index < key.length; index += 1) {
+    variantSeed = (variantSeed + key.charCodeAt(index)) % 3;
+  }
+
+  const titleLine = variantSeed === 0
+    ? title
+    : variantSeed === 1
+      ? `Destaque: ${title}`
+      : `${title}\nUma nova historia chegou ao canal.`;
+
   const lines = [
     "NO AR! \u2705",
-    title,
+    titleLine,
     "",
     description,
   ];
 
   if (isSeriesFree(row)) {
-    lines.push("", "Disponivel gratuitamente no catalogo.");
+    const freeLine = variantSeed === 1
+      ? "Disponivel gratuitamente no catalogo."
+      : variantSeed === 2
+        ? "Ja disponivel gratuitamente no catalogo."
+        : "Serie gratuita no catalogo.";
+    lines.push("", freeLine);
   }
 
   return truncateTelegramCaption(lines.join("\n"));
