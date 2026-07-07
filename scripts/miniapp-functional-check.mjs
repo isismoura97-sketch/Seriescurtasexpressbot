@@ -745,7 +745,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260705-05')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260707-02')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.groupTitles.includes('Séries Gratuitas') || !initial.groupTitles.includes('Séries Pagas')) failures.push(`catalog groups missing: ${initial.groupTitles.join(', ')}`);

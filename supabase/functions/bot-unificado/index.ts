@@ -4287,6 +4287,8 @@ async function handleOwnerSeriesCreate(req: Request) {
   const category = String(form.get("category") ?? "Geral").trim() || "Geral";
   const forceFree = isTruthyInput(form.get("is_free"));
   const seriesIdInput = String(form.get("series_id") ?? form.get("id") ?? "").trim();
+  const uploadedCoverPath = String(form.get("uploaded_cover_path") ?? "").trim();
+  const uploadedTrailerPath = String(form.get("uploaded_trailer_path") ?? "").trim();
   const uploadedVideoPath = String(form.get("uploaded_video_path") ?? "").trim();
   const videoFileIdInput = normalizeTelegramFileIdInput(form.get("video_file_id"));
   const cover = form.get("cover_file");
@@ -4303,7 +4305,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     return json(req, { error: "Informe a descrição da série" }, 400);
   }
 
-  if (!(cover instanceof File)) {
+  if (!(cover instanceof File) && !uploadedCoverPath) {
     if (!existingRow) {
       return json(req, { error: "Envie a imagem de capa" }, 400);
     }
@@ -4341,9 +4343,11 @@ async function handleOwnerSeriesCreate(req: Request) {
   ]);
 
   const coverUrl = coverUpload?.publicUrl
+    || (uploadedCoverPath ? storagePublicUrl(SERIES_COVER_BUCKET, uploadedCoverPath) : "")
     || String(existingRow?.cover_url ?? "").trim()
     || null;
-  const coverPath = coverUpload?.path
+  const coverPath = uploadedCoverPath
+    || coverUpload?.path
     || String(existingRow?.cover_storage_path ?? "").trim()
     || null;
   const videoUrl = videoUpload
@@ -4357,9 +4361,11 @@ async function handleOwnerSeriesCreate(req: Request) {
     || String(existingRow?.video_storage_path ?? "").trim()
     || null;
   const trailerUrl = trailerUpload?.publicUrl
+    || (uploadedTrailerPath ? storagePublicUrl(SERIES_TRAILER_BUCKET, uploadedTrailerPath) : "")
     || String(existingRow?.trailer_url ?? "").trim()
     || null;
-  const trailerPath = trailerUpload?.path
+  const trailerPath = uploadedTrailerPath
+    || trailerUpload?.path
     || String(existingRow?.trailer_storage_path ?? "").trim()
     || null;
 
@@ -4404,10 +4410,21 @@ async function handleOwnerSeriesCreate(req: Request) {
     return json(req, { error: "Não foi possível registrar a série" }, 500);
   }
 
+  const previousCoverPath = String(existingRow?.cover_storage_path ?? "").trim();
   const previousVideoPath = String(existingRow?.video_storage_path ?? "").trim();
-  if (uploadedVideoPath && previousVideoPath && previousVideoPath !== uploadedVideoPath) {
+  const previousTrailerPath = String(existingRow?.trailer_storage_path ?? "").trim();
+  const nextCoverPath = String(coverPath ?? "").trim();
+  const nextVideoPath = String(videoPath ?? "").trim();
+  const nextTrailerPath = String(trailerPath ?? "").trim();
+
+  for (const cleanup of [
+    { bucket: SERIES_COVER_BUCKET, previous: previousCoverPath, next: nextCoverPath },
+    { bucket: SERIES_VIDEO_BUCKET, previous: previousVideoPath, next: nextVideoPath },
+    { bucket: SERIES_TRAILER_BUCKET, previous: previousTrailerPath, next: nextTrailerPath },
+  ]) {
+    if (!cleanup.previous || cleanup.previous === cleanup.next) continue;
     try {
-      await deleteStorageObject(SERIES_VIDEO_BUCKET, previousVideoPath);
+      await deleteStorageObject(cleanup.bucket, cleanup.previous);
     } catch {
       // best effort cleanup
     }

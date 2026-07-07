@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260707-01';
+const BUILD_VERSION = '20260707-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -1676,6 +1676,59 @@ function buildOwnerQuickUploadFormData(serie, fieldName, file) {
     return formData;
 }
 
+function getOwnerUploadedFieldName(fieldName = '') {
+    switch (String(fieldName || '').trim()) {
+        case 'cover_file':
+            return 'uploaded_cover_path';
+        case 'trailer_file':
+            return 'uploaded_trailer_path';
+        case 'video_file':
+            return 'uploaded_video_path';
+        default:
+            return '';
+    }
+}
+
+function getOwnerUploadFieldLabel(fieldName = '') {
+    switch (String(fieldName || '').trim()) {
+        case 'cover_file':
+            return 'capa';
+        case 'trailer_file':
+            return 'trailer';
+        case 'video_file':
+            return 'vídeo principal';
+        default:
+            return 'arquivo';
+    }
+}
+
+async function uploadOwnerSeriesFormFile(formData, fieldName, file, resolvedSeriesId = '') {
+    if (!(file instanceof File) || file.size <= 0) {
+        return String(resolvedSeriesId || '');
+    }
+
+    const label = getOwnerUploadFieldLabel(fieldName);
+    setOwnerUploadStatus(`Enviando ${label} em upload protegido...`, '');
+
+    const upload = await uploadOwnerMediaViaApi({
+        seriesId: String(resolvedSeriesId || ''),
+        fieldName,
+        file,
+    });
+
+    const nextSeriesId = String(upload?.series_id || resolvedSeriesId || '');
+    const uploadedFieldName = getOwnerUploadedFieldName(fieldName);
+    if (nextSeriesId) {
+        formData.set('series_id', nextSeriesId);
+    }
+    if (uploadedFieldName) {
+        formData.set(uploadedFieldName, String(upload?.object_path || ''));
+    }
+    formData.delete(fieldName);
+
+    return nextSeriesId;
+}
+
 async function submitOwnerQuickUpload(seriesId, fieldName, file) {
     const serie = ownerSeriesCatalog.find((item) => sameId(item.id, seriesId));
     if (!serie) {
@@ -2552,8 +2605,8 @@ function renderOwnerDashboard(data) {
                             <input type="file" name="video_file" accept="video/*" required>
                         </label>
                         <label class="payment-field owner-upload-span-2">
-                            <span>Guia</span>
-                            <textarea name="video_file_id" id="ownerSeriesVideoFileId" rows="3" placeholder="Cole o identificador aqui"></textarea>
+                            <span>File_ID do vídeo no Telegram opcional</span>
+                            <textarea name="video_file_id" id="ownerSeriesVideoFileId" rows="3" placeholder="Cole aqui o File_ID do vídeo, se preferir usar o Telegram"></textarea>
                         </label>
                     </div>
                     <div class="owner-upload-actions">
@@ -2564,7 +2617,7 @@ function renderOwnerDashboard(data) {
                     </div>
                     <div class="owner-list">
                         <div class="owner-list-row">
-                            <span>Guia</span>
+                            <span>Capturar File_ID</span>
                             <strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir guia</a></strong>
                         </div>
                         <div class="owner-list-row">
@@ -2696,6 +2749,8 @@ async function submitOwnerSeriesUpload(event) {
             submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Publicando...';
         }
         let resolvedSeriesId = ownerSeriesEditId || String(formData.get('series_id') || '');
+        const coverFile = formData.get('cover_file');
+        const trailerFile = formData.get('trailer_file');
         const videoFile = formData.get('video_file');
 
         if (videoFile instanceof File && videoFile.size > 0) {
@@ -2707,18 +2762,18 @@ async function submitOwnerSeriesUpload(event) {
                     throw new Error(buildOwnerInternalUploadLimitMessage(videoFile));
                 }
             }
-            if (formData.get('video_file') instanceof File) {
-                setOwnerUploadStatus('Enviando vídeo principal em upload protegido...', '');
-                const upload = await uploadOwnerMediaViaApi({
-                    seriesId: resolvedSeriesId,
-                    fieldName: 'video_file',
-                    file: videoFile,
-                });
-                resolvedSeriesId = String(upload?.series_id || resolvedSeriesId || '');
-                formData.set('series_id', resolvedSeriesId);
-                formData.set('uploaded_video_path', String(upload?.object_path || ''));
-                formData.delete('video_file');
-            }
+        }
+
+        if (coverFile instanceof File && coverFile.size > 0) {
+            resolvedSeriesId = await uploadOwnerSeriesFormFile(formData, 'cover_file', coverFile, resolvedSeriesId);
+        }
+
+        if (trailerFile instanceof File && trailerFile.size > 0) {
+            resolvedSeriesId = await uploadOwnerSeriesFormFile(formData, 'trailer_file', trailerFile, resolvedSeriesId);
+        }
+
+        if (formData.get('video_file') instanceof File) {
+            resolvedSeriesId = await uploadOwnerSeriesFormFile(formData, 'video_file', videoFile, resolvedSeriesId);
         }
 
         setOwnerUploadStatus('Registrando série e demais arquivos no Supabase...', '');
