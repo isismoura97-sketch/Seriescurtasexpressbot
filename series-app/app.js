@@ -1440,23 +1440,23 @@ function hasOwnerSeriesAnyVideo(serie) {
 }
 
 function getOwnerSeriesVideoStatusLabel(serie) {
-    if (hasOwnerSeriesInternalPlayback(serie)) return 'Player interno OK';
-    if (hasOwnerSeriesTelegramFallback(serie)) return 'Entrega assistida';
-    return 'Sem vídeo';
+    if (hasOwnerSeriesInternalPlayback(serie)) return 'Pronta';
+    if (hasOwnerSeriesTelegramFallback(serie)) return 'Ajustar';
+    return 'Sem mídia';
 }
 
 function getOwnerSeriesQuickVideoActionMeta(serie) {
     if (hasOwnerSeriesTelegramFallback(serie)) {
         return {
             action: 'migrate',
-            label: 'Migrar se couber',
+            label: 'Ajustar',
             icon: 'fa-wand-magic-sparkles',
         };
     }
 
     return {
         action: 'video',
-        label: 'Trocar vídeo interno',
+        label: 'Editar vídeo',
         icon: 'fa-film',
     };
 }
@@ -1465,7 +1465,7 @@ function buildOwnerInternalUploadLimitMessage(file = null) {
     const sizeLabel = file instanceof File && file.size > 0
         ? ` O arquivo selecionado tem ${formatFileSize(file.size)}.`
         : '';
-    return `O arquivo excede o limite desta etapa.${sizeLabel} Para arquivos acima de ${getOwnerInternalUploadLimitLabel()}, use o fluxo assistido.`;
+    return `O arquivo excede o limite desta etapa.${sizeLabel} Para arquivos acima de ${getOwnerInternalUploadLimitLabel()}, use a etapa alternativa.`;
 }
 
 function extractTelegramFileIdInput(value) {
@@ -2121,7 +2121,7 @@ function openOwnerMigrationForSeries(serie) {
     }
 
     openOwnerArea();
-    setOwnerStatus('Entre na área de gestão para revisar este conteúdo.', 'info');
+    setOwnerStatus('Abra a área de gestão para editar este título.', 'info');
 
     if (ownerDashboardSnapshot && serie?.id) {
         setTimeout(() => openOwnerSeriesEditor(serie.id), 120);
@@ -2287,7 +2287,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-hero-copy">
                     <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Central do proprietário</span>
                     <h3>Gerencie séries, capa, trailer e vídeo principal em um só painel.</h3>
-                    <p>Use o envio padrão para arquivos leves e o envio assistido quando necessário, mantendo o catálogo estável.</p>
+                    <p>Use o envio rápido para arquivos leves e a etapa alternativa quando necessário, mantendo o catálogo estável.</p>
                 </div>
                 <div class="owner-hero-side">
                     <div class="owner-brand">
@@ -2311,8 +2311,8 @@ function renderOwnerDashboard(data) {
                             <strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong>
                         </div>
                         <div class="owner-side-item">
-                            <span>Fluxo rápido</span>
-                            <strong>1. Cadastrar 2. Envio direto até ${escapeHtml(getOwnerInternalUploadLimitLabel())} 3. Envio assistido</strong>
+                            <span>Rotina rápida</span>
+                            <strong>1. Cadastrar 2. Envio rápido até ${escapeHtml(getOwnerInternalUploadLimitLabel())} 3. Etapa alternativa</strong>
                         </div>
                     </div>
                     <div class="owner-hero-actions">
@@ -2320,13 +2320,13 @@ function renderOwnerDashboard(data) {
                             <i class="fas fa-plus"></i> Nova série
                         </button>
                         <button type="button" class="btn btn-secondary" data-owner-filter-mode="migration">
-                            <i class="fas fa-link"></i> Ver entrega assistida
+                            <i class="fas fa-link"></i> Ver ajustes
                         </button>
                         <button type="button" class="btn btn-primary" data-owner-migrate-priority ${telegramFallbackCount ? '' : 'disabled'}>
-                            <i class="fas fa-wand-magic-sparkles"></i> Tentar migrar elegíveis
+                            <i class="fas fa-wand-magic-sparkles"></i> Aplicar ajustes
                         </button>
                         <button type="button" class="btn btn-secondary" data-owner-filter-mode="playable">
-                            <i class="fas fa-circle-play"></i> Player interno
+                            <i class="fas fa-circle-play"></i> Prontas
                         </button>
                     </div>
                 </div>
@@ -2345,11 +2345,11 @@ function renderOwnerDashboard(data) {
                     <strong>${escapeHtml(String(paidSeriesCount))}</strong>
                 </div>
                 <div class="owner-card">
-                    <span>Player interno OK</span>
+                    <span>Prontas</span>
                     <strong>${escapeHtml(String(internalSeriesCount))}</strong>
                 </div>
                 <div class="owner-card">
-                    <span>Entrega assistida</span>
+                    <span>Ajustes</span>
                     <strong>${escapeHtml(String(telegramFallbackCount))}</strong>
                 </div>
             </div>
@@ -2357,10 +2357,10 @@ function renderOwnerDashboard(data) {
         <section class="owner-section owner-section-priority owner-series-section">
             <div class="owner-section-head">
                 <div>
-                    <h3>Fila de prioridade</h3>
-                    <p>Estas séries estão sem mídia pronta. Os demais títulos podem continuar ativos normalmente.</p>
+                    <h3>Fila de revisão</h3>
+                    <p>Estas séries ainda pedem atenção. Os demais títulos podem continuar ativos normalmente.</p>
                 </div>
-                <div class="owner-series-count">${escapeHtml(String(prioritySeriesCount))} itens sem mídia</div>
+                <div class="owner-series-count">${escapeHtml(String(prioritySeriesCount))} itens pendentes</div>
             </div>
             <div class="owner-series-list">${prioritySeriesRows}</div>
         </section>
@@ -2427,27 +2427,27 @@ function renderOwnerDashboard(data) {
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
                             <i class="fas fa-cloud-arrow-up"></i> Publicar série
                         </button>
-                        <p class="owner-upload-note">Use envio direto apenas para arquivos até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Arquivos maiores seguem pelo fluxo assistido.</p>
+                        <p class="owner-upload-note">Use envio rápido apenas para arquivos até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Arquivos maiores seguem pela etapa alternativa.</p>
                     </div>
                     <div class="owner-list">
                         <div class="owner-list-row">
-                            <span>Captura assistida pelo bot</span>
-                            <strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir bot para capturar referência</a></strong>
+                            <span>Referência do bot</span>
+                            <strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir bot de referência</a></strong>
                         </div>
                         <div class="owner-list-row">
                             <span>Como usar</span>
-                            <strong>1. Abra o bot 2. Envie a mídia 3. Cole ou deixe o bot vincular</strong>
+                            <strong>1. Abra o bot 2. Envie a referência 3. Salve o vínculo</strong>
                         </div>
                     </div>
                     <div class="owner-status" id="ownerUploadStatus"></div>
                 </form>
             </div>
             <div class="owner-section">
-                <h3>Saúde do Catálogo</h3>
+                <h3>Status do Catálogo</h3>
                 <div class="owner-list">
-                    <div class="owner-list-row"><span>Player interno OK</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
-                    <div class="owner-list-row"><span>Entrega assistida</span><strong>${escapeHtml(String(telegramFallbackCount))}</strong></div>
-                    <div class="owner-list-row"><span>Sem arquivo identificado</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
+                    <div class="owner-list-row"><span>Prontas</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
+                    <div class="owner-list-row"><span>Ajustes</span><strong>${escapeHtml(String(telegramFallbackCount))}</strong></div>
+                    <div class="owner-list-row"><span>Sem mídia</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
                 </div>
             </div>
             <div class="owner-section">
@@ -2462,7 +2462,7 @@ function renderOwnerDashboard(data) {
                 <div class="owner-section-head">
                     <div>
                         <h3>Séries cadastradas</h3>
-                        <p>Busque, filtre e ajuste o vídeo rapidamente. O painel mostra quando o conteúdo está pronto ou em envio assistido.</p>
+                        <p>Busque, filtre e ajuste o vídeo rapidamente. O painel mostra quando o conteúdo está pronto ou em revisão.</p>
                     </div>
                     <div class="owner-series-count">${escapeHtml(visibleSeriesLabel)} exibidas</div>
                 </div>
@@ -3293,17 +3293,17 @@ async function openPlayer(serieId, title) {
             playerRetryData = { id: serieId, title: title || sourceSerie?.title || 'Reproduzir', telegramFileId: '' };
             const ownerCanMigrate = isOwnerUser();
             const telegramDescription = ownerCanMigrate
-                ? 'Este título já possui mídia cadastrada, mas precisa de revisão para abrir nesta tela.'
+                ? 'Este título já está disponível para edição neste painel.'
                 : 'Este título pode ser entregue pelo bot enquanto a reprodução nesta tela não estiver disponível.';
             DOM.mainVideo.style.display = 'none';
             DOM.playerOverlay.dataset.state = 'unavailable';
             setPlayerErrorView({
                 iconClass: 'fas fa-shield-halved',
                 iconColor: '#FFD700',
-                title: ownerCanMigrate ? 'Vídeo cadastrado' : 'Vídeo em preparação',
+                title: ownerCanMigrate ? 'Disponível' : 'Vídeo em preparação',
                 description: telegramDescription,
                 buttonHtml: ownerCanMigrate
-                    ? '<i class="fas fa-gear"></i> Gerenciar vídeo'
+                    ? '<i class="fas fa-gear"></i> Abrir edição'
                     : '<i class="fab fa-telegram"></i> Receber no Telegram',
                 buttonHandler: ownerCanMigrate ? () => openOwnerMigrationForSeries(sourceSerie) : () => deliverSeriesToTelegram(sourceSerie)
             });
