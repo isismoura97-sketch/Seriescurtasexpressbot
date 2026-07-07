@@ -1870,12 +1870,16 @@ async function validateOwnerPassword(password: string) {
   const submitted = String(password ?? "");
   if (!submitted) return false;
 
+  const configuredPassword = OWNER_AREA_PASSWORD;
+  if (configuredPassword && constantTimeEqual(submitted, configuredPassword)) {
+    return true;
+  }
+
   const configuredHash = OWNER_AREA_PASSWORD_SHA256.trim().toLowerCase();
   if (configuredHash) {
     return constantTimeEqual(await sha256Hex(submitted), configuredHash);
   }
 
-  const configuredPassword = OWNER_AREA_PASSWORD;
   if (!configuredPassword) return false;
 
   return constantTimeEqual(submitted, configuredPassword);
