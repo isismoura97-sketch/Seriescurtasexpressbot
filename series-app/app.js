@@ -3410,7 +3410,7 @@ function openModal(serie) {
     const ownerCanWatch = canDeliver && isOwnerUser();
 
     if (ownerCanWatch) {
-        DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fas fa-circle-play"></i> LIBERADO PARA TESTE</span>';
+        DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fas fa-circle-play"></i> DISPONÍVEL</span>';
     } else if (!free && canDeliver) {
         DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> LIBERADO NO TELEGRAM</span>';
     } else if (!free && playbackMode === 'locked') {
@@ -3431,7 +3431,7 @@ function openModal(serie) {
 
     if (ownerCanWatch) {
         btn.className = 'btn btn-primary';
-        btn.innerHTML = '<i class="fas fa-circle-play"></i> Assistir no Mini App';
+        btn.innerHTML = '<i class="fas fa-circle-play"></i> Assistir agora';
     } else if (canDeliver) {
         btn.className = 'btn btn-free';
         btn.innerHTML = '<i class="fab fa-telegram"></i> RECEBER NO TELEGRAM';
