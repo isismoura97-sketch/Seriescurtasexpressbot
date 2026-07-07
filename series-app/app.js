@@ -1449,14 +1449,14 @@ function getOwnerSeriesQuickVideoActionMeta(serie) {
     if (hasOwnerSeriesTelegramFallback(serie)) {
         return {
             action: 'migrate',
-            label: 'Ajustar',
+            label: 'Migrar',
             icon: 'fa-wand-magic-sparkles',
         };
     }
 
     return {
         action: 'video',
-        label: 'Abrir',
+        label: 'Editar vídeo',
         icon: 'fa-film',
     };
 }
@@ -3174,6 +3174,10 @@ function createCard(serie, isNetflix = false) {
         buyBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            if (ownerCanWatch) {
+                void openPlayer(serie.id, serie.title || 'Reproduzir');
+                return;
+            }
             if (hasAccess && !missingPlayback) {
                 void deliverSeriesToTelegram(serie);
                 return;

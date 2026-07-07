@@ -2085,9 +2085,10 @@ body.light-mode .cart-item {
 }
 
 .owner-hero-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 10px;
+    align-items: stretch;
 }
 
 .owner-hero-side {
