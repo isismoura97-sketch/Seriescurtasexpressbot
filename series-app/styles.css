@@ -2404,9 +2404,9 @@ body.light-mode .cart-item {
 
 .owner-series-row {
     display: grid;
-    grid-template-columns: 72px minmax(0, 1fr) auto;
+    grid-template-columns: 72px minmax(0, 1fr);
     gap: 14px;
-    align-items: center;
+    align-items: start;
     padding: 14px;
     border-radius: 18px;
     border: 1px solid rgba(255,215,0,0.12);
@@ -2429,6 +2429,7 @@ body.light-mode .cart-item {
     overflow: hidden;
     border: 1px solid rgba(255,215,0,0.16);
     background: rgba(255,255,255,0.05);
+    grid-row: 1 / span 3;
 }
 
 .owner-series-thumb {
@@ -2457,12 +2458,30 @@ body.light-mode .cart-item {
     line-height: 1.5;
 }
 
-.owner-series-row-actions {
+.owner-series-row-main {
+    min-width: 0;
+}
+
+.owner-series-row-tags {
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
     gap: 8px;
-    align-items: center;
+    grid-column: 2;
+}
+
+.owner-series-row-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    gap: 8px;
+    grid-column: 2;
+    width: 100%;
+    align-items: stretch;
+}
+
+.owner-series-row-actions .btn {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
 }
 
 .owner-series-edit-btn {
@@ -2484,12 +2503,6 @@ body.light-mode .cart-item {
     background: linear-gradient(135deg, rgba(255,92,92,0.28), rgba(201,56,56,0.3));
     color: #fff;
     box-shadow: 0 15px 30px rgba(255,92,92,0.18);
-}
-
-.owner-series-row-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
 }
 
 .owner-pill {
@@ -2671,6 +2684,13 @@ body.light-mode .cart-item {
         width: 100%;
         max-width: 180px;
         height: 140px;
+        grid-row: auto;
+    }
+
+    .owner-series-row-main,
+    .owner-series-row-tags,
+    .owner-series-row-actions {
+        grid-column: auto;
     }
 
     .owner-form-head {
@@ -2687,7 +2707,7 @@ body.light-mode .cart-item {
     }
 
     .owner-series-row-actions {
-        justify-content: flex-start;
+        grid-template-columns: 1fr;
     }
 
     .owner-cover-preview img {
