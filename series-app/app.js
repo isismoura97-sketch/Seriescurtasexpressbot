@@ -2512,7 +2512,21 @@ async function submitOwnerLogin(event) {
     } catch (error) {
         ownerSessionAuthorized = false;
         DOM.ownerDashboard.hidden = true;
-        setOwnerStatus(error.message || 'Não foi possível abrir a área do proprietário.', 'error');
+        const message = String(error?.message || '');
+        const normalizedMessage = message.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        let friendlyMessage = message || 'Não foi possível abrir a área do proprietário.';
+
+        if (normalizedMessage.includes('acesso restrito') || normalizedMessage.includes('proprietario')) {
+            friendlyMessage = 'Entre com a conta Telegram do proprietário cadastrada no backend.';
+        } else if (normalizedMessage.includes('senha invalida')) {
+            friendlyMessage = 'Senha inválida. Confirme se o segredo configurado no Supabase está correto.';
+        } else if (normalizedMessage.includes('nao configurada')) {
+            friendlyMessage = 'A senha do proprietário ainda não foi configurada no backend.';
+        } else if (normalizedMessage.includes('telegram') && (normalizedMessage.includes('ausentes') || normalizedMessage.includes('invalidos') || normalizedMessage.includes('expirada'))) {
+            friendlyMessage = 'Abra o Mini App dentro do Telegram para validar o acesso do proprietário.';
+        }
+
+        setOwnerStatus(friendlyMessage, 'error');
     } finally {
         if (DOM.ownerLoginBtn) {
             DOM.ownerLoginBtn.disabled = false;
