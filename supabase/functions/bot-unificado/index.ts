@@ -3544,8 +3544,8 @@ function buildSeriesAnnouncementCaptionV3(row: Record<string, unknown>) {
   const titleLine = variantSeed === 0
     ? title
     : variantSeed === 1
-      ? `Destaque: ${title}`
-      : `${title}\nUma nova historia chegou ao canal.`;
+      ? `Em destaque: ${title}`
+      : `Serie adicionada: ${title}`;
 
   const lines = [
     "NO AR! \u2705",
@@ -3556,10 +3556,10 @@ function buildSeriesAnnouncementCaptionV3(row: Record<string, unknown>) {
 
   if (isSeriesFree(row)) {
     const freeLine = variantSeed === 1
-      ? "Disponivel gratuitamente no catalogo."
+      ? "Disponivel gratuitamente."
       : variantSeed === 2
-        ? "Ja disponivel gratuitamente no catalogo."
-        : "Serie gratuita no catalogo.";
+        ? "Serie gratuita."
+        : "Disponivel gratuitamente no catalogo.";
     lines.push("", freeLine);
   }
 
