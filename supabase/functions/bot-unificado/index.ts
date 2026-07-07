@@ -70,6 +70,7 @@ const EPISODE_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("EPISODE_VIDEO_FILE_ID_COLUM
   .map((s) => s.trim())
   .filter(Boolean);
 const USER_SERIES_PROGRESS_TABLE = Deno.env.get("USER_SERIES_PROGRESS_TABLE") ?? "user_series_progress";
+const USER_SERIES_FAVORITES_TABLE = Deno.env.get("USER_SERIES_FAVORITES_TABLE") ?? "user_series_favorites";
 
 function corsHeaders(req: Request) {
   const origin = req.headers.get("origin") || "*";
@@ -819,6 +820,65 @@ async function getLatestUserSeriesProgress(userId: string) {
     `${USER_SERIES_PROGRESS_TABLE}?select=*&user_id=eq.${encodeURIComponent(userId)}&order=last_opened_at.desc&limit=1`,
   );
   return Array.isArray(rows) && rows.length > 0 ? rows[0] as Record<string, unknown> : null;
+}
+
+async function getUserSeriesProgressRows(userId: string) {
+  if (!userId) return [];
+  const rows = await supabaseRestRequest(
+    `${USER_SERIES_PROGRESS_TABLE}?select=*&user_id=eq.${encodeURIComponent(userId)}&limit=1000`,
+  );
+  return Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
+}
+
+async function getUserFavoriteSeriesRows(userId: string) {
+  if (!userId) return [];
+  const rows = await supabaseRestRequest(
+    `${USER_SERIES_FAVORITES_TABLE}?select=series_id,created_at,updated_at&user_id=eq.${encodeURIComponent(userId)}&limit=1000`,
+  );
+  return Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
+}
+
+async function getUserFavoriteSeriesIds(userId: string) {
+  const rows = await getUserFavoriteSeriesRows(userId).catch(() => []);
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const seriesId = String(row.series_id ?? row.serie_id ?? "").trim();
+    if (seriesId) ids.add(seriesId);
+  }
+  return ids;
+}
+
+async function upsertUserSeriesFavorite(userId: string, seriesId: string) {
+  const now = new Date().toISOString();
+  const rows = await supabaseRestRequest(
+    `${USER_SERIES_FAVORITES_TABLE}?on_conflict=user_id,series_id`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        prefer: "resolution=merge-duplicates,return=representation",
+      },
+      body: stringifyJson([{
+        user_id: userId,
+        series_id: seriesId,
+        updated_at: now,
+      }]),
+    },
+  );
+
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] as Record<string, unknown> : rows as Record<string, unknown>;
+}
+
+async function deleteUserSeriesFavorite(userId: string, seriesId: string) {
+  await supabaseRestRequest(
+    `${USER_SERIES_FAVORITES_TABLE}?user_id=eq.${encodeURIComponent(userId)}&series_id=eq.${encodeURIComponent(seriesId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        prefer: "return=minimal",
+      },
+    },
+  );
 }
 
 async function upsertUserSeriesProgress(entry: {
@@ -3232,11 +3292,30 @@ async function getSeriesList(userId = "", includeProtected = false) {
     episodes = [];
   }
 
-  const accessibleIds = userId ? await getAccessibleSeriesIds(userId) : new Set<string>();
+  let accessibleIds = new Set<string>();
+  let favoriteIds = new Set<string>();
+  let progressRows: Record<string, unknown>[] = [];
+
+  if (userId) {
+    [accessibleIds, favoriteIds, progressRows] = await Promise.all([
+      getAccessibleSeriesIds(userId),
+      getUserFavoriteSeriesIds(userId).catch(() => new Set<string>()),
+      getUserSeriesProgressRows(userId).catch(() => []),
+    ]);
+  }
+
+  const progressBySeriesId = new Map<string, Record<string, unknown>>();
+  for (const progressRow of progressRows) {
+    const progressSeriesId = String(progressRow.series_id ?? "").trim();
+    if (progressSeriesId) {
+      progressBySeriesId.set(progressSeriesId, progressRow);
+    }
+  }
 
   return series.map((row) => {
     const seriesId = String(row[SERIES_ID_COLUMN] ?? row.id ?? "");
     const episodeData = buildEpisodeAugmentation(episodes, seriesId);
+    const progress = progressBySeriesId.get(seriesId) ?? null;
     const free = isSeriesFree(row);
     const hasAccess = includeProtected || free || accessibleIds.has(seriesId);
     const hasVideoUrl = Boolean(extractVideoStoragePath(row) || extractDirectUrl(row));
@@ -3247,9 +3326,18 @@ async function getSeriesList(userId = "", includeProtected = false) {
       ...episodeData,
       is_free: free,
       has_access: hasAccess,
+      is_favorite: favoriteIds.has(seriesId),
       has_video_url: hasVideoUrl,
       has_video_file_id: hasVideoFileId,
       has_playback: hasVideoUrl || hasVideoFileId || hasEpisodePlayback,
+      has_progress: Boolean(progress),
+      last_position_seconds: Number(progress?.last_position_seconds ?? 0) || 0,
+      duration_seconds: Number(progress?.duration_seconds ?? 0) || 0,
+      completion_percent: Number(progress?.completion_percent ?? 0) || 0,
+      completed: progress?.completed === true,
+      last_event: progress?.last_event ?? null,
+      last_playback_mode: progress?.last_playback_mode ?? null,
+      last_opened_at: progress?.last_opened_at ?? null,
     };
 
     if (!hasAccess) {
@@ -3846,6 +3934,36 @@ async function handleProgressSync(req: Request) {
   });
 
   return json(req, { ok: true, progress });
+}
+
+async function handleFavoriteSync(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  const seriesId = String(body.series_id ?? body.serie_id ?? body.id ?? "").trim();
+  if (!seriesId) {
+    return json(req, { error: "series_id ausente" }, 400);
+  }
+
+  let userId = "";
+  try {
+    const validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
+    userId = validated.userId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(req, { error: message, code: "telegram_auth_required" }, 401);
+  }
+
+  const isFavorite = body.is_favorite === true || String(body.is_favorite ?? body.favorite ?? "").trim().toLowerCase() === "true";
+  if (isFavorite) {
+    const favorite = await upsertUserSeriesFavorite(userId, seriesId);
+    return json(req, { ok: true, is_favorite: true, favorite });
+  }
+
+  await deleteUserSeriesFavorite(userId, seriesId);
+  return json(req, { ok: true, is_favorite: false, series_id: seriesId });
 }
 
 function countByStatus(rows: Record<string, unknown>[]) {
@@ -4467,6 +4585,10 @@ Deno.serve(async (req) => {
 
     if (action === "progress-sync") {
       return await handleProgressSync(req);
+    }
+
+    if (action === "favorite-sync") {
+      return await handleFavoriteSync(req);
     }
 
     if (action === "playback") {

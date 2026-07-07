@@ -70,6 +70,7 @@ let heroInterval = null;
 let playerRetryData = null;
 let playerVideoEventsBound = false;
 let favoriteSeriesIds = new Set();
+let playerResumeAppliedSeriesId = '';
 let ownerSeriesCatalog = [];
 let ownerSeriesEditId = '';
 let ownerCoverPreviewObjectUrl = '';
@@ -161,21 +162,112 @@ function isFavoriteSeries(serieId) {
     return favoriteSeriesIds.has(normalizeId(serieId));
 }
 
-function toggleFavoriteSeries(serie) {
+function applySeriesUserStatePatch(serieId, patch = {}) {
+    const normalizedId = normalizeId(serieId);
+    if (!normalizedId || !patch || typeof patch !== 'object') return;
+    allSeries = allSeries.map((serie) => (
+        sameId(serie.id, normalizedId)
+            ? { ...serie, ...patch }
+            : serie
+    ));
+}
+
+function syncFavoriteStateToSeries(serieId, isFavorite) {
+    applySeriesUserStatePatch(serieId, {
+        is_favorite: Boolean(isFavorite),
+    });
+}
+
+function applyProgressStateToSeries(serieId, progress) {
+    if (!progress || typeof progress !== 'object') return;
+    applySeriesUserStatePatch(serieId, {
+        last_position_seconds: Number(progress.last_position_seconds ?? progress.position_seconds ?? 0) || 0,
+        duration_seconds: Number(progress.duration_seconds ?? progress.duration ?? 0) || 0,
+        completion_percent: Number(progress.completion_percent ?? progress.progress_percent ?? 0) || 0,
+        last_event: String(progress.last_event ?? progress.event_type ?? '').trim(),
+        last_playback_mode: String(progress.last_playback_mode ?? progress.playback_mode ?? '').trim(),
+        completed: progress.completed === true,
+        has_progress: true,
+        last_opened_at: progress.last_opened_at || progress.updated_at || null,
+    });
+}
+
+function getSeriesResumeSeconds(serie) {
+    const seconds = Number(serie?.last_position_seconds ?? 0);
+    if (!Number.isFinite(seconds) || seconds <= 5) return 0;
+    if (serie?.completed === true) return 0;
+    const completion = Number(serie?.completion_percent ?? 0);
+    if (Number.isFinite(completion) && completion >= 95) return 0;
+    return seconds;
+}
+
+function hydrateFavoriteSeriesFromCatalog(series) {
+    const serverFavorites = Array.isArray(series)
+        ? series
+            .filter((serie) => serie?.is_favorite === true)
+            .map((serie) => normalizeId(serie.id))
+            .filter(Boolean)
+        : [];
+
+    const localFavorites = Array.from(favoriteSeriesIds);
+    favoriteSeriesIds = new Set([...serverFavorites, ...localFavorites].filter(Boolean));
+    saveFavoriteSeries();
+
+    const pendingRemoteFavorites = localFavorites.filter((serieId) => !serverFavorites.includes(serieId));
+    if (pendingRemoteFavorites.length && userId && tg?.initData) {
+        void syncLocalFavoritesToBackend(pendingRemoteFavorites);
+    }
+}
+
+async function syncLocalFavoritesToBackend(seriesIds = []) {
+    const uniqueIds = Array.from(new Set((Array.isArray(seriesIds) ? seriesIds : []).map(normalizeId).filter(Boolean)));
+    if (!uniqueIds.length || !userId || !tg?.initData) return;
+
+    for (const serieId of uniqueIds) {
+        try {
+            await requestFavoriteSync({
+                init_data: tg.initData,
+                series_id: serieId,
+                is_favorite: true,
+            });
+            syncFavoriteStateToSeries(serieId, true);
+        } catch (error) {
+            debugLog('[FAVORITES] Falha ao sincronizar favorito local:', error?.message || error);
+        }
+    }
+}
+
+async function toggleFavoriteSeries(serie) {
     const serieId = normalizeId(serie?.id);
     if (!serieId) return;
-    if (isFavoriteSeries(serieId)) {
+    const nextFavoriteState = !isFavoriteSeries(serieId);
+    if (!nextFavoriteState) {
         favoriteSeriesIds.delete(serieId);
         saveFavoriteSeries();
+        syncFavoriteStateToSeries(serieId, false);
         showToast('Removida das favoritas.', 'info');
     } else {
         favoriteSeriesIds.add(serieId);
         saveFavoriteSeries();
+        syncFavoriteStateToSeries(serieId, true);
         showToast('Adicionada às favoritas.', 'success');
     }
     refreshCatalog();
     if (DOM.modalOverlay?.classList.contains('active') && serie) {
         openModal(serie);
+    }
+
+    if (!userId || !tg?.initData) return;
+
+    try {
+        await requestFavoriteSync({
+            init_data: tg.initData,
+            series_id: serieId,
+            is_favorite: nextFavoriteState,
+        });
+    } catch (error) {
+        debugLog('[FAVORITES] Falha ao salvar favorito no Telegram:', error?.message || error);
+        showToast('Favorito salvo neste aparelho. A sincronização com sua conta será tentada novamente.', 'info');
     }
 }
 
@@ -575,7 +667,10 @@ function bindPlayerVideoEvents() {
         updatePlayerControlsFromVideo();
         void syncSeriesProgress('completed', true);
     });
-    DOM.mainVideo.addEventListener('loadedmetadata', updatePlayerControlsFromVideo);
+    DOM.mainVideo.addEventListener('loadedmetadata', () => {
+        updatePlayerControlsFromVideo();
+        applySavedProgressToPlayer();
+    });
     DOM.mainVideo.addEventListener('timeupdate', () => {
         updatePlayerControlsFromVideo();
         void syncSeriesProgress('progress', false);
@@ -598,6 +693,32 @@ function bindPlayerVideoEvents() {
             showPlayerError();
         }
     });
+}
+
+function applySavedProgressToPlayer() {
+    if (!DOM.mainVideo || !activeSeriesProgressMeta?.id) return;
+    const currentSerie = findSeriesById(activeSeriesProgressMeta.id) || activeSeriesProgressMeta.serie || null;
+    if (!currentSerie) return;
+
+    const resumeSeconds = getSeriesResumeSeconds(currentSerie);
+    if (resumeSeconds <= 0) return;
+
+    const normalizedId = normalizeId(currentSerie.id || activeSeriesProgressMeta.id);
+    if (!normalizedId || playerResumeAppliedSeriesId === normalizedId) return;
+
+    const duration = Number(DOM.mainVideo.duration);
+    if (!Number.isFinite(duration) || duration <= 0) return;
+
+    const safeTarget = Math.max(0, Math.min(resumeSeconds, Math.max(duration - 1, 0)));
+    if (safeTarget <= 0) return;
+
+    try {
+        DOM.mainVideo.currentTime = safeTarget;
+        playerResumeAppliedSeriesId = normalizedId;
+        showToast(`Voltando para ${formatPlayerTime(safeTarget)}.`, 'info');
+    } catch (error) {
+        debugLog('[PLAYER] Falha ao retomar progresso salvo:', error?.message || error);
+    }
 }
 
 function wirePlayerControls() {
@@ -1128,6 +1249,13 @@ async function requestProgressSync(payload) {
     }, 15000);
 }
 
+async function requestFavoriteSync(payload) {
+    return await fetchWithTimeout(withCacheBuster(`${API_URL}?action=favorite-sync`), {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    }, 15000);
+}
+
 async function requestOwnerUploadSign(payload) {
     return await requestJson(`${API_URL}?action=owner-upload-sign`, payload, 20000);
 }
@@ -1251,6 +1379,7 @@ function resetProgressTracking() {
     activeSeriesProgressMeta = null;
     lastProgressSyncAt = 0;
     lastProgressSnapshotKey = '';
+    playerResumeAppliedSeriesId = '';
 }
 
 async function syncSeriesProgress(eventType = 'progress', force = false) {
@@ -1280,7 +1409,7 @@ async function syncSeriesProgress(eventType = 'progress', force = false) {
     lastProgressSnapshotKey = snapshotKey;
 
     try {
-        return await requestProgressSync({
+        const response = await requestProgressSync({
             init_data: tg.initData,
             series_id: normalizeId(activeSeriesProgressMeta.id),
             title: activeSeriesProgressMeta.title || serie?.title || '',
@@ -1291,6 +1420,10 @@ async function syncSeriesProgress(eventType = 'progress', force = false) {
             playback_mode: activeSeriesProgressMeta.playbackMode || getPlaybackMode(serie),
             event_type: eventType,
         });
+        if (response?.progress) {
+            applyProgressStateToSeries(activeSeriesProgressMeta.id, response.progress);
+        }
+        return response;
     } catch (error) {
         debugLog('[PROGRESS] Falha ao sincronizar progresso:', error.message);
         return null;
@@ -2774,6 +2907,7 @@ async function init() {
         }
         const data = await fetchWithTimeout(withCacheBuster(url.toString()));
         allSeries = Array.isArray(data) ? data : [];
+        hydrateFavoriteSeriesFromCatalog(allSeries);
         debugLog(`[INIT] ${allSeries.length} éries carregadas`);
 
         renderNetflixRow(allSeries);
@@ -3217,6 +3351,7 @@ async function openPlayer(serieId, title) {
         playbackMode: getPlaybackMode(sourceSerie),
         serie: sourceSerie,
     };
+    playerResumeAppliedSeriesId = '';
     lastProgressSyncAt = 0;
     lastProgressSnapshotKey = '';
     playerRetryData = {
