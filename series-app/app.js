@@ -3061,6 +3061,7 @@ function createCard(serie, isNetflix = false) {
     );
 
     const free = isFree(serie);
+    const ownerCanWatch = hasAccess && !free && isOwnerUser();
     if (!isNetflix) {
         card.classList.add(free ? 'card-free' : 'card-paid');
         if (hasAccess && !free) card.classList.add('card-unlocked');
@@ -3157,7 +3158,10 @@ function createCard(serie, isNetflix = false) {
         const buyBtn = document.createElement('button');
         buyBtn.type = 'button';
         buyBtn.className = 'card-cart-btn';
-        if (hasAccess && !missingPlayback) {
+        if (ownerCanWatch) {
+            buyBtn.classList.add('card-watch-btn');
+            buyBtn.innerHTML = '<i class="fas fa-circle-play"></i> Assistir agora';
+        } else if (hasAccess && !missingPlayback) {
             buyBtn.classList.add('card-watch-btn');
             buyBtn.innerHTML = '<i class="fab fa-telegram"></i> Receber no Telegram';
         } else if (missingPlayback) {
@@ -3398,16 +3402,17 @@ function openModal(serie) {
 
     const baseDescription = serie.description || 'Sem descrição disponível.';
     const canDeliver = hasAccess && playbackMode !== 'missing';
+    const ownerCanWatch = canDeliver && isOwnerUser();
 
     DOM.modalDesc.textContent = canDeliver
-        ? `${baseDescription} Toque para receber a série no chat do bot pelo Telegram.`
+        ? ownerCanWatch
+            ? `${baseDescription} Toque para assistir agora no Mini App.`
+            : `${baseDescription} Toque para receber a série no chat do bot pelo Telegram.`
         : playbackMode === 'locked'
         ? `${baseDescription} Quer ver o final agora? Libere todos os episódios.`
         : playbackMode === 'missing'
         ? `${baseDescription} O vídeo desta série ainda está em preparação.`
         : baseDescription;
-
-    const ownerCanWatch = canDeliver && isOwnerUser();
 
     if (ownerCanWatch) {
         DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fas fa-circle-play"></i> DISPONÍVEL</span>';
