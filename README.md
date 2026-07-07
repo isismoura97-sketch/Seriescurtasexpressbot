@@ -151,8 +151,6 @@ O acesso exige duas validações no backend:
 1. `initData` válido do Telegram WebApp
 2. senha definida em `OWNER_AREA_PASSWORD` ou hash SHA-256 em `OWNER_AREA_PASSWORD_SHA256`
 
-Se a senha própria ainda não estiver definida, a function usa `TELEGRAM_WEBHOOK_SECRET` como fallback temporário. Recomenda-se configurar `OWNER_AREA_PASSWORD` separado para produção.
-
 ## Pagamentos
 
 O checkout agora suporta três caminhos:

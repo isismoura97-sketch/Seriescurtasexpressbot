@@ -2524,9 +2524,9 @@ async function submitOwnerLogin(event) {
         if (normalizedMessage.includes('acesso restrito') || normalizedMessage.includes('proprietario')) {
             friendlyMessage = 'Entre com a conta Telegram do proprietário cadastrada no backend.';
         } else if (normalizedMessage.includes('senha invalida')) {
-            friendlyMessage = 'Senha inválida. Confirme se o segredo configurado no Supabase está correto.';
+            friendlyMessage = 'Senha inválida. Confira a senha da área do proprietário.';
         } else if (normalizedMessage.includes('nao configurada')) {
-            friendlyMessage = 'A senha do proprietário ainda não foi configurada no backend.';
+            friendlyMessage = 'A senha da área do proprietário ainda não foi configurada no backend.';
         } else if (normalizedMessage.includes('telegram') && (normalizedMessage.includes('ausentes') || normalizedMessage.includes('invalidos') || normalizedMessage.includes('expirada'))) {
             friendlyMessage = 'Abra o Mini App dentro do Telegram para validar o acesso do proprietário.';
         }

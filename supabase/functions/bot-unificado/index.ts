@@ -1815,7 +1815,7 @@ async function validateOwnerPassword(password: string) {
     return constantTimeEqual(await sha256Hex(submitted), configuredHash);
   }
 
-  const configuredPassword = OWNER_AREA_PASSWORD || TELEGRAM_WEBHOOK_SECRET;
+  const configuredPassword = OWNER_AREA_PASSWORD;
   if (!configuredPassword) return false;
 
   return constantTimeEqual(submitted, configuredPassword);
@@ -4015,7 +4015,7 @@ async function resolveOwnerRequest(body: Record<string, unknown>) {
     return { error: "Acesso restrito ao proprietario", status: 403 };
   }
 
-  const hasPasswordConfigured = Boolean(OWNER_AREA_PASSWORD_SHA256 || OWNER_AREA_PASSWORD || TELEGRAM_WEBHOOK_SECRET);
+  const hasPasswordConfigured = Boolean(OWNER_AREA_PASSWORD_SHA256 || OWNER_AREA_PASSWORD);
   if (!hasPasswordConfigured) {
     return { error: "Senha do proprietario nao configurada", status: 503 };
   }
