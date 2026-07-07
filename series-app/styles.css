@@ -739,14 +739,15 @@ body.light-mode .hero h1 {
 }
 
 .player-error-actions {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
     gap: 12px;
-    flex-wrap: wrap;
-    justify-content: center;
+    width: 100%;
 }
 
 .player-error-actions .btn {
-    min-width: 170px;
+    width: 100%;
+    min-width: 0;
 }
 
 .btn-secondary {
@@ -1055,9 +1056,15 @@ body.light-mode .modal-title {
 }
 
 .modal-actions {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 12px;
+    width: 100%;
+}
+
+.modal-actions .btn {
+    width: 100%;
+    min-width: 0;
 }
 
 /* ====================== BUTTONS ====================== */
