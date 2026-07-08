@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260707-02';
+const BUILD_VERSION = '20260707-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -920,6 +920,22 @@ function getPaymentMethodLabel(method = selectedPaymentMethod) {
     }
 }
 
+function getCheckoutButtonLabel() {
+    if (isAwaitingPayment(activePaymentOrder)) {
+        return '<i class="fas fa-credit-card"></i> Ver pagamento';
+    }
+
+    switch (selectedPaymentMethod) {
+        case 'pix_qr':
+            return '<i class="fas fa-qrcode"></i> Gerar Pix';
+        case 'telegram_checkout':
+            return '<i class="fab fa-telegram"></i> Ir para checkout';
+        case 'mercado_pago_link':
+        default:
+            return '<i class="fas fa-check"></i> Finalizar Compra';
+    }
+}
+
 function buildTelegramCheckoutUrl(orderId = '') {
     const safeOrderId = String(orderId || '').trim();
     const suffix = safeOrderId ? `checkout_${encodeURIComponent(safeOrderId)}` : '';
@@ -980,9 +996,7 @@ function setCheckoutLoading(isLoading) {
     DOM.checkoutBtn.disabled = isLoading;
     DOM.checkoutBtn.innerHTML = isLoading
         ? '<i class="fas fa-spinner fa-spin"></i> Processando...'
-        : isAwaitingPayment(activePaymentOrder)
-            ? '<i class="fas fa-credit-card"></i> Ver pagamento'
-            : '<i class="fas fa-check"></i> Finalizar Compra';
+        : getCheckoutButtonLabel();
 }
 
 function updatePaymentMethodUI() {
@@ -1001,6 +1015,10 @@ function updatePaymentMethodUI() {
 
     if (DOM.buyerEmailInput) {
         DOM.buyerEmailInput.required = selectedPaymentMethod === 'pix_qr';
+    }
+
+    if (DOM.checkoutBtn && !DOM.checkoutBtn.disabled) {
+        DOM.checkoutBtn.innerHTML = getCheckoutButtonLabel();
     }
 }
 
@@ -1067,6 +1085,7 @@ function renderPaymentSummary(order) {
 
     if (order.pix_qr_code) {
         details.push(`<div class="payment-detail"><span>Pix</span><strong>Código gerado</strong></div>`);
+        details.push(`<div class="payment-detail"><span>Como pagar</span><strong>Escaneie o QR Code ou copie o código Pix abaixo</strong></div>`);
         const qrBase64 = String(order.pix_qr_code_base64 || '').trim();
         const qrCode = String(order.pix_qr_code || '').trim();
         const qrImageUrl = String(order.pix_qr_image_url || '').trim() || STATIC_PIX_QR_IMAGE_URL;
@@ -1098,7 +1117,7 @@ function renderPaymentSummary(order) {
     const openButton = document.createElement('button');
     openButton.className = 'btn btn-primary';
     if (method === 'pix_qr') {
-        openButton.innerHTML = '<i class="fas fa-qrcode"></i> Copiar Pix';
+        openButton.innerHTML = '<i class="fas fa-copy"></i> Copiar código Pix';
         openButton.addEventListener('click', async () => {
             if (order.pix_qr_code) {
                 await copyToClipboard(order.pix_qr_code);
@@ -2468,56 +2487,22 @@ function renderOwnerDashboard(data) {
     `).join('');
 
     DOM.ownerDashboard.innerHTML = `
-        <section class="owner-hero-card">
-            <div class="owner-hero-layout">
+        <section class="owner-hero-card owner-hero-card-compact">
+            <div class="owner-hero-top">
                 <div class="owner-hero-copy">
                     <span class="owner-eyebrow"><i class="fas fa-sparkles"></i> Área de gestão</span>
-                    <h3>Gerencie séries, capas, trailers e vídeos em um só painel.</h3>
-                    <p>Use o envio rápido para arquivos leves e o fluxo alternativo quando necessário, mantendo o catálogo estável.</p>
+                    <h3>Painel central do catálogo, mídia e pagamentos.</h3>
+                    <p>Cadastre séries, acompanhe a fila de entrega e ajuste rapidamente o que precisa de atenção, sem sobreposição de blocos.</p>
                 </div>
-                <div class="owner-hero-side">
-                    <div class="owner-brand">
-                        <img class="owner-brand-logo" src="${OWNER_LOGO_IMAGE}" alt="Séries Express">
-                        <div>
-                            <strong>Séries Express</strong>
-                            <span>Área de gestão</span>
-                        </div>
-                    </div>
-                    <div class="owner-side-stack">
-                        <div class="owner-side-item">
-                            <span>Sem vídeo</span>
-                            <strong>${escapeHtml(String(prioritySeriesCount))}</strong>
-                        </div>
-                        <div class="owner-side-item">
-                            <span>Pagamentos aprovados</span>
-                            <strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong>
-                        </div>
-                        <div class="owner-side-item">
-                            <span>Pedidos registrados</span>
-                            <strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong>
-                        </div>
-                        <div class="owner-side-item">
-                            <span>Fluxo</span>
-                            <strong>1. Cadastrar 2. Envio rápido até ${escapeHtml(getOwnerInternalUploadLimitLabel())} 3. Fluxo alternativo</strong>
-                        </div>
-                    </div>
-                    <div class="owner-hero-actions">
-                        <button type="button" class="btn btn-secondary" data-owner-reset-editor>
-                            <i class="fas fa-plus"></i> Novo item
-                        </button>
-                        <button type="button" class="btn btn-secondary" data-owner-filter-mode="migration">
-                            <i class="fas fa-link"></i> Ver fila
-                        </button>
-                        <button type="button" class="btn btn-primary" data-owner-migrate-priority ${telegramFallbackCount ? '' : 'disabled'}>
-                            <i class="fas fa-wand-magic-sparkles"></i> Aplicar ajuste
-                        </button>
-                        <button type="button" class="btn btn-secondary" data-owner-filter-mode="playable">
-                            <i class="fas fa-circle-play"></i> Prontos
-                        </button>
+                <div class="owner-brand owner-brand-compact">
+                    <img class="owner-brand-logo" src="${OWNER_LOGO_IMAGE}" alt="Séries Express">
+                    <div>
+                        <strong>Séries Express</strong>
+                        <span>Operação do proprietário</span>
                     </div>
                 </div>
             </div>
-            <div class="owner-kpi-grid">
+            <div class="owner-kpi-grid owner-kpi-grid-extended">
                 <div class="owner-card">
                     <span>Séries no catálogo</span>
                     <strong>${escapeHtml(String(catalog.series_total ?? 0))}</strong>
@@ -2535,28 +2520,44 @@ function renderOwnerDashboard(data) {
                     <strong>${escapeHtml(String(internalSeriesCount))}</strong>
                 </div>
                 <div class="owner-card">
-                    <span>Em fila</span>
+                    <span>Entrega assistida</span>
                     <strong>${escapeHtml(String(telegramFallbackCount))}</strong>
                 </div>
-            </div>
-        </section>
-        <section class="owner-section owner-section-priority owner-series-section">
-            <div class="owner-section-head">
-                <div>
-                    <h3>Itens em fila</h3>
-                    <p>Estes títulos ainda pedem ajuste. Os demais seguem ativos normalmente.</p>
+                <div class="owner-card">
+                    <span>Sem vídeo</span>
+                    <strong>${escapeHtml(String(missingPlaybackCount))}</strong>
                 </div>
-                <div class="owner-series-count">${escapeHtml(String(prioritySeriesCount))} itens</div>
+                <div class="owner-card">
+                    <span>Pedidos</span>
+                    <strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong>
+                </div>
+                <div class="owner-card">
+                    <span>Total aprovado</span>
+                    <strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong>
+                </div>
             </div>
-            <div class="owner-series-list">${prioritySeriesRows}</div>
+            <div class="owner-action-strip">
+                <button type="button" class="btn btn-primary" data-owner-reset-editor>
+                    <i class="fas fa-plus"></i> Novo cadastro
+                </button>
+                <button type="button" class="btn btn-secondary" data-owner-filter-mode="migration">
+                    <i class="fas fa-link"></i> Ver entrega assistida
+                </button>
+                <button type="button" class="btn btn-secondary" data-owner-filter-mode="playable">
+                    <i class="fas fa-circle-play"></i> Ver prontas
+                </button>
+                <button type="button" class="btn btn-secondary" data-owner-migrate-priority ${telegramFallbackCount ? '' : 'disabled'}>
+                    <i class="fas fa-wand-magic-sparkles"></i> Aplicar migração
+                </button>
+            </div>
         </section>
-        <div class="owner-dashboard-grid">
-            <div class="owner-section owner-section-featured">
+        <div class="owner-workspace-grid">
+            <section class="owner-section owner-section-featured owner-editor-section">
                 <div class="owner-form-head">
                     <div>
-                        <span class="owner-eyebrow" id="ownerFormBadge">Novo cadastro</span>
+                        <span class="owner-eyebrow" id="ownerFormBadge">Cadastro</span>
                         <h3 id="ownerFormTitle">Nova série</h3>
-                        <p id="ownerFormSubtitle">Crie uma série com um vídeo principal único. O trailer continua opcional.</p>
+                        <p id="ownerFormSubtitle">Crie ou edite uma série com capa, trailer opcional, vídeo principal e preço em um fluxo único.</p>
                     </div>
                     <button type="button" class="btn btn-secondary" id="ownerFormCancelBtn" hidden>
                         <i class="fas fa-arrow-rotate-left"></i> Cancelar edição
@@ -2568,46 +2569,76 @@ function renderOwnerDashboard(data) {
                         <img id="ownerCoverPreviewImage" src="${PLACEHOLDER_IMAGE}" alt="Pré-visualização da capa">
                         <div class="owner-cover-preview-copy">
                             <strong>Pré-visualização da capa</strong>
-                            <span id="ownerCoverPreviewCaption">Use a imagem da série para ver antes de salvar.</span>
+                            <span id="ownerCoverPreviewCaption">Confira a capa antes de salvar e mantenha o visual do catálogo consistente.</span>
                         </div>
                     </div>
-                    <div class="owner-upload-grid">
-                        <label class="payment-field">
-                            <span>Título</span>
-                            <input type="text" name="title" placeholder="Nome da série" required>
-                        </label>
-                        <label class="payment-field">
-                            <span>Categoria</span>
-                            <input type="text" name="category" placeholder="Romance, Drama..." value="Geral" required>
-                        </label>
-                        <label class="payment-field owner-upload-span-2">
-                            <span>Descrição</span>
-                            <textarea name="description" rows="4" placeholder="Descreva a série" required></textarea>
-                        </label>
-                        <label class="owner-upload-toggle">
-                            <input type="checkbox" name="is_free" id="ownerSeriesFree">
-                            <span>Marcar como série gratuita</span>
-                        </label>
-                        <label class="payment-field">
-                            <span>Preço</span>
-                            <input type="number" name="price" id="ownerSeriesPrice" min="0" step="0.01" placeholder="0,00" value="0">
-                        </label>
-                        <label class="payment-field">
-                            <span>Capa</span>
-                            <input type="file" name="cover_file" accept="image/*" required>
-                        </label>
-                        <label class="payment-field">
-                            <span>Trailer opcional</span>
-                            <input type="file" name="trailer_file" accept="video/*">
-                        </label>
-                        <label class="payment-field">
-                            <span>Vídeo principal</span>
-                            <input type="file" name="video_file" accept="video/*" required>
-                        </label>
-                        <label class="payment-field owner-upload-span-2">
-                            <span>File_ID do vídeo no Telegram opcional</span>
-                            <textarea name="video_file_id" id="ownerSeriesVideoFileId" rows="3" placeholder="Cole aqui o File_ID do vídeo, se preferir usar o Telegram"></textarea>
-                        </label>
+                    <div class="owner-form-groups">
+                        <section class="owner-form-group">
+                            <div class="owner-form-group-head">
+                                <strong>Informações da série</strong>
+                                <span>Defina o que o usuário vai ver no catálogo.</span>
+                            </div>
+                            <div class="owner-upload-grid">
+                                <label class="payment-field">
+                                    <span>Título</span>
+                                    <input type="text" name="title" placeholder="Nome da série" required>
+                                </label>
+                                <label class="payment-field">
+                                    <span>Categoria</span>
+                                    <input type="text" name="category" placeholder="Romance, Drama..." value="Geral" required>
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Descrição</span>
+                                    <textarea name="description" rows="4" placeholder="Descreva a série" required></textarea>
+                                </label>
+                            </div>
+                        </section>
+                        <section class="owner-form-group">
+                            <div class="owner-form-group-head">
+                                <strong>Acesso e preço</strong>
+                                <span>Escolha se a série será gratuita ou paga.</span>
+                            </div>
+                            <div class="owner-upload-grid owner-upload-grid-tight">
+                                <label class="owner-upload-toggle">
+                                    <input type="checkbox" name="is_free" id="ownerSeriesFree">
+                                    <span>Marcar como série gratuita</span>
+                                </label>
+                                <label class="payment-field">
+                                    <span>Preço</span>
+                                    <input type="number" name="price" id="ownerSeriesPrice" min="0" step="0.01" placeholder="0,00" value="0">
+                                </label>
+                            </div>
+                        </section>
+                        <section class="owner-form-group">
+                            <div class="owner-form-group-head">
+                                <strong>Arquivos principais</strong>
+                                <span>Envie a mídia principal da série e o material visual.</span>
+                            </div>
+                            <div class="owner-upload-grid">
+                                <label class="payment-field">
+                                    <span>Capa</span>
+                                    <input type="file" name="cover_file" accept="image/*" required>
+                                </label>
+                                <label class="payment-field">
+                                    <span>Trailer opcional</span>
+                                    <input type="file" name="trailer_file" accept="video/*">
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Vídeo principal</span>
+                                    <input type="file" name="video_file" accept="video/*" required>
+                                </label>
+                            </div>
+                        </section>
+                        <section class="owner-form-group">
+                            <div class="owner-form-group-head">
+                                <strong>Entrega via Telegram</strong>
+                                <span>Use este campo quando preferir ligar a série por File_ID em vez de arquivo enviado aqui.</span>
+                            </div>
+                            <label class="payment-field owner-upload-span-2">
+                                <span>File_ID do vídeo no Telegram opcional</span>
+                                <textarea name="video_file_id" id="ownerSeriesVideoFileId" rows="3" placeholder="Cole aqui o File_ID do vídeo, se preferir usar o Telegram"></textarea>
+                            </label>
+                        </section>
                     </div>
                     <div class="owner-upload-actions">
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
@@ -2615,62 +2646,73 @@ function renderOwnerDashboard(data) {
                         </button>
                         <p class="owner-upload-note">Use envio rápido apenas para arquivos até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Arquivos maiores seguem no fluxo alternativo.</p>
                     </div>
-                    <div class="owner-list">
-                        <div class="owner-list-row">
-                            <span>Capturar File_ID</span>
-                            <strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir guia</a></strong>
-                        </div>
-                        <div class="owner-list-row">
-                            <span>Fluxo</span>
-                            <strong>1. Abra a guia 2. Envie o arquivo 3. Salve</strong>
-                        </div>
-                    </div>
                     <div class="owner-status" id="ownerUploadStatus"></div>
                 </form>
-            </div>
-            <div class="owner-section">
-                <h3>Visão geral</h3>
-                <div class="owner-list">
-                    <div class="owner-list-row"><span>Prontas</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
-                    <div class="owner-list-row"><span>Em fila</span><strong>${escapeHtml(String(telegramFallbackCount))}</strong></div>
-                    <div class="owner-list-row"><span>Sem vídeo</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
-                </div>
-            </div>
-            <div class="owner-section">
-                <h3>Pagamentos</h3>
-                <div class="owner-list">
-                    <div class="owner-list-row"><span>Pedidos registrados</span><strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong></div>
-                    <div class="owner-list-row"><span>Total aprovado</span><strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong></div>
-                    ${statusRows}
-                </div>
-            </div>
-            <div class="owner-section owner-series-section">
-                <div class="owner-section-head">
-                    <div>
-                        <h3>Catálogo</h3>
-                        <p>Busque, filtre e edite rapidamente. O painel mostra quando um título está pronto ou aguarda ajuste.</p>
+            </section>
+            <aside class="owner-sidebar-stack">
+                <section class="owner-section">
+                    <h3>Operação rápida</h3>
+                    <div class="owner-list">
+                        <div class="owner-list-row"><span>Fluxo</span><strong>1. Cadastrar 2. Enviar 3. Publicar</strong></div>
+                        <div class="owner-list-row"><span>Envio rápido</span><strong>Até ${escapeHtml(getOwnerInternalUploadLimitLabel())}</strong></div>
+                        <div class="owner-list-row"><span>Capturar File_ID</span><strong><a id="ownerFileIdHelpLink" href="${escapeAttr(getOwnerFileIdCaptureUrl())}" target="_blank" rel="noopener noreferrer">Abrir guia</a></strong></div>
                     </div>
-                    <div class="owner-series-count">${escapeHtml(visibleSeriesLabel)} exibidas</div>
-                </div>
-                <div class="owner-series-toolbar">
-                    <label class="payment-field owner-series-search">
-                        <span>Buscar séries</span>
-                        <input type="search" id="ownerSeriesSearchInput" placeholder="Título, descrição ou categoria" value="${escapeAttr(ownerSeriesSearchTerm)}">
-                    </label>
-                    <div class="owner-series-filters" role="tablist" aria-label="Filtros do catálogo">
-                        ${toolbarChips}
+                </section>
+                <section class="owner-section">
+                    <h3>Status do catálogo</h3>
+                    <div class="owner-list">
+                        <div class="owner-list-row"><span>Prontas</span><strong>${escapeHtml(String(internalSeriesCount))}</strong></div>
+                        <div class="owner-list-row"><span>Entrega assistida</span><strong>${escapeHtml(String(telegramFallbackCount))}</strong></div>
+                        <div class="owner-list-row"><span>Sem vídeo</span><strong>${escapeHtml(String(missingPlaybackCount))}</strong></div>
+                        <div class="owner-list-row"><span>Itens críticos</span><strong>${escapeHtml(String(prioritySeriesCount))}</strong></div>
                     </div>
-                </div>
-                <input type="file" id="ownerQuickCoverInput" accept="image/*" hidden>
-                <input type="file" id="ownerQuickVideoInput" accept="video/*" hidden>
-                <input type="file" id="ownerQuickTrailerInput" accept="video/*" hidden>
-                <div class="owner-series-list">${recentSeriesRows}</div>
-            </div>
-            <div class="owner-section">
-                <h3>Pedidos Recentes</h3>
-                <div class="owner-list">${recentRows}</div>
-            </div>
+                </section>
+                <section class="owner-section">
+                    <h3>Pagamentos</h3>
+                    <div class="owner-list">
+                        <div class="owner-list-row"><span>Pedidos registrados</span><strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong></div>
+                        <div class="owner-list-row"><span>Total aprovado</span><strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong></div>
+                        ${statusRows}
+                    </div>
+                </section>
+            </aside>
         </div>
+        <section class="owner-section owner-section-priority owner-series-section">
+            <div class="owner-section-head">
+                <div>
+                    <h3>Itens que pedem ajuste</h3>
+                    <p>Esses títulos ainda dependem de vídeo, migração ou revisão antes de ficarem redondos no catálogo.</p>
+                </div>
+                <div class="owner-series-count">${escapeHtml(String(prioritySeriesCount))} itens</div>
+            </div>
+            <div class="owner-series-list">${prioritySeriesRows}</div>
+        </section>
+        <section class="owner-section owner-series-section">
+            <div class="owner-section-head">
+                <div>
+                    <h3>Catálogo</h3>
+                    <p>Busque, filtre e edite as séries a partir de um bloco único, sem misturar cadastro, métricas e ações.</p>
+                </div>
+                <div class="owner-series-count">${escapeHtml(visibleSeriesLabel)} exibidas</div>
+            </div>
+            <div class="owner-series-toolbar">
+                <label class="payment-field owner-series-search">
+                    <span>Buscar séries</span>
+                    <input type="search" id="ownerSeriesSearchInput" placeholder="Título, descrição ou categoria" value="${escapeAttr(ownerSeriesSearchTerm)}">
+                </label>
+                <div class="owner-series-filters" role="tablist" aria-label="Filtros do catálogo">
+                    ${toolbarChips}
+                </div>
+            </div>
+            <input type="file" id="ownerQuickCoverInput" accept="image/*" hidden>
+            <input type="file" id="ownerQuickVideoInput" accept="video/*" hidden>
+            <input type="file" id="ownerQuickTrailerInput" accept="video/*" hidden>
+            <div class="owner-series-list">${recentSeriesRows}</div>
+        </section>
+        <section class="owner-section">
+            <h3>Pedidos recentes</h3>
+            <div class="owner-list">${recentRows}</div>
+        </section>
     `;
     DOM.ownerDashboard.hidden = false;
     wireOwnerUploadForm();
@@ -3773,9 +3815,7 @@ function updateCartUI() {
     if (DOM.checkoutBtn) {
         const hasPendingOrder = isAwaitingPayment(activePaymentOrder);
         DOM.checkoutBtn.disabled = !cart.length && !hasPendingOrder;
-        DOM.checkoutBtn.innerHTML = hasPendingOrder
-            ? '<i class="fas fa-credit-card"></i> Ver pagamento'
-            : '<i class="fas fa-check"></i> Finalizar Compra';
+        DOM.checkoutBtn.innerHTML = getCheckoutButtonLabel();
     }
 
     renderPaymentSummary(activePaymentOrder);

@@ -14,7 +14,7 @@ const TELEGRAM_BOT_USERNAME = (
   Deno.env.get("TELEGRAM_BOT_USERNAME") ??
   SUPPORT_URL.replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "")
 ).trim();
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260705-05";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260707-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -46,6 +46,47 @@ const PUBLIC_CHANNEL_ALLOWLIST_USER_IDS = new Set(
 );
 const PUBLIC_CHANNEL_ALLOWLIST_USERNAMES = new Set(
   (Deno.env.get("PUBLIC_CHANNEL_ALLOWLIST_USERNAMES") ?? "")
+    .split(",")
+    .map((value) => normalizeHandle(value))
+    .filter(Boolean),
+);
+const DEFAULT_PUBLIC_CHANNEL_DELETE_LABELS = [
+  "gruposdegram",
+  "lista solar",
+  "telegrupos | lista de grupos",
+  "magfi ads",
+  "divulgacao total",
+  "divulgar telegram",
+  "tele auto post",
+  "lista crescimento",
+];
+const PUBLIC_CHANNEL_POST_CLEANUP_ENABLED = (Deno.env.get("PUBLIC_CHANNEL_POST_CLEANUP_ENABLED") ?? "true").toLowerCase() !== "false";
+const PUBLIC_CHANNEL_DELETE_ADMIN_USER_IDS = new Set(
+  (Deno.env.get("PUBLIC_CHANNEL_DELETE_ADMIN_USER_IDS") ?? "")
+    .split(",")
+    .map((value) => String(value || "").trim())
+    .filter(Boolean),
+);
+const PUBLIC_CHANNEL_DELETE_ADMIN_USERNAMES = new Set(
+  (Deno.env.get("PUBLIC_CHANNEL_DELETE_ADMIN_USERNAMES") ?? "")
+    .split(",")
+    .map((value) => normalizeHandle(value))
+    .filter(Boolean),
+);
+const PUBLIC_CHANNEL_DELETE_ADMIN_LABELS = new Set(
+  (Deno.env.get("PUBLIC_CHANNEL_DELETE_ADMIN_LABELS") ?? DEFAULT_PUBLIC_CHANNEL_DELETE_LABELS.join(","))
+    .split(",")
+    .map((value) => normalizeMatchLabel(value))
+    .filter(Boolean),
+);
+const PUBLIC_CHANNEL_DELETE_VIA_BOT_IDS = new Set(
+  (Deno.env.get("PUBLIC_CHANNEL_DELETE_VIA_BOT_IDS") ?? "")
+    .split(",")
+    .map((value) => String(value || "").trim())
+    .filter(Boolean),
+);
+const PUBLIC_CHANNEL_DELETE_VIA_BOT_USERNAMES = new Set(
+  (Deno.env.get("PUBLIC_CHANNEL_DELETE_VIA_BOT_USERNAMES") ?? "")
     .split(",")
     .map((value) => normalizeHandle(value))
     .filter(Boolean),
@@ -201,6 +242,27 @@ function normalizeHandle(value: unknown) {
   return String(value || "").trim().replace(/^@/, "").toLowerCase();
 }
 
+function normalizeMatchLabel(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function labelMatchesConfiguredSet(value: unknown, configured: Set<string>) {
+  const normalized = normalizeMatchLabel(value);
+  if (!normalized || !configured.size) return false;
+  for (const entry of configured) {
+    if (!entry) continue;
+    if (normalized === entry || normalized.includes(entry) || entry.includes(normalized)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function isPublicChannelAllowlisted(user: Record<string, unknown>) {
   const userId = user.id == null ? "" : String(user.id);
   const username = normalizeHandle(user.username);
@@ -297,6 +359,13 @@ async function sendModerationAlert(message: string) {
   } catch {
     // best effort
   }
+}
+
+async function deletePublicChannelMessage(chatId: string | number, messageId: string | number) {
+  return await telegramRequest("deleteMessage", {
+    chat_id: chatId,
+    message_id: messageId,
+  });
 }
 
 async function banPublicChannelMember(chatId: string | number, userId: string | number) {
@@ -1077,6 +1146,79 @@ async function createMercadoPagoPixPayment(order: {
 
 async function fetchMercadoPagoPayment(paymentId: string) {
   return await mercadoPagoRequest(`/v1/payments/${encodeURIComponent(paymentId)}`) as Record<string, unknown>;
+}
+
+function buildProcessingProgressBar(completed: number, total: number) {
+  const safeTotal = Math.max(1, total);
+  const width = 10;
+  const ratio = Math.max(0, Math.min(1, completed / safeTotal));
+  const filled = Math.max(0, Math.min(width, Math.round(ratio * width)));
+  return `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
+}
+
+function buildDeliveryProgressText(
+  orderId: string,
+  completed: number,
+  total: number,
+  currentTitle = "",
+  failedCount = 0,
+  finished = false,
+) {
+  const shortOrderId = String(orderId ?? "").slice(0, 8);
+  const lines = [
+    "Pagamento confirmado.",
+    `Pedido: ${shortOrderId}`,
+    finished ? "Entrega em processamento finalizada." : "Liberando suas séries no Telegram.",
+    `${buildProcessingProgressBar(completed, total)} ${Math.min(completed, total)}/${total}`,
+  ];
+
+  if (!finished && currentTitle) {
+    lines.push(`Agora: ${currentTitle}`);
+  }
+
+  if (finished) {
+    lines.push(
+      failedCount > 0
+        ? "Parte do pedido foi entregue. Se faltar algo, abra o catálogo e tente novamente."
+        : "Suas séries já estão liberadas aqui no bot.",
+    );
+  }
+
+  if (failedCount > 0) {
+    lines.push(`Pendências: ${failedCount}`);
+  }
+
+  return lines.join("\n");
+}
+
+async function upsertDeliveryProgressMessage(
+  chatId: string,
+  text: string,
+  messageId?: number,
+) {
+  if (messageId) {
+    try {
+      await telegramRequest("editMessageText", {
+        chat_id: chatId,
+        message_id: messageId,
+        text,
+      });
+      return messageId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.toLowerCase().includes("message is not modified")) {
+        return messageId;
+      }
+    }
+  }
+
+  const sent = await telegramRequest("sendMessage", {
+    chat_id: chatId,
+    text,
+    protect_content: true,
+  }) as Record<string, unknown>;
+
+  return Number(sent.message_id ?? 0) || 0;
 }
 
 async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
@@ -2472,6 +2614,73 @@ function getUpdateChannelPost(update: Record<string, unknown>) {
   return null;
 }
 
+function getPublicChannelPostActor(message: Record<string, unknown>) {
+  const from = message.from as Record<string, unknown> | undefined;
+  const viaBot = message.via_bot as Record<string, unknown> | undefined;
+  const senderChat = message.sender_chat as Record<string, unknown> | undefined;
+  const forwardFromChat = message.forward_from_chat as Record<string, unknown> | undefined;
+
+  return {
+    authorSignature: typeof message.author_signature === "string" ? message.author_signature : "",
+    fromUserId: from?.id == null ? "" : String(from.id),
+    fromUsername: normalizeHandle(from?.username),
+    fromDisplayName: [from?.first_name, from?.last_name]
+      .filter((value) => typeof value === "string" && value.trim())
+      .join(" "),
+    viaBotId: viaBot?.id == null ? "" : String(viaBot.id),
+    viaBotUsername: normalizeHandle(viaBot?.username),
+    viaBotName: typeof viaBot?.first_name === "string" ? viaBot.first_name : "",
+    senderChatId: senderChat?.id == null ? "" : String(senderChat.id),
+    senderChatUsername: normalizeHandle(senderChat?.username),
+    senderChatTitle: typeof senderChat?.title === "string" ? senderChat.title : "",
+    forwardChatId: forwardFromChat?.id == null ? "" : String(forwardFromChat.id),
+    forwardChatUsername: normalizeHandle(forwardFromChat?.username),
+    forwardChatTitle: typeof forwardFromChat?.title === "string" ? forwardFromChat.title : "",
+  };
+}
+
+function matchPublicChannelCleanup(message: Record<string, unknown>) {
+  const actor = getPublicChannelPostActor(message);
+  const reasons: string[] = [];
+
+  if (!PUBLIC_CHANNEL_POST_CLEANUP_ENABLED) {
+    return { shouldDelete: false, reasons, actor };
+  }
+
+  if (actor.fromUserId && PUBLIC_CHANNEL_DELETE_ADMIN_USER_IDS.has(actor.fromUserId)) {
+    reasons.push(`user_id:${actor.fromUserId}`);
+  }
+  if (actor.fromUsername && PUBLIC_CHANNEL_DELETE_ADMIN_USERNAMES.has(actor.fromUsername)) {
+    reasons.push(`username:${actor.fromUsername}`);
+  }
+  if (actor.viaBotId && PUBLIC_CHANNEL_DELETE_VIA_BOT_IDS.has(actor.viaBotId)) {
+    reasons.push(`via_bot_id:${actor.viaBotId}`);
+  }
+  if (actor.viaBotUsername && PUBLIC_CHANNEL_DELETE_VIA_BOT_USERNAMES.has(actor.viaBotUsername)) {
+    reasons.push(`via_bot_username:${actor.viaBotUsername}`);
+  }
+
+  for (const label of [
+    actor.authorSignature,
+    actor.fromDisplayName,
+    actor.viaBotName,
+    actor.senderChatTitle,
+    actor.forwardChatTitle,
+    actor.senderChatUsername,
+    actor.forwardChatUsername,
+  ]) {
+    if (labelMatchesConfiguredSet(label, PUBLIC_CHANNEL_DELETE_ADMIN_LABELS)) {
+      reasons.push(`label:${normalizeMatchLabel(label)}`);
+    }
+  }
+
+  return {
+    shouldDelete: reasons.length > 0,
+    reasons: [...new Set(reasons)],
+    actor,
+  };
+}
+
 function getMessageType(message: Record<string, unknown>) {
   if (typeof message.text === "string" && message.text.trim()) return "text";
   if (typeof message.caption === "string" && message.caption.trim()) return "caption";
@@ -2903,6 +3112,7 @@ async function handleTelegramWebhook(req: Request) {
   if (channelPostUpdate) {
     const channel = channelPostUpdate.message.chat as Record<string, unknown> | undefined;
     if (channel && isTargetPublicChannel(channel)) {
+      const cleanup = matchPublicChannelCleanup(channelPostUpdate.message);
       await recordPublicChannelPost({
         channelId: channel.id as string | number,
         channelUsername: typeof channel.username === "string" ? channel.username : null,
@@ -2914,6 +3124,53 @@ async function handleTelegramWebhook(req: Request) {
         text: typeof channelPostUpdate.message.text === "string" ? channelPostUpdate.message.text : null,
         caption: typeof channelPostUpdate.message.caption === "string" ? channelPostUpdate.message.caption : null,
         rawUpdate: update,
+      });
+
+      if (cleanup.shouldDelete) {
+        try {
+          await deletePublicChannelMessage(
+            channel.id as string | number,
+            channelPostUpdate.message.message_id as string | number,
+          );
+          await sendModerationAlert(
+            [
+              "Limpeza automatica de publicacao no canal.",
+              `Canal: ${typeof channel.title === "string" ? channel.title : typeof channel.username === "string" ? channel.username : String(channel.id ?? "")}`,
+              `Mensagem: ${String(channelPostUpdate.message.message_id ?? "")}`,
+              `Origem: ${cleanup.actor.authorSignature || cleanup.actor.senderChatTitle || cleanup.actor.fromDisplayName || cleanup.actor.fromUsername || cleanup.actor.viaBotUsername || "nao identificada"}`,
+              `Motivos: ${cleanup.reasons.join("; ")}`,
+            ].join("\n"),
+          );
+          return json(req, {
+            ok: true,
+            action: "public_channel_post_deleted",
+            edited: channelPostUpdate.edited,
+            reasons: cleanup.reasons,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await sendModerationAlert(
+            [
+              "Falha ao limpar publicacao no canal.",
+              `Mensagem: ${String(channelPostUpdate.message.message_id ?? "")}`,
+              `Erro: ${message}`,
+              `Motivos: ${cleanup.reasons.join("; ")}`,
+            ].join("\n"),
+          );
+          return json(req, {
+            ok: true,
+            action: "public_channel_post_delete_failed",
+            edited: channelPostUpdate.edited,
+            reasons: cleanup.reasons,
+            error: message,
+          });
+        }
+      }
+
+      return json(req, {
+        ok: true,
+        action: "public_channel_post_audited",
+        edited: channelPostUpdate.edited,
       });
     }
   }
@@ -3799,6 +4056,17 @@ async function deliverApprovedOrderSeries(order: Record<string, unknown>) {
     return summary;
   }
 
+  let progressMessageId = 0;
+  try {
+    progressMessageId = await upsertDeliveryProgressMessage(
+      chatId,
+      buildDeliveryProgressText(String(order.order_id ?? ""), 0, uniqueItems.length),
+    );
+  } catch (error) {
+    console.warn("[PAYMENT] Falha ao iniciar barra de progresso:", error instanceof Error ? error.message : String(error));
+  }
+
+  let processedCount = 0;
   for (const item of uniqueItems) {
     const seriesId = String(item.id ?? item.serie_id ?? item.series_id ?? "").trim();
     const title = String(item.title ?? item.name ?? "").trim();
@@ -3825,6 +4093,24 @@ async function deliverApprovedOrderSeries(order: Record<string, unknown>) {
         title,
         reason: error instanceof Error ? error.message : String(error),
       });
+    }
+
+    processedCount += 1;
+    try {
+      progressMessageId = await upsertDeliveryProgressMessage(
+        chatId,
+        buildDeliveryProgressText(
+          String(order.order_id ?? ""),
+          processedCount,
+          uniqueItems.length,
+          title,
+          summary.failed.length,
+          processedCount >= uniqueItems.length,
+        ),
+        progressMessageId || undefined,
+      );
+    } catch (error) {
+      console.warn("[PAYMENT] Falha ao atualizar barra de progresso:", error instanceof Error ? error.message : String(error));
     }
   }
 
