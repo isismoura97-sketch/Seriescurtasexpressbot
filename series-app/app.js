@@ -941,7 +941,17 @@ async function submitSupportRequest(event) {
     try {
         const response = await requestSupportSubmit(payload);
         if (response?.ok) {
-            setSupportStatus('Solicitação enviada com sucesso.', 'success');
+            const deliveredToTelegram = Boolean(response.telegram_sent);
+            const deliveredToEmail = Boolean(response.email_sent);
+            let successMessage = 'Solicitação enviada com sucesso.';
+            if (deliveredToTelegram && deliveredToEmail) {
+                successMessage = 'Solicitação enviada ao e-mail e ao bot de suporte.';
+            } else if (deliveredToTelegram) {
+                successMessage = 'Solicitação enviada ao bot de suporte.';
+            } else if (deliveredToEmail) {
+                successMessage = 'Solicitação enviada por e-mail.';
+            }
+            setSupportStatus(successMessage, 'success');
             showToast('Suporte enviado. Obrigada!', 'success');
             DOM.supportForm?.reset();
             setTimeout(() => closeSupportForm(), 700);

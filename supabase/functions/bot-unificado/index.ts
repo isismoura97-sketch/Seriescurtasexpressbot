@@ -314,6 +314,54 @@ async function sendSupportEmail(input: {
   return { ok: true as const, id: typeof data?.id === "string" ? data.id : "" };
 }
 
+async function sendSupportTelegramNotification(input: {
+  email: string;
+  subject: string;
+  description: string;
+  context?: string;
+  telegramUserId: string;
+  telegramUserName?: string;
+  telegramName?: string;
+}) {
+  if (!OWNER_TELEGRAM_USER_ID) {
+    return { ok: false as const, skipped: true };
+  }
+
+  const lines = [
+    "<b>Nova solicitaÃ§Ã£o de suporte</b>",
+    "",
+    `<b>E-mail:</b> ${escapeHtml(input.email)}`,
+    `<b>Assunto:</b> ${escapeHtml(input.subject)}`,
+    `<b>DescriÃ§Ã£o:</b>`,
+    escapeHtml(input.description),
+  ];
+
+  if (input.context) {
+    lines.push("", `<b>Contexto:</b> ${escapeHtml(input.context)}`);
+  }
+
+  lines.push("", `<b>Telegram ID:</b> ${escapeHtml(input.telegramUserId)}`);
+
+  if (input.telegramName) {
+    lines.push(`<b>Nome Telegram:</b> ${escapeHtml(input.telegramName)}`);
+  }
+
+  if (input.telegramUserName) {
+    lines.push(`<b>Username:</b> @${escapeHtml(input.telegramUserName.replace(/^@/, ""))}`);
+  }
+
+  const text = lines.join("\n").slice(0, 3900);
+
+  const result = await telegramRequest("sendMessage", {
+    chat_id: OWNER_TELEGRAM_USER_ID,
+    text,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  });
+
+  return { ok: true as const, messageId: typeof result?.message_id === "number" ? result.message_id : null };
+}
+
 function buildMainBotReplyMarkup() {
   return stringifyJson({
     inline_keyboard: [
@@ -5177,6 +5225,89 @@ async function handleSupportSubmit(req: Request) {
   });
 }
 
+async function handleSupportSubmitV2(req: Request) {
+  const contentType = (req.headers.get("content-type") || "").toLowerCase();
+  let body: Record<string, unknown> | null = null;
+
+  if (contentType.includes("application/json")) {
+    body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  } else {
+    const form = await req.formData().catch(() => null);
+    body = form ? Object.fromEntries(form.entries()) : null;
+  }
+
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  let validated: { userId: string; user: Record<string, unknown> };
+  try {
+    validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? "")) as { userId: string; user: Record<string, unknown> };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(req, { error: message }, 401);
+  }
+
+  const email = String(body.email ?? "").trim();
+  const subject = String(body.subject ?? "").trim();
+  const description = String(body.description ?? "").trim();
+  const context = String(body.context ?? "").trim();
+  const user = validated.user || {};
+  const telegramUserId = String(validated.userId || user.id || "").trim();
+  const telegramName = [String(user.first_name ?? "").trim(), String(user.last_name ?? "").trim()].filter(Boolean).join(" ");
+  const telegramUserName = String(user.username ?? "").trim();
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return json(req, { error: "Informe um e-mail válido" }, 400);
+  }
+  if (subject.length < 3) {
+    return json(req, { error: "Informe um assunto" }, 400);
+  }
+  if (description.length < 20) {
+    return json(req, { error: "Descreva melhor o problema" }, 400);
+  }
+
+  const supportInput = {
+    email,
+    subject,
+    description,
+    context,
+    telegramUserId,
+    telegramUserName,
+    telegramName,
+  };
+
+  const [emailResult, telegramResult] = await Promise.allSettled([
+    RESEND_API_KEY
+      ? sendSupportEmail(supportInput)
+      : Promise.resolve({ ok: false as const, mailtoUrl: buildSupportMailtoUrl(supportInput) }),
+    sendSupportTelegramNotification(supportInput),
+  ]);
+
+  const emailSent = emailResult.status === "fulfilled" && Boolean(emailResult.value?.ok);
+  const telegramSent = telegramResult.status === "fulfilled" && Boolean(telegramResult.value?.ok);
+  const mailtoUrl =
+    emailResult.status === "fulfilled" && "mailtoUrl" in emailResult.value
+      ? emailResult.value.mailtoUrl
+      : buildSupportMailtoUrl(supportInput);
+
+  if (!emailSent && !telegramSent) {
+    return json(req, {
+      ok: false,
+      error: "Não foi possível registrar a solicitação agora.",
+      mailto_url: mailtoUrl,
+    }, 502);
+  }
+
+  return json(req, {
+    ok: true,
+    support_id: `${Date.now()}-${telegramUserId || "anon"}`,
+    email_sent: emailSent,
+    telegram_sent: telegramSent,
+    mailto_url: emailSent ? undefined : mailtoUrl,
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(req) });
@@ -5202,7 +5333,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "support-submit" && req.method === "POST") {
-      return await handleSupportSubmit(req);
+      return await handleSupportSubmitV2(req);
     }
 
     if (action === "stream") {
