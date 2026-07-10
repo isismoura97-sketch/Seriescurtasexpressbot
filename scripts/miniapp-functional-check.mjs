@@ -585,6 +585,9 @@ async function main() {
       playerControls: Boolean(document.querySelector('#playerControls')),
       playerSeekInput: Boolean(document.querySelector('#playerSeekInput')),
       playerVolumeInput: Boolean(document.querySelector('#playerVolumeInput')),
+      supportButton: Boolean(document.querySelector('#supportBtn')),
+      supportOverlay: Boolean(document.querySelector('#supportOverlay')),
+      supportForm: Boolean(document.querySelector('#supportForm')),
       coverFallbacks: [
         document.querySelector('#catalogGrid .card[data-id="814e3fba-38ce-47d5-b554-9e6b26c6eb58"] img')?.getAttribute('src') || '',
         document.querySelector('#catalogGrid .card[data-id="e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15"] img')?.getAttribute('src') || '',
@@ -748,6 +751,7 @@ async function main() {
     if (!initial.appJs.includes('20260707-03')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
+    if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
     if (!initial.groupTitles.includes('Séries Gratuitas') || !initial.groupTitles.includes('Séries Pagas')) failures.push(`catalog groups missing: ${initial.groupTitles.join(', ')}`);
     if (!initial.groupCounts.includes('8 títulos') || !initial.groupCounts.includes('1 título')) failures.push(`catalog group counts unexpected: ${initial.groupCounts.join(', ')}`);
     if (!initial.paidCardAction.includes('Comprar')) failures.push(`paid card action before payment: ${initial.paidCardAction}`);

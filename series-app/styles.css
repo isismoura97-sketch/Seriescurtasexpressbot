@@ -247,6 +247,49 @@ body.light-mode .header.scrolled {
     display: none;
 }
 
+.support-btn {
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(42,171,238,0.28);
+    background: linear-gradient(135deg, rgba(42,171,238,0.18), rgba(255,215,0,0.12));
+    color: var(--text-main);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.2);
+}
+
+.support-btn i {
+    color: #8fd8ff;
+}
+
+.support-btn strong {
+    min-width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255,215,0,0.16);
+    color: var(--primary);
+    font-size: 14px;
+    line-height: 1;
+}
+
+.support-btn:hover {
+    background: linear-gradient(135deg, rgba(42,171,238,0.28), rgba(255,215,0,0.2));
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(42,171,238,0.18);
+}
+
+.support-btn span {
+    white-space: nowrap;
+}
+
 /* ====================== HERO ====================== */
 .hero {
     position: relative;
@@ -1065,6 +1108,95 @@ body.light-mode .modal-title {
 .modal-actions .btn {
     width: 100%;
     min-width: 0;
+}
+
+/* ====================== SUPPORT ====================== */
+.support-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10060;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(7, 14, 26, 0.82);
+    backdrop-filter: blur(12px);
+}
+
+.support-overlay.active {
+    display: flex;
+}
+
+.support-panel {
+    width: min(760px, 100%);
+    max-height: 92vh;
+    overflow-y: auto;
+    border-radius: 24px;
+    border: 1px solid rgba(42,171,238,0.2);
+    background:
+        radial-gradient(circle at top right, rgba(42,171,238,0.14), transparent 35%),
+        linear-gradient(145deg, rgba(11,24,43,0.98), rgba(22,18,64,0.98));
+    box-shadow: 0 28px 80px rgba(0,0,0,0.65);
+    padding: 28px;
+}
+
+.support-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.support-panel-head h2 {
+    color: var(--text-main);
+    font-size: clamp(1.5rem, 4vw, 2.1rem);
+    margin-bottom: 8px;
+}
+
+.support-panel-head p {
+    color: var(--text-dim);
+    margin: 0;
+    max-width: 62ch;
+}
+
+.support-form {
+    display: grid;
+    gap: 16px;
+}
+
+.support-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.support-span-2 {
+    grid-column: span 2;
+}
+
+.support-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.support-actions .btn {
+    width: 100%;
+}
+
+.support-status {
+    min-height: 22px;
+    color: var(--text-dim);
+    font-size: 14px;
+}
+
+.support-status.success {
+    color: #98f5b1;
+}
+
+.support-status.error {
+    color: #ff9b9b;
 }
 
 /* ====================== BUTTONS ====================== */
@@ -2898,6 +3030,10 @@ body.light-mode .cart-item {
         padding: 20px;
     }
 
+    .support-panel {
+        padding: 20px;
+    }
+
     .owner-hero-top {
         flex-direction: column;
     }
@@ -2916,6 +3052,10 @@ body.light-mode .cart-item {
     .owner-panel-head {
         flex-direction: column;
         align-items: stretch;
+    }
+
+    .support-btn span {
+        display: none;
     }
 
     .owner-hero-layout {
@@ -2972,6 +3112,15 @@ body.light-mode .cart-item {
         width: 100%;
         max-width: 180px;
         height: 140px;
+    }
+
+    .support-grid,
+    .support-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .support-span-2 {
+        grid-column: auto;
     }
 
     .owner-side-item {

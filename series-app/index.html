@@ -229,6 +229,50 @@
         </div>
     </div>
 
+    <!-- ==================== SUPPORT ==================== -->
+    <div class="support-overlay" id="supportOverlay" role="dialog" aria-modal="true" aria-labelledby="supportTitle">
+        <div class="support-panel">
+            <div class="support-panel-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-headset"></i> Suporte</span>
+                    <h2 id="supportTitle">Precisa de ajuda?</h2>
+                    <p>Envie um requerimento com seu e-mail, assunto e descrição do problema. A equipe de suporte recebe a solicitação diretamente.</p>
+                </div>
+                <button class="icon-btn" id="supportCloseBtn" type="button" aria-label="Fechar suporte">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form class="support-form" id="supportForm">
+                <div class="support-grid">
+                    <label class="payment-field">
+                        <span>Seu e-mail</span>
+                        <input type="email" id="supportEmailInput" name="email" placeholder="seu@email.com" autocomplete="email" inputmode="email" required>
+                    </label>
+                    <label class="payment-field">
+                        <span>Assunto</span>
+                        <input type="text" id="supportSubjectInput" name="subject" placeholder="Descreva em poucas palavras" minlength="3" maxlength="120" required>
+                    </label>
+                    <label class="payment-field support-span-2">
+                        <span>Descrição do problema</span>
+                        <textarea id="supportDescriptionInput" name="description" rows="6" placeholder="Explique o que aconteceu, em qual tela, e qualquer detalhe que ajude o suporte." minlength="20" maxlength="4000" required></textarea>
+                    </label>
+                    <label class="payment-field support-span-2">
+                        <span>Contexto opcional</span>
+                        <input type="text" id="supportContextInput" name="context" placeholder="Ex.: pedido, série, horário, captura de tela ou outro detalhe">
+                    </label>
+                </div>
+                <div class="support-actions">
+                    <button class="btn btn-secondary" id="supportCancelBtn" type="button">
+                        <i class="fas fa-xmark"></i> Cancelar
+                    </button>
+                    <button class="btn btn-primary" id="supportSubmitBtn" type="submit">
+                        <i class="fas fa-paper-plane"></i> Enviar solicitação
+                    </button>
+                </div>
+                <div class="support-status" id="supportStatus"></div>
+            </form>
+        </div>
+    </div>
     <!-- ==================== HEADER ==================== -->
     <header class="header" id="header" role="banner">
         <a href="#" class="logo" aria-label="Início">
@@ -236,6 +280,11 @@
             <span>SÉRIES EXPRESS</span>
         </a>
         <nav class="header-actions">
+            <button id="supportBtn" class="support-btn" type="button" title="Suporte" aria-label="Precisa de ajuda?">
+                <i class="fas fa-life-ring"></i>
+                <span>Precisa de ajuda?</span>
+                <strong>!</strong>
+            </button>
             <button id="ownerBtn" class="icon-btn owner-btn" title="Área do proprietário" aria-label="Abrir área do proprietário" hidden>
                 <i class="fas fa-crown"></i>
             </button>
@@ -316,3 +365,5 @@
     <script defer src="app.min.js?v=20260707-03"></script>
 </body>
 </html>
+
+

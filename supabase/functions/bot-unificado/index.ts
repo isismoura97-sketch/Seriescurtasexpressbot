@@ -14,6 +14,9 @@ const TELEGRAM_BOT_USERNAME = (
   Deno.env.get("TELEGRAM_BOT_USERNAME") ??
   SUPPORT_URL.replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, "")
 ).trim();
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
+const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
+const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "Séries Curtas Express <onboarding@resend.dev>";
 const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260707-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
@@ -219,6 +222,98 @@ function buildBotStartUrl(payload: string) {
   return url.toString();
 }
 
+function buildSupportMailtoUrl(input: {
+  email: string;
+  subject: string;
+  description: string;
+  context?: string;
+}) {
+  const lines = [
+    "Nova solicitação de suporte enviada pelo Mini App.",
+    "",
+    `E-mail do usuário: ${input.email || "não informado"}`,
+    `Assunto: ${input.subject || "não informado"}`,
+    `Descrição: ${input.description || "não informado"}`,
+  ];
+
+  if (input.context) {
+    lines.push("", `Contexto: ${input.context}`);
+  }
+
+  const body = lines.join("\n");
+  return `mailto:${encodeURIComponent(SUPPORT_INBOX_EMAIL)}?subject=${encodeURIComponent(`[Suporte Mini App] ${input.subject || "Solicitação"}`)}&body=${encodeURIComponent(body)}`;
+}
+
+async function sendSupportEmail(input: {
+  email: string;
+  subject: string;
+  description: string;
+  context?: string;
+  telegramUserId: string;
+  telegramUserName?: string;
+  telegramName?: string;
+}) {
+  if (!RESEND_API_KEY) {
+    return { ok: false as const, mailtoUrl: buildSupportMailtoUrl(input) };
+  }
+
+  const subject = `[Suporte Mini App] ${input.subject}`.slice(0, 140);
+  const plainTextLines = [
+    "Nova solicitação de suporte enviada pelo Mini App.",
+    "",
+    `E-mail do usuário: ${input.email}`,
+    `Assunto: ${input.subject}`,
+    `Descrição: ${input.description}`,
+  ];
+
+  if (input.context) {
+    plainTextLines.push("", `Contexto: ${input.context}`);
+  }
+
+  plainTextLines.push("", `Telegram ID: ${input.telegramUserId}`);
+  if (input.telegramName) {
+    plainTextLines.push(`Nome Telegram: ${input.telegramName}`);
+  }
+  if (input.telegramUserName) {
+    plainTextLines.push(`Username: @${input.telegramUserName.replace(/^@/, "")}`);
+  }
+
+  const htmlLines = [
+    "<p>Nova solicitação de suporte enviada pelo Mini App.</p>",
+    `<p><strong>E-mail do usuário:</strong> ${escapeHtml(input.email)}</p>`,
+    `<p><strong>Assunto:</strong> ${escapeHtml(input.subject)}</p>`,
+    `<p><strong>Descrição:</strong><br>${escapeHtml(input.description).replace(/\n/g, "<br>")}</p>`,
+    input.context ? `<p><strong>Contexto:</strong> ${escapeHtml(input.context)}</p>` : "",
+    `<p><strong>Telegram ID:</strong> ${escapeHtml(input.telegramUserId)}</p>`,
+    input.telegramName ? `<p><strong>Nome Telegram:</strong> ${escapeHtml(input.telegramName)}</p>` : "",
+    input.telegramUserName ? `<p><strong>Username:</strong> @${escapeHtml(input.telegramUserName.replace(/^@/, ""))}</p>` : "",
+  ].filter(Boolean);
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${RESEND_API_KEY}`,
+    },
+    body: JSON.stringify({
+      from: SUPPORT_FROM_EMAIL,
+      to: SUPPORT_INBOX_EMAIL,
+      reply_to: input.email,
+      subject,
+      html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0b1a2f;">${htmlLines.join("")}</div>`,
+      text: plainTextLines.join("\n"),
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const error = data?.error || data?.message || `HTTP ${res.status}`;
+    throw new Error(String(error));
+  }
+
+  return { ok: true as const, id: typeof data?.id === "string" ? data.id : "" };
+}
+
 function buildMainBotReplyMarkup() {
   return stringifyJson({
     inline_keyboard: [
@@ -227,6 +322,15 @@ function buildMainBotReplyMarkup() {
       [{ text: "Suporte", url: SUPPORT_URL }],
     ],
   });
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function buildSeriesRowFilter(seriesId: string) {
@@ -4995,6 +5099,84 @@ async function handleOwnerSeriesDelete(req: Request) {
   });
 }
 
+async function handleSupportSubmit(req: Request) {
+  const contentType = (req.headers.get("content-type") || "").toLowerCase();
+  let body: Record<string, unknown> | null = null;
+
+  if (contentType.includes("application/json")) {
+    body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  } else {
+    const form = await req.formData().catch(() => null);
+    body = form ? Object.fromEntries(form.entries()) : null;
+  }
+
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  let validated: { userId: string; user: Record<string, unknown> };
+  try {
+    validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? "")) as { userId: string; user: Record<string, unknown> };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return json(req, { error: message }, 401);
+  }
+
+  const email = String(body.email ?? "").trim();
+  const subject = String(body.subject ?? "").trim();
+  const description = String(body.description ?? "").trim();
+  const context = String(body.context ?? "").trim();
+  const user = validated.user || {};
+  const telegramUserId = String(validated.userId || user.id || "").trim();
+  const telegramName = [String(user.first_name ?? "").trim(), String(user.last_name ?? "").trim()].filter(Boolean).join(" ");
+  const telegramUserName = String(user.username ?? "").trim();
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return json(req, { error: "Informe um e-mail válido" }, 400);
+  }
+  if (subject.length < 3) {
+    return json(req, { error: "Informe um assunto" }, 400);
+  }
+  if (description.length < 20) {
+    return json(req, { error: "Descreva melhor o problema" }, 400);
+  }
+
+  if (!RESEND_API_KEY) {
+    return json(req, {
+      ok: false,
+      error: "Envio automático de e-mail ainda não configurado neste ambiente.",
+      mailto_url: buildSupportMailtoUrl({ email, subject, description, context }),
+    });
+  }
+
+  const sent = await sendSupportEmail({
+    email,
+    subject,
+    description,
+    context,
+    telegramUserId,
+    telegramUserName,
+    telegramName,
+  }).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false as const, error: message, mailtoUrl: buildSupportMailtoUrl({ email, subject, description, context }) };
+  });
+
+  if (!sent.ok) {
+    const sentError = "error" in sent ? sent.error : "";
+    return json(req, {
+      ok: false,
+      error: sentError || "Não foi possível enviar o e-mail de suporte.",
+      mailto_url: sent.mailtoUrl || buildSupportMailtoUrl({ email, subject, description, context }),
+    }, 502);
+  }
+
+  return json(req, {
+    ok: true,
+    support_id: `${Date.now()}-${telegramUserId || "anon"}`,
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(req) });
@@ -5017,6 +5199,10 @@ Deno.serve(async (req) => {
       }
       const series = await getSeriesList(userId);
       return json(req, series);
+    }
+
+    if (action === "support-submit" && req.method === "POST") {
+      return await handleSupportSubmit(req);
     }
 
     if (action === "stream") {
@@ -5103,3 +5289,4 @@ Deno.serve(async (req) => {
     return json(req, { error: error instanceof Error ? error.message : "Erro interno" }, 500);
   }
 });
+

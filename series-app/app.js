@@ -25,6 +25,7 @@ const BUYER_EMAIL_STORAGE_KEY = 'checkout_buyer_email';
 const ACTIVE_PAYMENT_ORDER_STORAGE_KEY = 'checkout_active_order';
 const FAVORITES_STORAGE_KEY = 'series_favorites';
 const STATIC_PIX_QR_IMAGE_URL = `assets/pix-qr.png?v=${BUILD_VERSION}`;
+const SUPPORT_INBOX_EMAIL = 'isismoura97@gmail.com';
 const COVER_FALLBACKS = {
     '814e3fba-38ce-47d5-b554-9e6b26c6eb58': `assets/covers/marido-pobre-bilionario.webp?v=${BUILD_VERSION}`,
     'e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15': `assets/covers/o-quaterback-perdido-retorna.webp?v=${BUILD_VERSION}`,
@@ -78,6 +79,7 @@ let ownerDashboardSnapshot = null;
 let ownerSeriesSearchTerm = '';
 let ownerSeriesFilterMode = 'all';
 let ownerSessionAuthorized = false;
+let supportRequestPending = false;
 
 // ==================== SHARED UTILITIES ====================
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
@@ -362,6 +364,7 @@ const DOM = {
     toastContainer: document.getElementById('toastContainer'),
     header: document.getElementById('header'),
     themeIcon: document.getElementById('themeIcon'),
+    supportBtn: document.getElementById('supportBtn'),
     ownerBtn: document.getElementById('ownerBtn'),
     ownerOverlay: document.getElementById('ownerOverlay'),
     ownerCloseBtn: document.getElementById('ownerCloseBtn'),
@@ -369,7 +372,17 @@ const DOM = {
     ownerPasswordInput: document.getElementById('ownerPasswordInput'),
     ownerLoginBtn: document.getElementById('ownerLoginBtn'),
     ownerStatus: document.getElementById('ownerStatus'),
-    ownerDashboard: document.getElementById('ownerDashboard')
+    ownerDashboard: document.getElementById('ownerDashboard'),
+    supportOverlay: document.getElementById('supportOverlay'),
+    supportCloseBtn: document.getElementById('supportCloseBtn'),
+    supportForm: document.getElementById('supportForm'),
+    supportEmailInput: document.getElementById('supportEmailInput'),
+    supportSubjectInput: document.getElementById('supportSubjectInput'),
+    supportDescriptionInput: document.getElementById('supportDescriptionInput'),
+    supportContextInput: document.getElementById('supportContextInput'),
+    supportSubmitBtn: document.getElementById('supportSubmitBtn'),
+    supportCancelBtn: document.getElementById('supportCancelBtn'),
+    supportStatus: document.getElementById('supportStatus')
 };
 
 // ==================== UTILITIES ====================
@@ -863,6 +876,100 @@ function showToast(message, type = 'info') {
     }, 4000);
 }
 
+function setSupportStatus(message, type = 'info') {
+    if (!DOM.supportStatus) return;
+    DOM.supportStatus.textContent = message;
+    DOM.supportStatus.className = `support-status ${type}`.trim();
+}
+
+function openSupportForm() {
+    if (!DOM.supportOverlay) return;
+    DOM.supportOverlay.classList.add('active');
+    document.body.classList.add('modal-open');
+    setSupportStatus('', 'info');
+    if (DOM.supportEmailInput && !DOM.supportEmailInput.value) {
+        DOM.supportEmailInput.value = buyerEmail || '';
+    }
+    DOM.supportEmailInput?.focus();
+}
+
+function closeSupportForm() {
+    DOM.supportOverlay?.classList.remove('active');
+    if (!DOM.modalOverlay?.classList.contains('active') && !DOM.cartDrawer?.classList.contains('active') && !DOM.ownerOverlay?.classList.contains('active')) {
+        document.body.classList.remove('modal-open');
+    }
+}
+
+function buildSupportPayload() {
+    return {
+        init_data: tg?.initData || '',
+        email: String(DOM.supportEmailInput?.value || '').trim(),
+        subject: String(DOM.supportSubjectInput?.value || '').trim(),
+        description: String(DOM.supportDescriptionInput?.value || '').trim(),
+        context: String(DOM.supportContextInput?.value || '').trim(),
+    };
+}
+
+async function submitSupportRequest(event) {
+    event.preventDefault();
+    if (supportRequestPending) return;
+
+    const payload = buildSupportPayload();
+    if (!payload.email || !DOM.supportEmailInput?.checkValidity()) {
+        setSupportStatus('Informe um e-mail válido.', 'error');
+        DOM.supportEmailInput?.focus();
+        return;
+    }
+    if (!payload.subject || payload.subject.length < 3) {
+        setSupportStatus('Descreva um assunto curto para o pedido.', 'error');
+        DOM.supportSubjectInput?.focus();
+        return;
+    }
+    if (!payload.description || payload.description.length < 20) {
+        setSupportStatus('Conte um pouco mais sobre o problema.', 'error');
+        DOM.supportDescriptionInput?.focus();
+        return;
+    }
+
+    supportRequestPending = true;
+    if (DOM.supportSubmitBtn) {
+        DOM.supportSubmitBtn.disabled = true;
+        DOM.supportSubmitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+    }
+    setSupportStatus('Enviando solicitação...', 'info');
+
+    try {
+        const response = await requestSupportSubmit(payload);
+        if (response?.ok) {
+            setSupportStatus('Solicitação enviada com sucesso.', 'success');
+            showToast('Suporte enviado. Obrigada!', 'success');
+            DOM.supportForm?.reset();
+            setTimeout(() => closeSupportForm(), 700);
+            return;
+        }
+
+        if (response?.mailto_url) {
+            openExternalLink(response.mailto_url);
+            setSupportStatus('Seu aplicativo de e-mail foi aberto com a solicitação.', 'success');
+            showToast('Abrimos o e-mail para você concluir o envio.', 'info');
+            return;
+        }
+
+        throw new Error(response?.error || 'Não foi possível enviar a solicitação.');
+    } catch (error) {
+        const mailtoUrl = buildSupportMailtoUrl(payload);
+        setSupportStatus(error?.message || 'Falha ao enviar a solicitação.', 'error');
+        showToast('Não consegui enviar automaticamente. Abrindo o e-mail de suporte.', 'info');
+        openExternalLink(mailtoUrl);
+    } finally {
+        supportRequestPending = false;
+        if (DOM.supportSubmitBtn) {
+            DOM.supportSubmitBtn.disabled = false;
+            DOM.supportSubmitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar solicitação';
+        }
+    }
+}
+
 function formatFileSize(bytes) {
     const value = Number(bytes || 0);
     if (!Number.isFinite(value) || value <= 0) return '0 B';
@@ -1241,6 +1348,56 @@ async function requestJson(url, payload, timeout = 20000) {
             throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
         }
         return data;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+function buildSupportMailtoUrl({ email, subject, description, context = '' }) {
+    const lines = [
+        'Nova solicitação de suporte enviada pelo Mini App.',
+        '',
+        `E-mail do usuário: ${email || 'não informado'}`,
+        `Assunto: ${subject || 'não informado'}`,
+        `Descrição: ${description || 'não informado'}`,
+    ];
+
+    if (context) {
+        lines.push('', `Contexto: ${context}`);
+    }
+
+    if (tg?.initDataUnsafe?.user) {
+        const user = tg.initDataUnsafe.user;
+        lines.push(
+            '',
+            `Telegram: ${user.first_name || ''} ${user.last_name || ''}`.trim(),
+            `Telegram ID: ${user.id || ''}`,
+            user.username ? `@${user.username}` : '',
+        );
+    }
+
+    const body = lines.filter(Boolean).join('\n');
+    return `mailto:${encodeURIComponent(SUPPORT_INBOX_EMAIL)}?subject=${encodeURIComponent(`[Suporte Mini App] ${subject || 'Solicitação'}`)}&body=${encodeURIComponent(body)}`;
+}
+
+async function requestSupportSubmit(payload) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    try {
+        const res = await fetch(`${API_URL}?action=support-submit`, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json'
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
+
+        const data = await res.json().catch(() => ({}));
+        return { ok: res.ok && data?.ok !== false, status: res.status, ...data };
     } finally {
         clearTimeout(timeoutId);
     }
@@ -3053,6 +3210,14 @@ function setupEventListeners() {
         DOM.header?.classList.toggle('scrolled', window.scrollY > 50);
     });
 
+    DOM.supportBtn?.addEventListener('click', openSupportForm);
+    DOM.supportCloseBtn?.addEventListener('click', closeSupportForm);
+    DOM.supportCancelBtn?.addEventListener('click', closeSupportForm);
+    DOM.supportForm?.addEventListener('submit', submitSupportRequest);
+    DOM.supportOverlay?.addEventListener('click', (e) => {
+        if (e.target.id === 'supportOverlay') closeSupportForm();
+    });
+
     document.getElementById('themeBtn')?.addEventListener('click', toggleTheme);
     DOM.ownerBtn?.addEventListener('click', openOwnerArea);
     DOM.ownerCloseBtn?.addEventListener('click', closeOwnerArea);
@@ -3104,7 +3269,8 @@ function setupEventListeners() {
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
-            if (DOM.playerOverlay?.classList.contains('active')) closePlayer();
+            if (DOM.supportOverlay?.classList.contains('active')) closeSupportForm();
+            else if (DOM.playerOverlay?.classList.contains('active')) closePlayer();
             else if (DOM.ownerOverlay?.classList.contains('active')) closeOwnerArea();
             else if (DOM.modalOverlay?.classList.contains('active')) closeModal();
             else if (DOM.cartDrawer?.classList.contains('active')) toggleCart(false);
