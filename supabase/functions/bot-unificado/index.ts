@@ -16,7 +16,7 @@ const TELEGRAM_BOT_USERNAME = (
 ).trim();
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
-const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "Séries Curtas Express <onboarding@resend.dev>";
+const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "SÃ©ries Curtas Express <onboarding@resend.dev>";
 const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260707-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
@@ -229,11 +229,11 @@ function buildSupportMailtoUrl(input: {
   context?: string;
 }) {
   const lines = [
-    "Nova solicitação de suporte enviada pelo Mini App.",
+    "Nova solicitaÃ§Ã£o de suporte enviada pelo Mini App.",
     "",
-    `E-mail do usuário: ${input.email || "não informado"}`,
-    `Assunto: ${input.subject || "não informado"}`,
-    `Descrição: ${input.description || "não informado"}`,
+    `E-mail do usuÃ¡rio: ${input.email || "nÃ£o informado"}`,
+    `Assunto: ${input.subject || "nÃ£o informado"}`,
+    `DescriÃ§Ã£o: ${input.description || "nÃ£o informado"}`,
   ];
 
   if (input.context) {
@@ -241,7 +241,7 @@ function buildSupportMailtoUrl(input: {
   }
 
   const body = lines.join("\n");
-  return `mailto:${encodeURIComponent(SUPPORT_INBOX_EMAIL)}?subject=${encodeURIComponent(`[Suporte Mini App] ${input.subject || "Solicitação"}`)}&body=${encodeURIComponent(body)}`;
+  return `mailto:${encodeURIComponent(SUPPORT_INBOX_EMAIL)}?subject=${encodeURIComponent(`[Suporte Mini App] ${input.subject || "SolicitaÃ§Ã£o"}`)}&body=${encodeURIComponent(body)}`;
 }
 
 async function sendSupportEmail(input: {
@@ -259,11 +259,11 @@ async function sendSupportEmail(input: {
 
   const subject = `[Suporte Mini App] ${input.subject}`.slice(0, 140);
   const plainTextLines = [
-    "Nova solicitação de suporte enviada pelo Mini App.",
+    "Nova solicitaÃ§Ã£o de suporte enviada pelo Mini App.",
     "",
-    `E-mail do usuário: ${input.email}`,
+    `E-mail do usuÃ¡rio: ${input.email}`,
     `Assunto: ${input.subject}`,
-    `Descrição: ${input.description}`,
+    `DescriÃ§Ã£o: ${input.description}`,
   ];
 
   if (input.context) {
@@ -279,10 +279,10 @@ async function sendSupportEmail(input: {
   }
 
   const htmlLines = [
-    "<p>Nova solicitação de suporte enviada pelo Mini App.</p>",
-    `<p><strong>E-mail do usuário:</strong> ${escapeHtml(input.email)}</p>`,
+    "<p>Nova solicitaÃ§Ã£o de suporte enviada pelo Mini App.</p>",
+    `<p><strong>E-mail do usuÃ¡rio:</strong> ${escapeHtml(input.email)}</p>`,
     `<p><strong>Assunto:</strong> ${escapeHtml(input.subject)}</p>`,
-    `<p><strong>Descrição:</strong><br>${escapeHtml(input.description).replace(/\n/g, "<br>")}</p>`,
+    `<p><strong>DescriÃ§Ã£o:</strong><br>${escapeHtml(input.description).replace(/\n/g, "<br>")}</p>`,
     input.context ? `<p><strong>Contexto:</strong> ${escapeHtml(input.context)}</p>` : "",
     `<p><strong>Telegram ID:</strong> ${escapeHtml(input.telegramUserId)}</p>`,
     input.telegramName ? `<p><strong>Nome Telegram:</strong> ${escapeHtml(input.telegramName)}</p>` : "",
@@ -327,12 +327,17 @@ async function sendSupportTelegramNotification(input: {
     return { ok: false as const, skipped: true };
   }
 
+  const ticketId = `${Date.now()}`;
   const lines = [
-    "<b>Nova solicitaÃ§Ã£o de suporte</b>",
+    "🧾 <b>Novo ticket de suporte</b>",
+    "",
+    "<b>Status:</b> novo",
+    "<b>Origem:</b> Mini App",
+    `<b>Ticket:</b> <code>${escapeHtml(ticketId)}</code>`,
     "",
     `<b>E-mail:</b> ${escapeHtml(input.email)}`,
     `<b>Assunto:</b> ${escapeHtml(input.subject)}`,
-    `<b>DescriÃ§Ã£o:</b>`,
+    "<b>Descrição:</b>",
     escapeHtml(input.description),
   ];
 
@@ -340,7 +345,7 @@ async function sendSupportTelegramNotification(input: {
     lines.push("", `<b>Contexto:</b> ${escapeHtml(input.context)}`);
   }
 
-  lines.push("", `<b>Telegram ID:</b> ${escapeHtml(input.telegramUserId)}`);
+  lines.push("", `<b>Telegram ID:</b> <code>${escapeHtml(input.telegramUserId)}</code>`);
 
   if (input.telegramName) {
     lines.push(`<b>Nome Telegram:</b> ${escapeHtml(input.telegramName)}`);
@@ -349,6 +354,8 @@ async function sendSupportTelegramNotification(input: {
   if (input.telegramUserName) {
     lines.push(`<b>Username:</b> @${escapeHtml(input.telegramUserName.replace(/^@/, ""))}`);
   }
+
+  lines.push("", "────────────────────", "Responda este ticket pelo bot ou encaminhe para a equipe interna.");
 
   const text = lines.join("\n").slice(0, 3900);
 
@@ -365,7 +372,7 @@ async function sendSupportTelegramNotification(input: {
 function buildMainBotReplyMarkup() {
   return stringifyJson({
     inline_keyboard: [
-      [{ text: "Catálogo", url: CATALOG_URL }],
+      [{ text: "CatÃ¡logo", url: CATALOG_URL }],
       [{ text: "Mini App", web_app: { url: SERIES_WEBAPP_URL } }],
       [{ text: "Suporte", url: SUPPORT_URL }],
     ],
@@ -546,7 +553,7 @@ function stringifyJson(value: unknown) {
 
 async function supabaseRestRequest(path: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃ£o configurado");
   }
 
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -646,7 +653,7 @@ function getStorageObjectName(seriesId: string, kind: string, fileName: string) 
 
 async function uploadStorageObject(bucket: string, objectPath: string, file: File) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃ£o configurado");
   }
 
   const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStorageObjectPath(objectPath)}`;
@@ -689,7 +696,7 @@ async function uploadStorageObject(bucket: string, objectPath: string, file: Fil
 
 async function uploadStorageStream(bucket: string, objectPath: string, req: Request) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃ£o configurado");
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃƒÂ£o configurado");
   }
 
   if (!req.body) {
@@ -743,7 +750,7 @@ async function uploadStorageStream(bucket: string, objectPath: string, req: Requ
 
 async function createStorageSignedUploadUrl(bucket: string, objectPath: string, upsert = true) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃ£o configurado");
   }
 
   const url = `${SUPABASE_URL}/storage/v1/object/upload/sign/${encodeURIComponent(bucket)}/${encodeStorageObjectPath(objectPath)}`;
@@ -784,7 +791,7 @@ async function createStorageSignedUploadUrl(bucket: string, objectPath: string, 
     : "";
 
   if (!signedUrl) {
-    throw new Error("Supabase não retornou a URL assinada de upload");
+    throw new Error("Supabase nÃ£o retornou a URL assinada de upload");
   }
 
   return {
@@ -902,8 +909,8 @@ function calculateCheckoutTotal(items: Array<{ quantity: number; price: number }
 
 function buildCheckoutDescription(items: Array<{ title: string }>) {
   const titles = items.map((item) => item.title).filter(Boolean).slice(0, 4);
-  if (!titles.length) return "Compra no Séries Express";
-  return titles.join(" • ").slice(0, 120);
+  if (!titles.length) return "Compra no SÃ©ries Express";
+  return titles.join(" â€¢ ").slice(0, 120);
 }
 
 function formatCurrencyBRL(value: number) {
@@ -930,7 +937,7 @@ function mercadoPagoApiUrl(path: string) {
 
 async function mercadoPagoRequest(path: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
   if (!MERCADO_PAGO_ACCESS_TOKEN) {
-    throw new Error("MERCADO_PAGO_ACCESS_TOKEN não configurado");
+    throw new Error("MERCADO_PAGO_ACCESS_TOKEN nÃ£o configurado");
   }
 
   const res = await fetch(mercadoPagoApiUrl(path), {
@@ -1305,7 +1312,7 @@ function buildProcessingProgressBar(completed: number, total: number) {
   const width = 10;
   const ratio = Math.max(0, Math.min(1, completed / safeTotal));
   const filled = Math.max(0, Math.min(width, Math.round(ratio * width)));
-  return `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
+  return `${"â–ˆ".repeat(filled)}${"â–‘".repeat(width - filled)}`;
 }
 
 function buildDeliveryProgressText(
@@ -1320,7 +1327,7 @@ function buildDeliveryProgressText(
   const lines = [
     "Pagamento confirmado.",
     `Pedido: ${shortOrderId}`,
-    finished ? "Entrega em processamento finalizada." : "Liberando suas séries no Telegram.",
+    finished ? "Entrega em processamento finalizada." : "Liberando suas sÃ©ries no Telegram.",
     `${buildProcessingProgressBar(completed, total)} ${Math.min(completed, total)}/${total}`,
   ];
 
@@ -1331,13 +1338,13 @@ function buildDeliveryProgressText(
   if (finished) {
     lines.push(
       failedCount > 0
-        ? "Parte do pedido foi entregue. Se faltar algo, abra o catálogo e tente novamente."
-        : "Suas séries já estão liberadas aqui no bot.",
+        ? "Parte do pedido foi entregue. Se faltar algo, abra o catÃ¡logo e tente novamente."
+        : "Suas sÃ©ries jÃ¡ estÃ£o liberadas aqui no bot.",
     );
   }
 
   if (failedCount > 0) {
-    lines.push(`Pendências: ${failedCount}`);
+    lines.push(`PendÃªncias: ${failedCount}`);
   }
 
   return lines.join("\n");
@@ -1388,7 +1395,7 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
   ];
 
   if (method === "mercado_pago_link" && typeof order.checkout_url === "string" && order.checkout_url) {
-    baseLines.push("Abra o botão abaixo para concluir o pagamento.");
+    baseLines.push("Abra o botÃ£o abaixo para concluir o pagamento.");
     await telegramRequest("sendMessage", {
       chat_id: chatId,
       text: baseLines.join("\n"),
@@ -1400,7 +1407,7 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
   }
 
   if (method === "pix_qr") {
-    baseLines.push("O QR Code do Pix está disponível no mini app.");
+    baseLines.push("O QR Code do Pix estÃ¡ disponÃ­vel no mini app.");
     if (typeof order.ticket_url === "string" && order.ticket_url) {
       baseLines.push(`Link alternativo: ${order.ticket_url}`);
     }
@@ -1415,8 +1422,8 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
   }
 
   if (method === "telegram_checkout") {
-    baseLines.push("O checkout guiado já está pronto dentro do Telegram.");
-    baseLines.push("Toque no botão para abrir o pagamento e concluir o pedido.");
+    baseLines.push("O checkout guiado jÃ¡ estÃ¡ pronto dentro do Telegram.");
+    baseLines.push("Toque no botÃ£o para abrir o pagamento e concluir o pedido.");
     await telegramRequest("sendMessage", {
       chat_id: chatId,
       text: baseLines.join("\n"),
@@ -1437,7 +1444,7 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
     chat_id: chatId,
     text: baseLines.join("\n"),
     reply_markup: JSON.stringify({
-      inline_keyboard: [[{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]],
+      inline_keyboard: [[{ text: "Abrir catÃ¡logo", web_app: { url: SERIES_WEBAPP_URL } }]],
     }),
   });
 }
@@ -1469,7 +1476,7 @@ async function sendPaymentConfirmationMessage(
     "Pago com sucesso.",
     `Pedido: ${shortOrderId}`,
     `Valor: ${amountText}`,
-    `Método: ${method === "pix_qr" ? "Pix" : method === "telegram_checkout" ? "Telegram Checkout" : "Mercado Pago"}`,
+    `MÃ©todo: ${method === "pix_qr" ? "Pix" : method === "telegram_checkout" ? "Telegram Checkout" : "Mercado Pago"}`,
   ];
 
   if (statusDetail) {
@@ -1489,11 +1496,11 @@ async function sendPaymentConfirmationMessage(
   const buttons: Array<Array<{ text: string; url?: string; web_app?: { url: string } }>> = [];
   if (primarySeriesId) {
     buttons.push([{
-      text: primarySeriesTitle ? `Assistir ${primarySeriesTitle}` : "Abrir série",
+      text: primarySeriesTitle ? `Assistir ${primarySeriesTitle}` : "Abrir sÃ©rie",
       web_app: { url: buildSeriesLaunchUrl(primarySeriesId) },
     }]);
   }
-  buttons.push([{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]);
+  buttons.push([{ text: "Abrir catÃ¡logo", web_app: { url: SERIES_WEBAPP_URL } }]);
 
   await telegramRequest("sendMessage", {
     chat_id: chatId,
@@ -1597,7 +1604,7 @@ async function validateMercadoPagoWebhookSignature(req: Request, payload: Record
   const { ts, v1 } = parseMercadoPagoSignature(signatureHeader);
   if (!ts || !v1) {
     if (isPayment) {
-      throw new Error("Assinatura do webhook inválida");
+      throw new Error("Assinatura do webhook invÃ¡lida");
     }
 
     return { validated: false, skipped: true, reason: "signature_headers_incomplete" };
@@ -1607,7 +1614,7 @@ async function validateMercadoPagoWebhookSignature(req: Request, payload: Record
   const expected = await hashMercadoPagoWebhookManifest(MERCADO_PAGO_WEBHOOK_SECRET, manifest);
 
   if (!timingSafeEqualHex(expected, v1)) {
-    throw new Error("Assinatura do webhook inválida");
+    throw new Error("Assinatura do webhook invÃ¡lida");
   }
 
   return { validated: true, skipped: false };
@@ -1662,7 +1669,7 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
 async function handlePaymentCreate(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
-    return json(req, { error: "Corpo da requisição inválido" }, 400);
+    return json(req, { error: "Corpo da requisiÃ§Ã£o invÃ¡lido" }, 400);
   }
 
   let userId = "";
@@ -1689,7 +1696,7 @@ async function handlePaymentCreate(req: Request) {
   const chatId = String(body.chat_id ?? userId);
 
   if (paymentMethod === "pix_qr" && !buyerEmail) {
-    return json(req, { error: "Informe um e-mail válido para gerar o Pix." }, 400);
+    return json(req, { error: "Informe um e-mail vÃ¡lido para gerar o Pix." }, 400);
   }
 
   let order = await createPaymentOrderRecord({
@@ -1787,7 +1794,7 @@ async function handlePaymentCreate(req: Request) {
 async function handlePaymentStatus(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
-    return json(req, { error: "Corpo da requisição inválido" }, 400);
+    return json(req, { error: "Corpo da requisiÃ§Ã£o invÃ¡lido" }, 400);
   }
 
   const orderId = String(body.order_id ?? body.orderId ?? "").trim();
@@ -1807,7 +1814,7 @@ async function handlePaymentStatus(req: Request) {
 
   const order = await getPaymentOrderById(orderId);
   if (!order) {
-    return json(req, { error: "Pedido não encontrado" }, 404);
+    return json(req, { error: "Pedido nÃ£o encontrado" }, 404);
   }
 
   if (String(order.user_id) !== userId) {
@@ -1842,7 +1849,7 @@ async function handlePaymentStatus(req: Request) {
 async function handleMercadoPagoWebhook(req: Request, url: URL) {
   const payload = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!payload) {
-    return json(req, { ok: false, error: "Webhook inválido" }, 400);
+    return json(req, { ok: false, error: "Webhook invÃ¡lido" }, 400);
   }
 
   try {
@@ -1935,7 +1942,7 @@ async function recordPublicChannelAudit(entry: {
       ]),
     });
   } catch (error) {
-    console.error("[AUDIT] Falha ao registrar entrada do canal público:", error);
+    console.error("[AUDIT] Falha ao registrar entrada do canal pÃºblico:", error);
   }
 }
 
@@ -1974,7 +1981,7 @@ async function recordPublicChannelPost(entry: {
       ]),
     });
   } catch (error) {
-    console.error("[AUDIT] Falha ao registrar post do canal público:", error);
+    console.error("[AUDIT] Falha ao registrar post do canal pÃºblico:", error);
   }
 }
 
@@ -2003,7 +2010,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
   } else {
     if (username.length < 5 || username.length > 24) {
       score += policy.shortUsernamePenalty;
-      reasons.push("Username fora do padrão comum");
+      reasons.push("Username fora do padrÃ£o comum");
     }
 
     if (looksRandomText(username)) {
@@ -2014,7 +2021,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
 
     if (/(.)\1{3,}/.test(username)) {
       score += policy.repeatedUsernamePenalty;
-      reasons.push("Username com repetição excessiva");
+      reasons.push("Username com repetiÃ§Ã£o excessiva");
       strongSignals.push("username_repetido");
     }
   }
@@ -2027,7 +2034,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
 
     if (looksRandomText(displayName.replace(/\s+/g, ""))) {
       score += policy.randomDisplayNamePenalty;
-      reasons.push("Nome parece aleatório");
+      reasons.push("Nome parece aleatÃ³rio");
       strongSignals.push("nome_random");
     }
   } else {
@@ -2037,7 +2044,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
 
   if (!languageCode) {
     score += policy.noLanguagePenalty;
-    reasons.push("Sem código de idioma");
+    reasons.push("Sem cÃ³digo de idioma");
   }
 
   try {
@@ -2048,12 +2055,12 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
     }
   } catch {
     score += 5;
-    reasons.push("Não foi possível verificar foto de perfil");
+    reasons.push("NÃ£o foi possÃ­vel verificar foto de perfil");
   }
 
   if (firstName && lastName && looksRandomText(`${firstName}${lastName}`)) {
     score += policy.randomDisplayNamePenalty;
-    reasons.push("Nome completo parece aleatório");
+    reasons.push("Nome completo parece aleatÃ³rio");
     strongSignals.push("nome_completo_random");
   }
 
@@ -2204,7 +2211,7 @@ async function encryptChallenge(secret: string, payload: Record<string, unknown>
 async function decryptChallenge(secret: string, token: string) {
   const [ivPart, cipherPart] = token.split(".");
   if (!ivPart || !cipherPart) {
-    throw new Error("Token de desafio inválido");
+    throw new Error("Token de desafio invÃ¡lido");
   }
 
   const iv = base64UrlDecode(ivPart);
@@ -2236,7 +2243,7 @@ function buildCaptchaQuestion() {
   const operators = [
     { label: "+", compute: (a: number, b: number) => a + b },
     { label: "-", compute: (a: number, b: number) => a - b },
-    { label: "×", compute: (a: number, b: number) => a * b },
+    { label: "Ã—", compute: (a: number, b: number) => a * b },
   ];
 
   const a = Math.floor(Math.random() * 8) + 2;
@@ -2245,7 +2252,7 @@ function buildCaptchaQuestion() {
   const left = operator.label === "-" && a < b ? b : a;
   const right = operator.label === "-" && a < b ? a : b;
   const answer = String(operator.compute(left, right));
-  const question = `Quanto é ${left} ${operator.label} ${right}?`;
+  const question = `Quanto Ã© ${left} ${operator.label} ${right}?`;
 
   return { question, answer };
 }
@@ -2328,7 +2335,7 @@ async function validateWebAppInitData(initData: string) {
   const expectedHash = Array.from(expectedHashBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
   if (!constantTimeEqual(hash, expectedHash)) {
-    throw new Error("Dados do Telegram inválidos");
+    throw new Error("Dados do Telegram invÃ¡lidos");
   }
 
   const authDate = Number(params.get("auth_date") || "0");
@@ -2338,17 +2345,17 @@ async function validateWebAppInitData(initData: string) {
 
   const age = Math.floor(Date.now() / 1000) - authDate;
   if (age < 0 || age > WEBAPP_MAX_AGE_SECONDS) {
-    throw new Error("Sessão do Telegram expirada");
+    throw new Error("SessÃ£o do Telegram expirada");
   }
 
   const userRaw = params.get("user");
   if (!userRaw) {
-    throw new Error("Usuário do Telegram ausente");
+    throw new Error("UsuÃ¡rio do Telegram ausente");
   }
 
   const user = JSON.parse(userRaw) as { id?: number | string; is_bot?: boolean };
   if (!user?.id || user.is_bot) {
-    throw new Error("Usuário do Telegram inválido");
+    throw new Error("UsuÃ¡rio do Telegram invÃ¡lido");
   }
 
   return { userId: String(user.id), user, authDate };
@@ -2408,9 +2415,9 @@ async function answerChatJoinRequestQuery(
 async function sendCaptchaInvitation(chatId: string | number, webAppUrl: string) {
   return await telegramRequest("sendMessage", {
     chat_id: chatId,
-    text: "Abra a verificação para confirmar sua entrada.",
+    text: "Abra a verificaÃ§Ã£o para confirmar sua entrada.",
     reply_markup: JSON.stringify({
-      inline_keyboard: [[{ text: "Abrir verificação", web_app: { url: webAppUrl } }]],
+      inline_keyboard: [[{ text: "Abrir verificaÃ§Ã£o", web_app: { url: webAppUrl } }]],
     }),
   });
 }
@@ -2523,7 +2530,7 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
         const order = await getPaymentOrderById(orderId);
         if (order) {
           if (String(order.status ?? "").toLowerCase() === "approved") {
-            await sendPaymentConfirmationMessage(order as Record<string, unknown>, { status_detail: "Pagamento já confirmado." });
+            await sendPaymentConfirmationMessage(order as Record<string, unknown>, { status_detail: "Pagamento jÃ¡ confirmado." });
           } else {
             await sendPaymentCreatedMessage(order as Record<string, unknown>);
           }
@@ -2554,7 +2561,7 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
     return json(req, { ok: true, action: "start_welcome_sent" });
   }
 
-  if (/^(?:\/menu|menu|\/catalogo|catalogo|\/catálogo|catálogo|\/ajuda|ajuda|\/help|help)$/i.test(text)) {
+  if (/^(?:\/menu|menu|\/catalogo|catalogo|\/catÃ¡logo|catÃ¡logo|\/ajuda|ajuda|\/help|help)$/i.test(text)) {
     await sendBotWelcomeMessageRich(chatId);
     return json(req, { ok: true, action: "menu_sent" });
   }
@@ -2582,8 +2589,8 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
     await telegramRequest("sendMessage", {
       chat_id: chatId,
       text: [
-        "Envie uma foto, vídeo, documento, áudio ou outro arquivo no privado.",
-        "Eu vou responder com o File_ID e o File Unique ID da mídia enviada.",
+        "Envie uma foto, vÃ­deo, documento, Ã¡udio ou outro arquivo no privado.",
+        "Eu vou responder com o File_ID e o File Unique ID da mÃ­dia enviada.",
       ].join("\n"),
       reply_markup: JSON.stringify({
         inline_keyboard: [
@@ -2605,7 +2612,7 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
 
 async function proxyTelegramFile(req: Request, fileId: string, title = "") {
   if (!TELEGRAM_BOT_TOKEN) {
-    return json(req, { error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
+    return json(req, { error: "TELEGRAM_BOT_TOKEN nÃ£o configurado" }, 500);
   }
 
   let file_path = "";
@@ -3047,10 +3054,10 @@ async function sendSeriesLaunchPrompt(chatId: string | number, serieId: string, 
     chat_id: chatId,
     text: title
       ? `Abrindo "${title}" no mini app.`
-      : "Abrindo a série no mini app.",
+      : "Abrindo a sÃ©rie no mini app.",
     reply_markup: JSON.stringify({
       inline_keyboard: [[{
-        text: "Abrir a série",
+        text: "Abrir a sÃ©rie",
         web_app: { url: buildSeriesLaunchUrl(serieId) },
       }]],
     }),
@@ -3085,7 +3092,7 @@ async function sendCheckoutAck(chatId: string | number, itemCount: number, total
     text: `Seu carrinho esta pronto: ${itemCount} item${itemCount === 1 ? "" : "s"} por ${total}.`,
     reply_markup: JSON.stringify({
       inline_keyboard: [[{
-        text: "Abrir catálogo",
+        text: "Abrir catÃ¡logo",
         web_app: { url: SERIES_WEBAPP_URL },
       }]],
     }),
@@ -3245,19 +3252,19 @@ async function sendRecommendationsMessage(chatId: string | number, userId: strin
 
 async function handleTelegramWebhook(req: Request) {
   if (!TELEGRAM_BOT_TOKEN) {
-    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
+    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN nÃ£o configurado" }, 500);
   }
 
   if (TELEGRAM_WEBHOOK_SECRET) {
     const secretToken = req.headers.get("x-telegram-bot-api-secret-token") || "";
     if (!constantTimeEqual(secretToken, TELEGRAM_WEBHOOK_SECRET)) {
-      return json(req, { ok: false, error: "Webhook inválido" }, 403);
+      return json(req, { ok: false, error: "Webhook invÃ¡lido" }, 403);
     }
   }
 
   const update = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!update) {
-    return json(req, { ok: false, error: "Update inválido" }, 400);
+    return json(req, { ok: false, error: "Update invÃ¡lido" }, 400);
   }
 
   const channelPostUpdate = getUpdateChannelPost(update);
@@ -3381,7 +3388,7 @@ async function handleTelegramWebhook(req: Request) {
         await sendModerationAlert(
           [
             `Modo: ${analysis.policy.mode}`,
-            `Expulsão automática no canal público: ${safeName}`,
+            `ExpulsÃ£o automÃ¡tica no canal pÃºblico: ${safeName}`,
             `Score: ${analysis.score}`,
             `Limite de banimento: ${analysis.policy.banThreshold}`,
             `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
@@ -3414,7 +3421,7 @@ async function handleTelegramWebhook(req: Request) {
         await sendModerationAlert(
           [
             `Modo: ${analysis.policy.mode}`,
-            `Falha ao expulsar membro suspeito no canal público: ${safeName}`,
+            `Falha ao expulsar membro suspeito no canal pÃºblico: ${safeName}`,
             `Score: ${analysis.score}`,
             `Limite de banimento: ${analysis.policy.banThreshold}`,
             `Erro: ${message}`,
@@ -3451,7 +3458,7 @@ async function handleTelegramWebhook(req: Request) {
       await sendModerationAlert(
         [
           `Modo: ${analysis.policy.mode}`,
-          `Novo inscrito suspeito no canal público: ${safeName}`,
+          `Novo inscrito suspeito no canal pÃºblico: ${safeName}`,
           `Score: ${analysis.score}`,
           `Limite de alerta: ${analysis.policy.alertThreshold}`,
           `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
@@ -3555,7 +3562,7 @@ async function handleTelegramWebhookRepair(req: Request) {
 
 async function handleCaptchaVerify(req: Request) {
   if (!TELEGRAM_BOT_TOKEN) {
-    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
+    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN nÃ£o configurado" }, 500);
   }
 
   const body = (await req.json().catch(() => null)) as {
@@ -3575,7 +3582,7 @@ async function handleCaptchaVerify(req: Request) {
   } catch (error) {
     return json(
       req,
-      { ok: false, error: error instanceof Error ? error.message : "Dados do Telegram inválidos" },
+      { ok: false, error: error instanceof Error ? error.message : "Dados do Telegram invÃ¡lidos" },
       403,
     );
   }
@@ -3584,14 +3591,14 @@ async function handleCaptchaVerify(req: Request) {
   try {
     publicPayload = JSON.parse(textDecode(base64UrlDecode(body.token))) as Record<string, unknown>;
   } catch {
-    return json(req, { ok: false, error: "Token da verificação inválido" }, 400);
+    return json(req, { ok: false, error: "Token da verificaÃ§Ã£o invÃ¡lido" }, 400);
   }
 
   const challengeToken = typeof publicPayload.c === "string" ? publicPayload.c : "";
   const publicUserId = typeof publicPayload.u === "string" ? publicPayload.u : "";
 
   if (!challengeToken || !publicUserId || !constantTimeEqual(publicUserId, telegramUserId)) {
-    return json(req, { ok: false, error: "Usuário não corresponde ao desafio" }, 403);
+    return json(req, { ok: false, error: "UsuÃ¡rio nÃ£o corresponde ao desafio" }, 403);
   }
 
   let privatePayload: Record<string, unknown>;
@@ -3613,7 +3620,7 @@ async function handleCaptchaVerify(req: Request) {
   }
 
   if (!constantTimeEqual(userId, telegramUserId)) {
-    return json(req, { ok: false, error: "Conta inválida para este desafio" }, 403);
+    return json(req, { ok: false, error: "Conta invÃ¡lida para este desafio" }, 403);
   }
 
   if (!expiresAt || Math.floor(Date.now() / 1000) > expiresAt) {
@@ -3899,19 +3906,19 @@ function resolveSeriesCoverPublicUrl(row: Record<string, unknown>) {
 function truncateTelegramCaption(text: string, maxLength = 1024) {
   const normalized = String(text || "").replace(/\r\n/g, "\n").trim();
   if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}â€¦`;
 }
 
 function buildSeriesAnnouncementCaption(row: Record<string, unknown>) {
-  const description = String(row.description ?? "").trim() || String(row.title ?? "Nova série").trim() || "Nova série no catálogo.";
+  const description = String(row.description ?? "").trim() || String(row.title ?? "Nova sÃ©rie").trim() || "Nova sÃ©rie no catÃ¡logo.";
   const lines = [
-    "NO AR! ✅",
+    "NO AR! âœ…",
     "",
     description,
   ];
 
   if (isSeriesFree(row)) {
-    lines.push("", "Série gratuita.");
+    lines.push("", "SÃ©rie gratuita.");
   }
 
   return truncateTelegramCaption(lines.join("\n"));
@@ -3925,17 +3932,17 @@ function normalizeAnnouncementTextV2(value: unknown) {
 }
 
 function buildSeriesAnnouncementCaptionV2(row: Record<string, unknown>) {
-  const title = normalizeAnnouncementTextV2(row.title ?? "Nova sÃ©rie") || "Nova sÃ©rie";
+  const title = normalizeAnnouncementTextV2(row.title ?? "Nova sÃƒÂ©rie") || "Nova sÃƒÂ©rie";
   const description = normalizeAnnouncementTextV2(row.description ?? "") || title;
   const lines = [
-    "NO AR! âœ…",
+    "NO AR! Ã¢Å“â€¦",
     title,
     "",
     description,
   ];
 
   if (isSeriesFree(row)) {
-    lines.push("", "SÃ©rie gratuita.");
+    lines.push("", "SÃƒÂ©rie gratuita.");
   }
 
   return truncateTelegramCaption(lines.join("\n"));
@@ -3990,7 +3997,7 @@ async function postSeriesAnnouncementToChannel(row: Record<string, unknown>) {
         caption,
       });
     } catch (error) {
-      console.warn("[CHANNEL] Falha ao publicar capa da série:", error instanceof Error ? error.message : String(error));
+      console.warn("[CHANNEL] Falha ao publicar capa da sÃ©rie:", error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -4000,7 +4007,7 @@ async function postSeriesAnnouncementToChannel(row: Record<string, unknown>) {
       text: caption,
     });
   } catch (error) {
-    console.warn("[CHANNEL] Falha ao publicar aviso de nova série:", error instanceof Error ? error.message : String(error));
+    console.warn("[CHANNEL] Falha ao publicar aviso de nova sÃ©rie:", error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -4278,7 +4285,7 @@ async function resolveTelegramPlayback(req: Request, fileId: string, title: stri
       return json(req, {
         type: "internal_player_unavailable",
         title,
-        reason: "Este vídeo precisa ser migrado ou convertido para reprodução protegida dentro do Mini App.",
+        reason: "Este vÃ­deo precisa ser migrado ou convertido para reproduÃ§Ã£o protegida dentro do Mini App.",
       });
     }
     throw error;
@@ -4301,7 +4308,7 @@ async function handleStream(req: Request, url: URL) {
 
   const row = await getSeriesById(serieId);
   if (!row) {
-    return json(req, { error: "Série não encontrada" }, 404);
+    return json(req, { error: "SÃ©rie nÃ£o encontrada" }, 404);
   }
 
   const storagePlayback = await resolveStoragePlayback(row as Record<string, unknown>, String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title));
@@ -4324,7 +4331,7 @@ async function handleStream(req: Request, url: URL) {
         return json(req, {
           type: "internal_player_unavailable",
           title: (row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title,
-          reason: "Este vídeo precisa ser migrado ou convertido para reprodução protegida dentro do Mini App.",
+          reason: "Este vÃ­deo precisa ser migrado ou convertido para reproduÃ§Ã£o protegida dentro do Mini App.",
         });
       }
       throw error;
@@ -4337,7 +4344,7 @@ async function handleStream(req: Request, url: URL) {
     });
   }
 
-  return json(req, { error: "Vídeo não disponível" }, 404);
+  return json(req, { error: "VÃ­deo nÃ£o disponÃ­vel" }, 404);
 }
 
 async function handleStreamV2(req: Request, url: URL) {
@@ -4865,11 +4872,11 @@ async function handleOwnerSeriesCreate(req: Request) {
   const isEdit = Boolean(existingRow);
 
   if (!title) {
-    return json(req, { error: "Informe o título da série" }, 400);
+    return json(req, { error: "Informe o tÃ­tulo da sÃ©rie" }, 400);
   }
 
   if (!description) {
-    return json(req, { error: "Informe a descrição da série" }, 400);
+    return json(req, { error: "Informe a descriÃ§Ã£o da sÃ©rie" }, 400);
   }
 
   if (!(cover instanceof File) && !uploadedCoverPath) {
@@ -4880,7 +4887,7 @@ async function handleOwnerSeriesCreate(req: Request) {
 
   if (!(video instanceof File) && !uploadedVideoPath && !videoFileIdInput) {
     if (!existingRow) {
-      return json(req, { error: "Envie o vídeo principal da série" }, 400);
+      return json(req, { error: "Envie o vÃ­deo principal da sÃ©rie" }, 400);
     }
   }
 
@@ -4890,7 +4897,7 @@ async function handleOwnerSeriesCreate(req: Request) {
   const price = forceFree ? 0 : normalizedPrice;
 
   if (!forceFree && price <= 0 && !isEdit) {
-    return json(req, { error: "Informe um valor maior que zero para a série paga" }, 400);
+    return json(req, { error: "Informe um valor maior que zero para a sÃ©rie paga" }, 400);
   }
 
   const seriesId = seriesIdInput || String(existingRow?.id ?? "").trim() || crypto.randomUUID();
@@ -4937,7 +4944,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     || null;
 
   if (!coverUrl || (!videoPath && !videoUrl && !videoFileIdInput && !String(existingRow?.[PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN] ?? "").trim())) {
-    return json(req, { error: "A série precisa de capa e vídeo principal" }, 400);
+    return json(req, { error: "A sÃ©rie precisa de capa e vÃ­deo principal" }, 400);
   }
 
   const rowPayload: Record<string, unknown> = {
@@ -4974,7 +4981,7 @@ async function handleOwnerSeriesCreate(req: Request) {
   const freshRow = await getSeriesById(seriesId);
   const finalRow = freshRow && typeof freshRow === "object" ? freshRow : savedRow;
   if (!finalRow || typeof finalRow !== "object") {
-    return json(req, { error: "Não foi possível registrar a série" }, 500);
+    return json(req, { error: "NÃ£o foi possÃ­vel registrar a sÃ©rie" }, 500);
   }
 
   const previousCoverPath = String(existingRow?.cover_storage_path ?? "").trim();
@@ -5001,7 +5008,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     try {
       await postSeriesAnnouncementToChannel(finalRow as Record<string, unknown>);
     } catch (error) {
-      console.warn("[CHANNEL] Falha ao anunciar nova série no canal:", error instanceof Error ? error.message : String(error));
+      console.warn("[CHANNEL] Falha ao anunciar nova sÃ©rie no canal:", error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -5180,7 +5187,7 @@ async function handleSupportSubmit(req: Request) {
   const telegramUserName = String(user.username ?? "").trim();
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return json(req, { error: "Informe um e-mail válido" }, 400);
+    return json(req, { error: "Informe um e-mail vÃ¡lido" }, 400);
   }
   if (subject.length < 3) {
     return json(req, { error: "Informe um assunto" }, 400);
@@ -5192,7 +5199,7 @@ async function handleSupportSubmit(req: Request) {
   if (!RESEND_API_KEY) {
     return json(req, {
       ok: false,
-      error: "Envio automático de e-mail ainda não configurado neste ambiente.",
+      error: "Envio automÃ¡tico de e-mail ainda nÃ£o configurado neste ambiente.",
       mailto_url: buildSupportMailtoUrl({ email, subject, description, context }),
     });
   }
@@ -5214,7 +5221,7 @@ async function handleSupportSubmit(req: Request) {
     const sentError = "error" in sent ? sent.error : "";
     return json(req, {
       ok: false,
-      error: sentError || "Não foi possível enviar o e-mail de suporte.",
+      error: sentError || "NÃ£o foi possÃ­vel enviar o e-mail de suporte.",
       mailto_url: sent.mailtoUrl || buildSupportMailtoUrl({ email, subject, description, context }),
     }, 502);
   }
@@ -5258,7 +5265,7 @@ async function handleSupportSubmitV2(req: Request) {
   const telegramUserName = String(user.username ?? "").trim();
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return json(req, { error: "Informe um e-mail válido" }, 400);
+    return json(req, { error: "Informe um e-mail vÃ¡lido" }, 400);
   }
   if (subject.length < 3) {
     return json(req, { error: "Informe um assunto" }, 400);
@@ -5294,7 +5301,7 @@ async function handleSupportSubmitV2(req: Request) {
   if (!emailSent && !telegramSent) {
     return json(req, {
       ok: false,
-      error: "Não foi possível registrar a solicitação agora.",
+      error: "NÃ£o foi possÃ­vel registrar a solicitaÃ§Ã£o agora.",
       mailto_url: mailtoUrl,
     }, 502);
   }
@@ -5415,7 +5422,7 @@ Deno.serve(async (req) => {
       return await handleCaptchaVerify(req);
     }
 
-    return json(req, { error: "Ação inválida" }, 400);
+    return json(req, { error: "AÃ§Ã£o invÃ¡lida" }, 400);
   } catch (error) {
     return json(req, { error: error instanceof Error ? error.message : "Erro interno" }, 500);
   }
