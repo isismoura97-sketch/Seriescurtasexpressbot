@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260707-03';
+const BUILD_VERSION = '20260710-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -24,6 +24,9 @@ const PAYMENT_METHOD_STORAGE_KEY = 'checkout_payment_method';
 const BUYER_EMAIL_STORAGE_KEY = 'checkout_buyer_email';
 const ACTIVE_PAYMENT_ORDER_STORAGE_KEY = 'checkout_active_order';
 const FAVORITES_STORAGE_KEY = 'series_favorites';
+const CART_UPDATED_AT_STORAGE_KEY = 'cart_updated_at';
+const ANALYTICS_SESSION_STORAGE_KEY = 'analytics_session_id';
+const ANALYTICS_ENDPOINT = `${API_URL}?action=analytics-event`;
 const STATIC_PIX_QR_IMAGE_URL = `assets/pix-qr.png?v=${BUILD_VERSION}`;
 const SUPPORT_INBOX_EMAIL = 'isismoura97@gmail.com';
 const COVER_FALLBACKS = {
@@ -80,6 +83,57 @@ let ownerSeriesSearchTerm = '';
 let ownerSeriesFilterMode = 'all';
 let ownerSessionAuthorized = false;
 let supportRequestPending = false;
+
+function getAnalyticsSessionId() {
+    try {
+        let sessionId = localStorage.getItem(ANALYTICS_SESSION_STORAGE_KEY);
+        if (!sessionId) {
+            sessionId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            localStorage.setItem(ANALYTICS_SESSION_STORAGE_KEY, sessionId);
+        }
+        return sessionId;
+    } catch (_) {
+        return '';
+    }
+}
+
+function trackAnalyticsEvent(eventName, details = {}) {
+    if (!userId || !tg?.initData || !eventName) return;
+    const payload = {
+        init_data: tg.initData,
+        event_name: eventName,
+        series_id: details.series_id || details.seriesId || '',
+        order_id: details.order_id || details.orderId || '',
+        session_id: getAnalyticsSessionId(),
+        metadata: details.metadata || {},
+    };
+    fetch(ANALYTICS_ENDPOINT, {
+        method: 'POST',
+        cache: 'no-store',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+    }).catch((error) => debugLog('[ANALYTICS] Evento não enviado:', error?.message || error));
+}
+
+function trackStaleCartAbandonment() {
+    if (!cart.length || !userId) return;
+    let updatedAt = 0;
+    try {
+        updatedAt = Number(localStorage.getItem(CART_UPDATED_AT_STORAGE_KEY) || 0);
+    } catch (_) {
+        return;
+    }
+    if (!updatedAt || Date.now() - updatedAt < 30 * 60 * 1000) return;
+    trackAnalyticsEvent('cart_abandoned', {
+        metadata: { item_count: cart.length, reason: 'stale_cart' },
+    });
+    try {
+        localStorage.setItem(CART_UPDATED_AT_STORAGE_KEY, String(Date.now()));
+    } catch (_) {
+        // analytics is best effort
+    }
+}
 
 // ==================== SHARED UTILITIES ====================
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFBMjc0NCIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNGRkQ3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5TZW0gQ2FwYTwvdGV4dD48L3N2Zz4=';
@@ -276,6 +330,11 @@ async function toggleFavoriteSeries(serie) {
 function saveCart(context = 'CART') {
     try {
         localStorage.setItem('cart_series', JSON.stringify(cart));
+        if (cart.length) {
+            localStorage.setItem(CART_UPDATED_AT_STORAGE_KEY, String(Date.now()));
+        } else {
+            localStorage.removeItem(CART_UPDATED_AT_STORAGE_KEY);
+        }
         return true;
     } catch (e) {
         console.warn(`[${context}] Falha ao salvar carrinho no localStorage:`, e.message);
@@ -297,6 +356,8 @@ function setPlayerLoadingView(title = 'Abrindo agora', subtitle = 'Seu vídeo es
 }
 
 function handleSeriesClick(serie) {
+    if (!serie) return;
+    trackAnalyticsEvent('series_viewed', { series_id: serie.id });
     if (hasSeriesAccess(serie) && getPlaybackMode(serie) !== 'missing') {
         if (isOwnerUser()) {
             void openPlayer(serie.id, serie.title || 'Reproduzir');
@@ -1025,6 +1086,11 @@ function isAwaitingPayment(order) {
     return ['created', 'pending', 'pending_payment', 'in_process', 'pending_review'].includes(status);
 }
 
+function isDeliveryPending(order) {
+    if (!order || String(order.status || '').toLowerCase() !== 'approved') return false;
+    return String(order.delivery_status || 'pending').toLowerCase() !== 'completed';
+}
+
 function getPaymentMethodLabel(method = selectedPaymentMethod) {
     switch (method) {
         case 'pix_qr':
@@ -1038,6 +1104,9 @@ function getPaymentMethodLabel(method = selectedPaymentMethod) {
 }
 
 function getCheckoutButtonLabel() {
+    if (isDeliveryPending(activePaymentOrder)) {
+        return '<i class="fab fa-telegram"></i> Acompanhar entrega';
+    }
     if (isAwaitingPayment(activePaymentOrder)) {
         return '<i class="fas fa-credit-card"></i> Ver pagamento';
     }
@@ -1176,9 +1245,11 @@ function renderPaymentSummary(order) {
     const method = order.payment_method || selectedPaymentMethod;
     const amount = Number(order.amount || 0);
     const status = String(order.status || 'created');
+    const deliveryStatus = String(order.delivery_status || 'pending').toLowerCase();
+    const deliveryPending = status === 'approved' && deliveryStatus !== 'completed';
     const shortOrderId = String(order.order_id || '').slice(0, 8);
     const statusLabel = status === 'approved'
-        ? 'Liberado'
+        ? deliveryPending ? 'Pagamento aprovado • enviando' : 'Liberado no Telegram'
         : status === 'pending_payment' || status === 'created'
             ? 'Falta pouco'
             : status;
@@ -1191,6 +1262,16 @@ function renderPaymentSummary(order) {
 
     const details = [];
     details.push(`<div class="payment-detail"><span>Total</span><strong>${escapeHtml(formatPrice(amount))}</strong></div>`);
+    if (status === 'approved') {
+        const deliveryLabel = deliveryStatus === 'completed'
+            ? 'Concluída'
+            : deliveryStatus === 'partial'
+                ? 'Parcial, tentando novamente'
+                : deliveryStatus === 'failed'
+                    ? 'Pendente de nova tentativa'
+                    : 'Em processamento';
+        details.push(`<div class="payment-detail"><span>Entrega no Telegram</span><strong>${escapeHtml(deliveryLabel)}</strong></div>`);
+    }
 
     if (order.checkout_url) {
         details.push(`<div class="payment-detail"><span>Mercado Pago</span><strong>Página disponível</strong></div>`);
@@ -1233,7 +1314,10 @@ function renderPaymentSummary(order) {
 
     const openButton = document.createElement('button');
     openButton.className = 'btn btn-primary';
-    if (method === 'pix_qr') {
+    if (status === 'approved') {
+        openButton.innerHTML = '<i class="fab fa-telegram"></i> Abrir bot';
+        openButton.addEventListener('click', () => openTelegramBotLink(TELEGRAM_BOT_LINK));
+    } else if (method === 'pix_qr') {
         openButton.innerHTML = '<i class="fas fa-copy"></i> Copiar código Pix';
         openButton.addEventListener('click', async () => {
             if (order.pix_qr_code) {
@@ -1286,7 +1370,7 @@ function renderPaymentSummary(order) {
         DOM.paymentSummaryActions.appendChild(ticketButton);
     }
 
-    setCheckoutLoading(status !== 'approved');
+    setCheckoutLoading(status !== 'approved' || deliveryPending);
 }
 
 async function copyToClipboard(text) {
@@ -2510,6 +2594,8 @@ function renderOwnerDashboard(data) {
     ownerDashboardSnapshot = data;
     const catalog = data?.catalog || {};
     const payments = data?.payments || {};
+    const analytics = data?.analytics || {};
+    const funnel = analytics.funnel || {};
     const seriesItems = Array.isArray(data?.series_items) ? data.series_items : [];
     const recentSeries = Array.isArray(data?.recent_series) ? data.recent_series : [];
     const catalogSeries = seriesItems.length ? seriesItems : recentSeries;
@@ -2547,7 +2633,7 @@ function renderOwnerDashboard(data) {
     const recentRows = recentOrders
         .map((order) => `
             <div class="owner-list-row">
-                <span>${escapeHtml(order.order_id || '---')} • ${escapeHtml(order.payment_method || '---')} • ${escapeHtml(order.status || '---')}</span>
+                <span>${escapeHtml(order.order_id || '---')} • ${escapeHtml(order.payment_method || '---')} • ${escapeHtml(order.status || '---')} • entrega: ${escapeHtml(order.delivery_status || 'pendente')}</span>
                 <strong>${escapeHtml(formatOwnerCurrency(order.amount))}</strong>
             </div>
         `)
@@ -2701,6 +2787,14 @@ function renderOwnerDashboard(data) {
                 <div class="owner-card">
                     <span>Total aprovado</span>
                     <strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong>
+                </div>
+                <div class="owner-card owner-card-accent">
+                    <span>Usuários ativos (30 dias)</span>
+                    <strong>${escapeHtml(String(analytics.unique_users ?? 0))}</strong>
+                </div>
+                <div class="owner-card owner-card-accent">
+                    <span>Abandono do checkout</span>
+                    <strong>${escapeHtml(String(analytics.abandonment_rate ?? 0))}%</strong>
                 </div>
             </div>
             <div class="owner-action-strip">
@@ -2880,6 +2974,24 @@ function renderOwnerDashboard(data) {
             <h3>Pedidos recentes</h3>
             <div class="owner-list">${recentRows}</div>
         </section>
+        <section class="owner-section owner-analytics-section">
+            <div class="owner-section-head">
+                <div>
+                    <h3>Conversão e abandono</h3>
+                    <p>Resumo dos últimos ${escapeHtml(String(analytics.period_days ?? 30))} dias, contado por usuário.</p>
+                </div>
+                <div class="owner-series-count">${escapeHtml(String(analytics.events_total ?? 0))} eventos</div>
+            </div>
+            <div class="owner-analytics-grid">
+                <div class="owner-analytics-step"><span>Abriu o app</span><strong>${escapeHtml(String(funnel.app_opened ?? 0))}</strong></div>
+                <div class="owner-analytics-step"><span>Viu uma série</span><strong>${escapeHtml(String(funnel.series_viewed ?? 0))}</strong></div>
+                <div class="owner-analytics-step"><span>Adicionou ao carrinho</span><strong>${escapeHtml(String(funnel.add_to_cart ?? 0))}</strong></div>
+                <div class="owner-analytics-step"><span>Iniciou checkout</span><strong>${escapeHtml(String(funnel.checkout_started ?? 0))}</strong></div>
+                <div class="owner-analytics-step"><span>Pagamento aprovado</span><strong>${escapeHtml(String(funnel.payment_approved ?? 0))}</strong></div>
+                <div class="owner-analytics-step"><span>Entrega concluída</span><strong>${escapeHtml(String(funnel.delivery_completed ?? 0))}</strong></div>
+                <div class="owner-analytics-step owner-analytics-step-warning"><span>Carrinho abandonado</span><strong>${escapeHtml(String(funnel.cart_abandoned ?? 0))}</strong></div>
+            </div>
+        </section>
     `;
     DOM.ownerDashboard.hidden = false;
     wireOwnerUploadForm();
@@ -3050,10 +3162,17 @@ async function refreshPaymentStatus(orderId, shouldToast = true) {
             cart = [];
             saveCart('PAYMENT_APPROVED');
             updateCartUI();
-            showToast('Pago com sucesso. Sua série já foi liberada.', 'success');
-            clearActivePaymentOrder();
-            toggleCart(false);
-            closeModal();
+            if (String(order.delivery_status || 'pending').toLowerCase() === 'completed') {
+                showToast('Pagamento aprovado e série enviada no Telegram.', 'success');
+                clearActivePaymentOrder();
+                toggleCart(false);
+                closeModal();
+            } else {
+                startPaymentStatusPolling(String(order.order_id || orderId || ''));
+                if (shouldToast) {
+                    showToast('Pagamento aprovado. A entrega está sendo processada no Telegram.', 'success');
+                }
+            }
         } else if (status === 'rejected' || status === 'cancelled' || status === 'canceled' || status === 'expired') {
             stopPaymentStatusPolling();
             renderPaymentSummary(order);
@@ -3143,6 +3262,8 @@ function getPlaybackMode(serie) {
 // ==================== INICIALIZAÇÃO ====================
 async function init() {
     resolveTelegramContext();
+    trackStaleCartAbandonment();
+    trackAnalyticsEvent('app_opened');
     restoreFavoriteSeries();
     bindPlayerVideoEvents();
     wirePlayerControls();
@@ -3171,6 +3292,7 @@ async function init() {
         }
         const data = await fetchWithTimeout(withCacheBuster(url.toString()));
         allSeries = Array.isArray(data) ? data : [];
+        trackAnalyticsEvent('catalog_loaded', { metadata: { item_count: allSeries.length } });
         hydrateFavoriteSeriesFromCatalog(allSeries);
         debugLog(`[INIT] ${allSeries.length} éries carregadas`);
 
@@ -4003,6 +4125,10 @@ function addToCart(serie) {
         return;
     }
     cart.push(serie);
+    trackAnalyticsEvent('add_to_cart', {
+        series_id: serie.id,
+        metadata: { item_count: cart.length, price: getSeriesPriceValue(serie) },
+    });
     if (!saveCart()) {
         showToast('Item adicionado, mas não será salvo entre sessões', 'error');
     }
@@ -4013,6 +4139,10 @@ function addToCart(serie) {
 
 function removeFromCart(id) {
     cart = cart.filter(item => !sameId(item.id, id));
+    trackAnalyticsEvent('remove_from_cart', {
+        series_id: id,
+        metadata: { item_count: cart.length },
+    });
     saveCart();
     updateCartUI();
 }
@@ -4036,6 +4166,9 @@ function checkout() {
     }
 
     buyerEmail = buyerEmailValue;
+    trackAnalyticsEvent('checkout_started', {
+        metadata: { item_count: checkoutItems.length, payment_method: selectedPaymentMethod },
+    });
     savePaymentPrefs();
     setCheckoutLoading(true);
 

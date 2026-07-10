@@ -284,6 +284,7 @@ async function installRoutes(page) {
           order: {
             order_id: 'order-test',
             status: 'approved',
+            delivery_status: 'completed',
             payment_method: 'pix_qr',
             pix_qr_code: '000201TESTEPIX',
             amount: 5.9,
@@ -337,6 +338,11 @@ async function installRoutes(page) {
           },
         }),
       });
+      return;
+    }
+
+    if (action === 'analytics-event') {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) });
       return;
     }
 
@@ -434,6 +440,13 @@ async function installRoutes(page) {
             status_counts: { approved: 1 },
             recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 5.9 }],
           },
+          analytics: {
+            period_days: 30,
+            events_total: 12,
+            unique_users: 3,
+            abandonment_rate: 25,
+            funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, delivery_completed: 1, cart_abandoned: 1 },
+          },
           series_items: seriesItems,
           recent_series: seriesItems,
         }),
@@ -478,6 +491,13 @@ async function installRoutes(page) {
               approved_amount: 5.9,
               status_counts: { approved: 1 },
               recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 5.9 }],
+            },
+            analytics: {
+              period_days: 30,
+              events_total: 12,
+              unique_users: 3,
+              abandonment_rate: 25,
+              funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, delivery_completed: 1, cart_abandoned: 1 },
             },
             series_items: [
               {
@@ -748,7 +768,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260707-03')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260710-01')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -783,7 +803,7 @@ async function main() {
     if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
     if (!paidCardAfterPayment.action.includes('Receber no Telegram')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
     if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
-    if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral'))) failures.push('owner area failed');
+    if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral')) || !ownerState.text.includes('Conversão e abandono')) failures.push('owner area failed');
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Prontas2') && !migratedOwnerState.text.includes('Em fila0'))) failures.push('owner migration failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
 

@@ -2474,6 +2474,45 @@ body.light-mode .cart-item {
     font-size: 26px;
 }
 
+.owner-card-accent {
+    background: linear-gradient(135deg, rgba(42,171,238,0.12), rgba(255,215,0,0.08));
+}
+
+.owner-analytics-section {
+    grid-column: 1 / -1;
+}
+
+.owner-analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.owner-analytics-step {
+    display: grid;
+    gap: 8px;
+    min-height: 78px;
+    padding: 14px;
+    border: 1px solid rgba(42,171,238,0.18);
+    border-radius: 14px;
+    background: rgba(42,171,238,0.06);
+}
+
+.owner-analytics-step span {
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.owner-analytics-step strong {
+    color: var(--text-main);
+    font-size: 22px;
+}
+
+.owner-analytics-step-warning {
+    border-color: rgba(255,166,0,0.25);
+    background: rgba(255,166,0,0.08);
+}
+
 .owner-section {
     border: 1px solid rgba(255,215,0,0.14);
     border-radius: 18px;

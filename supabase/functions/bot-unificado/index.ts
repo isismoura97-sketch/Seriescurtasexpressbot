@@ -17,7 +17,7 @@ const TELEGRAM_BOT_USERNAME = (
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
 const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "SÃ©ries Curtas Express <onboarding@resend.dev>";
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260707-03";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260710-01";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -26,6 +26,7 @@ const MERCADO_PAGO_PIX_KEY = Deno.env.get("MERCADO_PAGO_PIX_KEY") ?? "";
 const MERCADO_PAGO_PIX_COPY = Deno.env.get("MERCADO_PAGO_PIX_COPY") ?? "";
 const MERCADO_PAGO_PIX_QR_CODE_BASE64 = Deno.env.get("MERCADO_PAGO_PIX_QR_CODE_BASE64") ?? "";
 const PAYMENT_ORDERS_TABLE = Deno.env.get("PAYMENT_ORDERS_TABLE") ?? "payment_orders";
+const APP_EVENTS_TABLE = Deno.env.get("APP_EVENTS_TABLE") ?? "app_events";
 const OWNER_TELEGRAM_USER_ID = Deno.env.get("OWNER_TELEGRAM_USER_ID") ?? "";
 const OWNER_AREA_PASSWORD = Deno.env.get("OWNER_AREA_PASSWORD") ?? "";
 const OWNER_AREA_PASSWORD_SHA256 = Deno.env.get("OWNER_AREA_PASSWORD_SHA256") ?? "";
@@ -117,6 +118,19 @@ const EPISODE_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("EPISODE_VIDEO_FILE_ID_COLUM
   .filter(Boolean);
 const USER_SERIES_PROGRESS_TABLE = Deno.env.get("USER_SERIES_PROGRESS_TABLE") ?? "user_series_progress";
 const USER_SERIES_FAVORITES_TABLE = Deno.env.get("USER_SERIES_FAVORITES_TABLE") ?? "user_series_favorites";
+const ANALYTICS_EVENT_NAMES = new Set([
+  "app_opened",
+  "catalog_loaded",
+  "series_viewed",
+  "add_to_cart",
+  "remove_from_cart",
+  "checkout_started",
+  "payment_created",
+  "payment_approved",
+  "delivery_requested",
+  "delivery_completed",
+  "cart_abandoned",
+]);
 
 function corsHeaders(req: Request) {
   const origin = req.headers.get("origin") || "*";
@@ -1118,6 +1132,83 @@ async function deleteUserSeriesFavorite(userId: string, seriesId: string) {
   );
 }
 
+function normalizeAnalyticsMetadata(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const output: Record<string, string | number | boolean | null> = {};
+  for (const [key, raw] of Object.entries(source).slice(0, 20)) {
+    if (!/^[a-zA-Z0-9_.-]{1,48}$/.test(key)) continue;
+    if (typeof raw === "string") output[key] = raw.slice(0, 240);
+    else if (typeof raw === "number" && Number.isFinite(raw)) output[key] = raw;
+    else if (typeof raw === "boolean") output[key] = raw;
+    else if (raw == null) output[key] = null;
+  }
+  return output;
+}
+
+async function recordAppEvent(entry: {
+  eventName: string;
+  userId: string;
+  seriesId?: string | null;
+  orderId?: string | null;
+  sessionId?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  const eventName = String(entry.eventName ?? "").trim().toLowerCase();
+  const userId = String(entry.userId ?? "").trim();
+  if (!userId || !ANALYTICS_EVENT_NAMES.has(eventName)) return null;
+
+  try {
+    const rows = await supabaseRestRequest(APP_EVENTS_TABLE, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        prefer: "return=minimal",
+      },
+      body: stringifyJson([{
+        event_name: eventName,
+        user_id: userId,
+        series_id: entry.seriesId ? String(entry.seriesId).slice(0, 160) : null,
+        order_id: entry.orderId ? String(entry.orderId).slice(0, 160) : null,
+        session_id: entry.sessionId ? String(entry.sessionId).slice(0, 160) : null,
+        metadata: normalizeAnalyticsMetadata(entry.metadata),
+      }]),
+    });
+    return rows;
+  } catch (error) {
+    console.warn("[ANALYTICS] Falha ao registrar evento:", error instanceof Error ? error.message : String(error));
+    return null;
+  }
+}
+
+async function handleAnalyticsEvent(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+
+  let userId = "";
+  try {
+    userId = (await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""))).userId;
+  } catch (error) {
+    return json(req, { error: error instanceof Error ? error.message : "Dados do Telegram invalidos" }, 401);
+  }
+
+  const eventName = String(body.event_name ?? body.event ?? "").trim().toLowerCase();
+  if (!ANALYTICS_EVENT_NAMES.has(eventName)) {
+    return json(req, { error: "Evento de analytics invalido" }, 400);
+  }
+
+  await recordAppEvent({
+    eventName,
+    userId,
+    seriesId: String(body.series_id ?? body.serie_id ?? "").trim() || null,
+    orderId: String(body.order_id ?? body.orderId ?? "").trim() || null,
+    sessionId: String(body.session_id ?? body.sessionId ?? "").trim() || null,
+    metadata: normalizeAnalyticsMetadata(body.metadata),
+  });
+
+  return json(req, { ok: true });
+}
+
 async function upsertUserSeriesProgress(entry: {
   userId: string;
   seriesId: string;
@@ -1620,6 +1711,52 @@ async function validateMercadoPagoWebhookSignature(req: Request, payload: Record
   return { validated: true, skipped: false };
 }
 
+function getDeliveredItemIds(order: Record<string, unknown>) {
+  const raw = order.delivered_item_ids;
+  if (!Array.isArray(raw)) return new Set<string>();
+  return new Set(raw.map((value) => String(value ?? "").trim()).filter(Boolean));
+}
+
+async function claimOrderDelivery(order: Record<string, unknown>) {
+  const orderId = String(order.order_id ?? "").trim();
+  if (!orderId) return { claimed: false, order };
+
+  const currentStatus = String(order.delivery_status ?? "pending").trim().toLowerCase();
+  const startedAt = Date.parse(String(order.delivery_started_at ?? "")) || 0;
+  const lockIsFresh = currentStatus === "processing" && startedAt > Date.now() - 10 * 60 * 1000;
+  if (currentStatus === "completed" || lockIsFresh) {
+    return { claimed: false, order };
+  }
+
+  if (currentStatus === "processing" && !lockIsFresh) {
+    await updatePaymentOrderRecord(orderId, {
+      delivery_status: "retry",
+      delivery_last_error: "Entrega anterior interrompida; retomada automatica iniciada.",
+    }).catch(() => null);
+  }
+
+  const rows = await supabaseRestRequest(
+    `${PAYMENT_ORDERS_TABLE}?order_id=eq.${encodeURIComponent(orderId)}&delivery_status=neq.processing`,
+    {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        prefer: "return=representation",
+      },
+      body: stringifyJson({
+        delivery_status: "processing",
+        delivery_attempts: (Number(order.delivery_attempts ?? 0) || 0) + 1,
+        delivery_started_at: new Date().toISOString(),
+        delivery_last_error: null,
+        updated_at: new Date().toISOString(),
+      }),
+    },
+  );
+
+  const claimedOrder = Array.isArray(rows) && rows.length > 0 ? rows[0] as Record<string, unknown> : null;
+  return { claimed: Boolean(claimedOrder), order: claimedOrder || order };
+}
+
 async function applyMercadoPagoPaymentState(order: Record<string, unknown>, payment: Record<string, unknown>, webhookPayload: unknown) {
   const previousStatus = String(order.status ?? "");
   const currentStatus = normalizeWebhookStatus(payment.status);
@@ -1658,12 +1795,46 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
     ? await updatePaymentOrderRecord(orderId, nextPatch) as Record<string, unknown>
     : order;
 
-  if (currentStatus === "approved" && previousStatus !== "approved") {
-    const deliverySummary = await deliverApprovedOrderSeries(updatedOrder);
-    await sendPaymentConfirmationMessage(updatedOrder, payment, deliverySummary);
+  let finalOrder = updatedOrder;
+  if (currentStatus === "approved") {
+    const deliveryStatus = String(updatedOrder.delivery_status ?? "pending").trim().toLowerCase();
+    const shouldDeliver = previousStatus !== "approved" || deliveryStatus !== "completed";
+    let deliverySummary = null;
+    if (shouldDeliver) {
+      deliverySummary = await deliverApprovedOrderSeries(updatedOrder);
+      finalOrder = orderId
+        ? (await getPaymentOrderById(orderId) as Record<string, unknown> | null) || updatedOrder
+        : updatedOrder;
+    }
+
+    if (previousStatus !== "approved") {
+      await recordAppEvent({
+        eventName: "payment_approved",
+        userId: String(updatedOrder.user_id ?? ""),
+        orderId,
+        metadata: {
+          payment_method: normalizeCheckoutMethod(updatedOrder.payment_method),
+          delivery_status: String(deliverySummary?.deliveryStatus ?? updatedOrder.delivery_status ?? "pending"),
+        },
+      });
+    }
+
+    const notificationAlreadySent = Boolean(finalOrder.delivery_notification_sent_at);
+    const hasDeliveryResult = Boolean(
+      deliverySummary
+      && (deliverySummary.delivered.length || deliverySummary.failed.length || deliverySummary.deliveryStatus === "completed")
+    );
+    if (deliverySummary && hasDeliveryResult && !notificationAlreadySent) {
+      await sendPaymentConfirmationMessage(finalOrder, payment, deliverySummary);
+      if (orderId) {
+        finalOrder = await updatePaymentOrderRecord(orderId, {
+          delivery_notification_sent_at: new Date().toISOString(),
+        }) as Record<string, unknown>;
+      }
+    }
   }
 
-  return updatedOrder;
+  return finalOrder;
 }
 
 async function handlePaymentCreate(req: Request) {
@@ -1682,10 +1853,13 @@ async function handlePaymentCreate(req: Request) {
     return json(req, { error: message }, 401);
   }
 
-  const items = normalizeCheckoutItems(body.items);
-  if (!items.length) {
-    return json(req, { error: "Carrinho vazio" }, 400);
+  let items;
+  try {
+    items = await resolveCanonicalCheckoutItems(body.items);
+  } catch (error) {
+    return json(req, { error: error instanceof Error ? error.message : "Itens invalidos" }, 400);
   }
+  if (!items.length) return json(req, { error: "Carrinho vazio" }, 400);
 
   const paymentMethod = normalizeCheckoutMethod(body.payment_method ?? body.method ?? body.checkout_method);
   const buyerEmail = String(body.buyer_email ?? body.email ?? "").trim();
@@ -1693,7 +1867,7 @@ async function handlePaymentCreate(req: Request) {
   const amount = calculateCheckoutTotal(items);
   const description = buildCheckoutDescription(items);
   const orderId = crypto.randomUUID();
-  const chatId = String(body.chat_id ?? userId);
+  const chatId = userId;
 
   if (paymentMethod === "pix_qr" && !buyerEmail) {
     return json(req, { error: "Informe um e-mail vÃ¡lido para gerar o Pix." }, 400);
@@ -1710,6 +1884,17 @@ async function handlePaymentCreate(req: Request) {
     buyerName: buyerName || null,
     description,
     status: "created",
+  });
+
+  await recordAppEvent({
+    eventName: "payment_created",
+    userId,
+    orderId,
+    metadata: {
+      payment_method: paymentMethod,
+      item_count: items.length,
+      amount,
+    },
   });
 
   try {
@@ -1838,6 +2023,14 @@ async function handlePaymentStatus(req: Request) {
     } catch (error) {
       console.warn("[PAYMENT] Falha ao sincronizar status do pagamento:", error instanceof Error ? error.message : String(error));
     }
+  }
+
+  if (
+    String(refreshedOrder.status ?? "").toLowerCase() === "approved"
+    && String(refreshedOrder.delivery_status ?? "pending").toLowerCase() !== "completed"
+  ) {
+    await deliverApprovedOrderSeries(refreshedOrder as Record<string, unknown>);
+    refreshedOrder = await getPaymentOrderById(orderId) || refreshedOrder;
   }
 
   return json(req, {
@@ -3808,12 +4001,61 @@ async function getSeriesById(seriesId: string) {
 }
 
 function getSeriesPrice(row: Record<string, unknown>) {
+  const cents = Number(row.price_cents ?? 0);
+  if (Number.isFinite(cents) && cents > 0) return Number((cents / 100).toFixed(2));
   const price = Number(row.price ?? 0);
-  return Number.isFinite(price) ? price : 0;
+  if (Number.isFinite(price) && price > 0) return Number(price.toFixed(2));
+
+  const accessType = String(row.access_type ?? row.access ?? "").trim().toLowerCase();
+  return accessType === "paid" || accessType === "premium" ? 5.9 : 0;
 }
 
 function isSeriesFree(row: Record<string, unknown>) {
   return getSeriesPrice(row) <= 0;
+}
+
+async function resolveCanonicalCheckoutItems(value: unknown) {
+  const requestedItems = normalizeCheckoutItems(value);
+  if (!requestedItems.length) return [];
+
+  const seen = new Set<string>();
+  const canonicalItems: Array<{
+    id: string;
+    title: string;
+    quantity: number;
+    price: number;
+    cover_url: string | null;
+  }> = [];
+
+  for (const requested of requestedItems) {
+    if (seen.has(requested.id)) continue;
+    seen.add(requested.id);
+
+    const row = await getSeriesById(requested.id);
+    if (!row || !isSeriesActive(row as Record<string, unknown>)) {
+      throw new Error("Uma das series selecionadas nao esta disponivel.");
+    }
+
+    const rowRecord = row as Record<string, unknown>;
+    if (isSeriesFree(rowRecord)) {
+      throw new Error("Series gratuitas nao precisam de pagamento.");
+    }
+
+    const price = getSeriesPrice(rowRecord);
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error("A serie selecionada esta sem preco valido.");
+    }
+
+    canonicalItems.push({
+      id: String(rowRecord[SERIES_ID_COLUMN] ?? rowRecord.id ?? requested.id),
+      title: String(rowRecord[SERIES_TITLE_COLUMN] ?? requested.title).trim() || requested.title,
+      quantity: Math.min(1, Math.max(1, requested.quantity)),
+      price,
+      cover_url: resolveSeriesCoverPublicUrl(rowRecord) || null,
+    });
+  }
+
+  return canonicalItems;
 }
 
 function isOwnerUserId(userId: string) {
@@ -4199,6 +4441,7 @@ async function deliverSeriesToTelegramChat(chatId: string | number, seriesId: st
 
 async function deliverApprovedOrderSeries(order: Record<string, unknown>) {
   const chatId = String(order.chat_id ?? order.user_id ?? "").trim();
+  const orderId = String(order.order_id ?? "").trim();
   const items = Array.isArray(order.items) ? order.items as Record<string, unknown>[] : [];
   const uniqueItems = items.filter((item, index, arr) => {
     const seriesId = String(item.id ?? item.serie_id ?? item.series_id ?? "").trim();
@@ -4209,11 +4452,20 @@ async function deliverApprovedOrderSeries(order: Record<string, unknown>) {
   const summary = {
     delivered: [] as Array<{ seriesId: string; title: string; deliveryType: "telegram_file" | "telegram_url" }>,
     failed: [] as Array<{ seriesId: string; title: string; reason: string }>,
+    deliveryStatus: String(order.delivery_status ?? "pending").trim().toLowerCase() || "pending",
   };
 
-  if (!chatId || !uniqueItems.length) {
+  if (!chatId || !orderId || !uniqueItems.length) {
     return summary;
   }
+
+  const claim = await claimOrderDelivery(order);
+  if (!claim.claimed) {
+    summary.deliveryStatus = String(claim.order.delivery_status ?? summary.deliveryStatus).trim().toLowerCase();
+    return summary;
+  }
+
+  const deliveredItemIds = getDeliveredItemIds(claim.order);
 
   let progressMessageId = 0;
   try {
@@ -4231,27 +4483,36 @@ async function deliverApprovedOrderSeries(order: Record<string, unknown>) {
     const title = String(item.title ?? item.name ?? "").trim();
     if (!seriesId) continue;
 
-    try {
-      const delivery = await deliverSeriesToTelegramChat(chatId, seriesId, title);
-      if (delivery.ok) {
-        summary.delivered.push({
-          seriesId,
-          title: delivery.title,
-          deliveryType: delivery.deliveryType,
-        });
-      } else {
+    if (!deliveredItemIds.has(seriesId)) {
+      try {
+        const delivery = await deliverSeriesToTelegramChat(chatId, seriesId, title);
+        if (delivery.ok) {
+          deliveredItemIds.add(seriesId);
+          summary.delivered.push({
+            seriesId,
+            title: delivery.title,
+            deliveryType: delivery.deliveryType,
+          });
+          await updatePaymentOrderRecord(orderId, {
+            delivered_item_ids: Array.from(deliveredItemIds),
+            delivery_last_error: null,
+          }).catch((error) => {
+            console.warn("[PAYMENT] Falha ao salvar item entregue:", error instanceof Error ? error.message : String(error));
+          });
+        } else {
+          summary.failed.push({
+            seriesId,
+            title: delivery.title || title,
+            reason: delivery.code,
+          });
+        }
+      } catch (error) {
         summary.failed.push({
           seriesId,
-          title: delivery.title || title,
-          reason: delivery.code,
+          title,
+          reason: error instanceof Error ? error.message : String(error),
         });
       }
-    } catch (error) {
-      summary.failed.push({
-        seriesId,
-        title,
-        reason: error instanceof Error ? error.message : String(error),
-      });
     }
 
     processedCount += 1;
@@ -4271,6 +4532,35 @@ async function deliverApprovedOrderSeries(order: Record<string, unknown>) {
     } catch (error) {
       console.warn("[PAYMENT] Falha ao atualizar barra de progresso:", error instanceof Error ? error.message : String(error));
     }
+  }
+
+  const allDelivered = uniqueItems.every((item) => {
+    const seriesId = String(item.id ?? item.serie_id ?? item.series_id ?? "").trim();
+    return seriesId && deliveredItemIds.has(seriesId);
+  });
+  const deliveryStatus = allDelivered
+    ? "completed"
+    : deliveredItemIds.size > 0
+      ? "partial"
+      : "failed";
+  summary.deliveryStatus = deliveryStatus;
+
+  await updatePaymentOrderRecord(orderId, {
+    delivery_status: deliveryStatus,
+    delivered_item_ids: Array.from(deliveredItemIds),
+    delivery_completed_at: allDelivered ? new Date().toISOString() : null,
+    delivery_last_error: summary.failed.length ? summary.failed.map((item) => item.reason).join(" | ").slice(0, 1000) : null,
+  }).catch((error) => {
+    console.warn("[PAYMENT] Falha ao finalizar estado da entrega:", error instanceof Error ? error.message : String(error));
+  });
+
+  if (deliveryStatus === "completed") {
+    await recordAppEvent({
+      eventName: "delivery_completed",
+      userId: String(order.user_id ?? ""),
+      orderId,
+      metadata: { item_count: uniqueItems.length },
+    });
   }
 
   return summary;
@@ -4564,7 +4854,7 @@ function sumApprovedPayments(rows: Record<string, unknown>[]) {
 async function getOwnerPaymentRows() {
   try {
     const data = await supabaseFetch(
-      `${PAYMENT_ORDERS_TABLE}?select=order_id,status,payment_method,amount,created_at,confirmed_at&order=created_at.desc&limit=100`,
+      `${PAYMENT_ORDERS_TABLE}?select=order_id,status,payment_method,amount,created_at,confirmed_at,delivery_status,delivery_attempts,delivery_last_error&order=created_at.desc&limit=100`,
     );
     return Array.isArray(data) ? data as Record<string, unknown>[] : [];
   } catch {
@@ -4647,11 +4937,71 @@ function serializeOwnerSeries(row: Record<string, unknown>) {
   };
 }
 
+async function getOwnerAnalytics() {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    const data = await supabaseFetch(
+      `${APP_EVENTS_TABLE}?select=event_name,user_id,series_id,order_id,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`,
+    );
+    const rows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+    const eventCounts: Record<string, number> = {};
+    const usersByEvent: Record<string, Set<string>> = {};
+    const uniqueUsers = new Set<string>();
+
+    for (const row of rows) {
+      const eventName = String(row.event_name ?? "").trim();
+      const eventUser = String(row.user_id ?? "").trim();
+      if (!eventName) continue;
+      eventCounts[eventName] = (eventCounts[eventName] ?? 0) + 1;
+      usersByEvent[eventName] ??= new Set<string>();
+      if (eventUser) {
+        usersByEvent[eventName].add(eventUser);
+        uniqueUsers.add(eventUser);
+      }
+    }
+
+    const uniqueCount = (eventName: string) => usersByEvent[eventName]?.size ?? 0;
+    const checkoutStarted = uniqueCount("checkout_started");
+    const cartAbandoned = uniqueCount("cart_abandoned");
+
+    return {
+      period_days: 30,
+      events_total: rows.length,
+      unique_users: uniqueUsers.size,
+      event_counts: eventCounts,
+      funnel: {
+        app_opened: uniqueCount("app_opened"),
+        series_viewed: uniqueCount("series_viewed"),
+        add_to_cart: uniqueCount("add_to_cart"),
+        checkout_started: checkoutStarted,
+        payment_created: uniqueCount("payment_created"),
+        payment_approved: uniqueCount("payment_approved"),
+        delivery_completed: uniqueCount("delivery_completed"),
+        cart_abandoned: cartAbandoned,
+      },
+      abandonment_rate: checkoutStarted > 0
+        ? Number(((cartAbandoned / checkoutStarted) * 100).toFixed(1))
+        : 0,
+    };
+  } catch (error) {
+    console.warn("[ANALYTICS] Falha ao carregar metricas do proprietario:", error instanceof Error ? error.message : String(error));
+    return {
+      period_days: 30,
+      events_total: 0,
+      unique_users: 0,
+      event_counts: {},
+      funnel: {},
+      abandonment_rate: 0,
+    };
+  }
+}
+
 async function buildOwnerDashboardPayload(userId: string) {
-  const [series, episodes, payments] = await Promise.all([
+  const [series, episodes, payments, analytics] = await Promise.all([
     getSeriesList("", true) as Promise<Record<string, unknown>[]>,
     getEpisodesList().catch(() => [] as Record<string, unknown>[]),
     getOwnerPaymentRows(),
+    getOwnerAnalytics(),
   ]);
 
   const sortedSeries = sortByCreatedAtDesc(series);
@@ -4691,8 +5041,12 @@ async function buildOwnerDashboardPayload(userId: string) {
         amount: Number(row.amount ?? 0) || 0,
         created_at: row.created_at ?? null,
         confirmed_at: row.confirmed_at ?? null,
+        delivery_status: row.delivery_status ?? null,
+        delivery_attempts: Number(row.delivery_attempts ?? 0) || 0,
+        delivery_last_error: row.delivery_last_error ?? null,
       })),
     },
+    analytics,
     series_items: sortedSeries.map((row) => serializeOwnerSeries(row)),
     recent_series: sortedSeries.slice(0, 8).map((row) => serializeOwnerSeries(row)),
   };
@@ -5357,6 +5711,10 @@ Deno.serve(async (req) => {
 
     if (action === "favorite-sync") {
       return await handleFavoriteSync(req);
+    }
+
+    if (action === "analytics-event" && req.method === "POST") {
+      return await handleAnalyticsEvent(req);
     }
 
     if (action === "playback") {
