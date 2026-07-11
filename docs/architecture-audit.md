@@ -76,3 +76,16 @@ Implementado em 11/07/2026:
 
 Trade-off: a autenticação administrativa continua vinculada ao Telegram, evitando introduzir uma segunda pilha de autenticação web nesta etapa. Uma conta web independente deve ser avaliada apenas quando houver necessidade operacional comprovada.
 
+# Sprint 3 - Área da cliente
+
+Implementado em 11/07/2026:
+
+- visão geral da conta;
+- biblioteca de compras aprovadas;
+- histórico de pedidos e pagamentos;
+- histórico real de progresso;
+- integração dos favoritos existentes;
+- endpoint privado autenticado por `initData`;
+- fallback para abertura no Telegram em navegadores comuns.
+
+Trade-off: nesta etapa, a identidade da cliente continua sendo o Telegram ID validado. Não foi adicionada autenticação web separada, evitando custo, duplicação de contas e risco de divergência entre compras web e Telegram.

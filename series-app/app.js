@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260711-02';
+const BUILD_VERSION = '20260711-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -128,6 +128,8 @@ let ownerSeriesSearchTerm = '';
 let ownerSeriesFilterMode = 'all';
 let ownerSessionAuthorized = false;
 let supportRequestPending = false;
+let customerAreaSnapshot = null;
+let customerAreaLoadedAt = 0;
 const ownerOrderRetryInFlightIds = new Set();
 
 function getAnalyticsSessionId() {
@@ -488,6 +490,7 @@ const DOM = {
     contentPage: document.getElementById('contentPage'),
     themeIcon: document.getElementById('themeIcon'),
     supportBtn: document.getElementById('supportBtn'),
+    accountBtn: document.getElementById('accountBtn'),
     openTelegramBtn: document.getElementById('openTelegramBtn'),
     headerSearchInput: document.getElementById('headerSearchInput'),
     currentYear: document.getElementById('currentYear'),
@@ -741,6 +744,165 @@ function renderNotFoundPage() {
     setMetaContent('meta[name="robots"]', 'noindex,follow');
 }
 
+const CUSTOMER_ROUTES = new Set(['/minha-conta', '/minha-biblioteca', '/minhas-compras', '/historico']);
+
+function requestCustomerArea() {
+    return requestJson(`${API_URL}?action=customer-area`, {
+        init_data: tg?.initData || '',
+    }, 20000);
+}
+
+function getCustomerOrderStatusMeta(status) {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'approved') return { label: 'Pago', className: 'approved' };
+    if (['rejected', 'cancelled', 'canceled', 'expired', 'failed'].includes(normalized)) return { label: 'Não aprovado', className: 'failed' };
+    return { label: 'Aguardando pagamento', className: 'pending' };
+}
+
+function formatCustomerDate(value) {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) return 'Data indisponível';
+    return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function renderCustomerNav(path) {
+    const links = [
+        ['/minha-conta', 'Visão geral', 'fa-user'],
+        ['/minha-biblioteca', 'Biblioteca', 'fa-play'],
+        ['/minhas-compras', 'Compras', 'fa-receipt'],
+        ['/historico', 'Histórico', 'fa-clock-rotate-left'],
+        ['/favoritos', 'Favoritos', 'fa-heart'],
+    ];
+    return `<nav class="customer-nav" aria-label="Área da cliente">${links.map(([href, label, icon]) => `
+        <a href="${href}" class="customer-nav-link ${path === href ? 'active' : ''}"><i class="fas ${icon}"></i> ${label}</a>
+    `).join('')}</nav>`;
+}
+
+function renderCustomerSeriesCard(serie, actionLabel = 'Receber no Telegram') {
+    const cover = sanitizeUrl(getCoverUrl(serie)) || PLACEHOLDER_IMAGE;
+    const priceLabel = isFree(serie) ? 'Grátis' : formatPrice(serie);
+    return `
+        <article class="customer-series-card">
+            <img src="${escapeAttr(cover)}" alt="Capa de ${escapeAttr(serie?.title || 'série')}" loading="lazy">
+            <div class="customer-series-copy">
+                <span>${escapeHtml(priceLabel)}</span>
+                <h3>${escapeHtml(serie?.title || 'Série')}</h3>
+                <p>${escapeHtml(serie?.short_description || serie?.description || 'Disponível na sua conta.')}</p>
+                <button type="button" class="btn btn-primary" data-customer-series-id="${escapeAttr(String(serie?.id || ''))}">
+                    <i class="fab fa-telegram"></i> ${escapeHtml(actionLabel)}
+                </button>
+            </div>
+        </article>
+    `;
+}
+
+function renderCustomerOrder(order) {
+    const status = getCustomerOrderStatusMeta(order?.status);
+    const titles = (Array.isArray(order?.items) ? order.items : []).map((item) => item?.title).filter(Boolean).join(', ');
+    return `
+        <article class="customer-order-card">
+            <div class="customer-order-head">
+                <div><span>Pedido ${escapeHtml(String(order?.order_id || '').slice(0, 8))}</span><strong>${escapeHtml(formatCustomerDate(order?.created_at))}</strong></div>
+                <span class="customer-status customer-status-${escapeAttr(status.className)}">${escapeHtml(status.label)}</span>
+            </div>
+            <p>${escapeHtml(titles || 'Itens do pedido')}</p>
+            <div class="customer-order-footer"><strong>${escapeHtml(formatOwnerCurrency(order?.amount || 0))}</strong><span>${escapeHtml(String(order?.payment_method || '').replaceAll('_', ' '))}</span></div>
+        </article>
+    `;
+}
+
+function wireCustomerAreaActions() {
+    document.querySelectorAll('[data-customer-series-id]').forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.onclick = () => {
+            const serie = findSeriesById(button.dataset.customerSeriesId || '');
+            if (!serie) return showToast('Esta série não está disponível agora.', 'info');
+            if (!appContext.isTelegram) return openTelegramBotLink(buildTelegramSeriesLink(serie));
+            return deliverSeriesToTelegram(serie);
+        };
+    });
+    DOM.contentPage?.querySelectorAll('a[href^="/"]').forEach((link) => {
+        if (!(link instanceof HTMLAnchorElement)) return;
+        link.onclick = (event) => {
+            event.preventDefault();
+            history.pushState({ route: 'customer' }, '', link.getAttribute('href') || '/minha-conta');
+            void applyPublicRoute();
+        };
+    });
+}
+
+function renderCustomerArea(path, data) {
+    if (!DOM.contentPage) return;
+    const account = data?.account || {};
+    const summary = data?.summary || {};
+    const library = Array.isArray(data?.library) ? data.library : [];
+    const orders = Array.isArray(data?.orders) ? data.orders : [];
+    const history = Array.isArray(data?.history) ? data.history : [];
+    const firstName = String(account.name || 'Cliente').split(/\s+/)[0];
+    let body = '';
+
+    if (path === '/minha-biblioteca') {
+        body = `<section class="customer-section"><div class="customer-section-head"><div><span>Seus acessos</span><h2>Minha biblioteca</h2></div><strong>${library.length} títulos</strong></div><div class="customer-series-grid">${library.map((serie) => renderCustomerSeriesCard(serie)).join('') || '<div class="customer-empty"><i class="fas fa-film"></i><h3>Sua biblioteca está vazia</h3><p>As séries pagas aparecem aqui automaticamente após a aprovação.</p><a class="btn btn-primary" href="/">Explorar catálogo</a></div>'}</div></section>`;
+    } else if (path === '/minhas-compras') {
+        body = `<section class="customer-section"><div class="customer-section-head"><div><span>Pagamentos</span><h2>Minhas compras</h2></div><strong>${orders.length} pedidos</strong></div><div class="customer-orders-list">${orders.map(renderCustomerOrder).join('') || '<div class="customer-empty"><i class="fas fa-receipt"></i><h3>Nenhuma compra registrada</h3><p>Seus pedidos aparecerão aqui.</p></div>'}</div></section>`;
+    } else if (path === '/historico') {
+        body = `<section class="customer-section"><div class="customer-section-head"><div><span>Atividade</span><h2>Histórico</h2></div><strong>${history.length} títulos</strong></div><div class="customer-history-list">${history.map((item) => `
+            <article class="customer-history-card">
+                <img src="${escapeAttr(sanitizeUrl(item.cover_url) || PLACEHOLDER_IMAGE)}" alt="" loading="lazy">
+                <div><span>${escapeHtml(formatCustomerDate(item.last_opened_at))}</span><h3>${escapeHtml(item.title || 'Série')}</h3><div class="customer-progress"><span style="width:${Math.max(0, Math.min(100, Number(item.completion_percent || 0)))}%"></span></div><p>${item.completed ? 'Concluída' : `${Math.round(Number(item.completion_percent || 0))}% registrado`}</p></div>
+                ${item.available ? `<button type="button" class="btn btn-secondary" data-customer-series-id="${escapeAttr(String(item.series_id || ''))}">Abrir</button>` : ''}
+            </article>
+        `).join('') || '<div class="customer-empty"><i class="fas fa-clock-rotate-left"></i><h3>Seu histórico está vazio</h3><p>As séries abertas pelo Telegram aparecerão aqui.</p></div>'}</div></section>`;
+    } else {
+        body = `
+            <section class="customer-summary-grid">
+                <a href="/minha-biblioteca" class="customer-summary-card"><i class="fas fa-play"></i><span>Biblioteca</span><strong>${Number(summary.library_total || 0)}</strong></a>
+                <a href="/minhas-compras" class="customer-summary-card"><i class="fas fa-receipt"></i><span>Compras aprovadas</span><strong>${Number(summary.approved_orders_total || 0)}</strong></a>
+                <a href="/favoritos" class="customer-summary-card"><i class="fas fa-heart"></i><span>Favoritos</span><strong>${Number(summary.favorites_total || 0)}</strong></a>
+                <a href="/historico" class="customer-summary-card"><i class="fas fa-clock-rotate-left"></i><span>Histórico</span><strong>${Number(summary.history_total || 0)}</strong></a>
+            </section>
+            <section class="customer-section"><div class="customer-section-head"><div><span>Acesso rápido</span><h2>Últimas séries da biblioteca</h2></div><a href="/minha-biblioteca">Ver todas</a></div><div class="customer-series-grid">${library.slice(0, 3).map((serie) => renderCustomerSeriesCard(serie)).join('') || '<div class="customer-empty"><p>Suas séries compradas aparecerão aqui automaticamente.</p></div>'}</div></section>
+            <section class="customer-section"><div class="customer-section-head"><div><span>Pedidos recentes</span><h2>Minhas compras</h2></div><a href="/minhas-compras">Ver todas</a></div><div class="customer-orders-list">${orders.slice(0, 3).map(renderCustomerOrder).join('') || '<div class="customer-empty"><p>Nenhum pedido registrado ainda.</p></div>'}</div></section>
+        `;
+    }
+
+    DOM.contentPage.innerHTML = `
+        <div class="customer-shell">
+            <header class="customer-hero"><div class="customer-avatar"><i class="fas fa-user"></i></div><div><span>Área da cliente</span><h1>Olá, ${escapeHtml(firstName)}</h1><p>${account.username ? `@${escapeHtml(account.username)}` : 'Seus acessos estão vinculados ao Telegram.'}</p></div></header>
+            ${renderCustomerNav(path)}
+            ${body}
+        </div>
+    `;
+    wireCustomerAreaActions();
+}
+
+async function openCustomerRoute(path) {
+    if (DOM.modalOverlay?.classList.contains('active')) closeModal();
+    setCatalogPageVisibility(false);
+    setMetaContent('meta[name="robots"]', 'noindex,nofollow');
+    document.title = 'Minha conta — Séries Curtas Express';
+    if (!appContext.isTelegram) {
+        DOM.contentPage.innerHTML = '<article class="content-page-card content-page-empty"><p class="content-page-kicker">Área da cliente</p><h1>Abra pelo Telegram</h1><p>Compras, biblioteca e histórico ficam vinculados com segurança à sua conta do Telegram.</p><button type="button" class="btn btn-primary" data-customer-open-telegram><i class="fab fa-telegram"></i> Abrir no Telegram</button></article>';
+        DOM.contentPage.querySelector('[data-customer-open-telegram]')?.addEventListener('click', () => openTelegramBotLink(TELEGRAM_BOT_LINK));
+        return;
+    }
+
+    DOM.contentPage.innerHTML = '<div class="customer-loading"><i class="fas fa-spinner fa-spin"></i><strong>Carregando sua conta...</strong></div>';
+    try {
+        if (!customerAreaSnapshot || Date.now() - customerAreaLoadedAt > 30000) {
+            customerAreaSnapshot = await requestCustomerArea();
+            customerAreaLoadedAt = Date.now();
+        }
+        renderCustomerArea(path, customerAreaSnapshot);
+    } catch (error) {
+        DOM.contentPage.innerHTML = `<article class="content-page-card content-page-empty"><h1>Não foi possível carregar sua conta</h1><p>${escapeHtml(error.message || 'Tente novamente em instantes.')}</p><button type="button" class="btn btn-primary" data-customer-retry>Tentar novamente</button></article>`;
+        DOM.contentPage.querySelector('[data-customer-retry]')?.addEventListener('click', () => {
+            customerAreaSnapshot = null;
+            void openCustomerRoute(path);
+        });
+    }
+}
+
 async function resolveMovedSeriesSlug(slug) {
     try {
         const response = await fetch(`${API_URL}?action=series-slug-resolve&slug=${encodeURIComponent(slug)}`, {
@@ -770,6 +932,11 @@ async function applyPublicRoute() {
         }
         if (serie) openSeriesDetails(serie, { updateHistory: false });
         else renderNotFoundPage();
+        return;
+    }
+
+    if (CUSTOMER_ROUTES.has(path)) {
+        await openCustomerRoute(path);
         return;
     }
 
@@ -3961,6 +4128,7 @@ async function init() {
     updatePaymentMethodUI();
     updateOwnerVisibility();
     if (DOM.openTelegramBtn) DOM.openTelegramBtn.hidden = appContext.isTelegram;
+    if (DOM.accountBtn) DOM.accountBtn.hidden = !appContext.isTelegram;
     if (DOM.cartBtn) DOM.cartBtn.hidden = !appContext.isTelegram;
     if (DOM.currentYear) DOM.currentYear.textContent = String(new Date().getFullYear());
     renderCatalogSkeleton();
@@ -4028,6 +4196,10 @@ function setupEventListeners() {
     DOM.openTelegramBtn?.addEventListener('click', () => {
         trackAnalyticsEvent('telegram_open', { metadata: { source: 'header' } });
         openTelegramBotLink(TELEGRAM_BOT_LINK);
+    });
+    DOM.accountBtn?.addEventListener('click', () => {
+        history.pushState({ route: 'customer' }, '', '/minha-conta');
+        void applyPublicRoute();
     });
     DOM.supportCloseBtn?.addEventListener('click', closeSupportForm);
     DOM.supportCancelBtn?.addEventListener('click', closeSupportForm);

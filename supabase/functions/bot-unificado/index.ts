@@ -4881,6 +4881,115 @@ async function handleFavoriteSync(req: Request) {
   return json(req, { ok: true, is_favorite: false, series_id: seriesId });
 }
 
+function serializeCustomerOrder(row: Record<string, unknown>) {
+  const rawItems = Array.isArray(row.items) ? row.items as Record<string, unknown>[] : [];
+  return {
+    order_id: String(row.order_id ?? ""),
+    status: String(row.status ?? "unknown"),
+    payment_method: String(row.payment_method ?? "unknown"),
+    amount: Number(row.amount ?? 0) || 0,
+    created_at: row.created_at ?? null,
+    confirmed_at: row.confirmed_at ?? null,
+    delivery_status: String(row.delivery_status ?? "pending"),
+    delivery_completed_at: row.delivery_completed_at ?? null,
+    items: rawItems.map((item) => ({
+      series_id: String(item.id ?? item.serie_id ?? item.series_id ?? ""),
+      title: String(item.title ?? item.name ?? "Serie"),
+      price: Number(item.price ?? 0) || 0,
+    })),
+  };
+}
+
+async function getCustomerPaymentRows(userId: string) {
+  const data = await supabaseFetch(
+    `${PAYMENT_ORDERS_TABLE}?select=order_id,status,payment_method,amount,items,created_at,confirmed_at,delivery_status,delivery_completed_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=200`,
+  );
+  return Array.isArray(data) ? data as Record<string, unknown>[] : [];
+}
+
+async function handleCustomerArea(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+
+  let validated: { userId: string; user: Record<string, unknown> };
+  try {
+    validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? "")) as {
+      userId: string;
+      user: Record<string, unknown>;
+    };
+  } catch (error) {
+    return json(req, {
+      error: error instanceof Error ? error.message : "Dados do Telegram invalidos",
+      code: "telegram_auth_required",
+    }, 401);
+  }
+
+  const userId = validated.userId;
+  const [catalog, orders, progressRows, favoriteRows] = await Promise.all([
+    getSeriesList(userId),
+    getCustomerPaymentRows(userId),
+    getUserSeriesProgressRows(userId).catch(() => []),
+    getUserFavoriteSeriesRows(userId).catch(() => []),
+  ]);
+
+  const catalogById = new Map(
+    (catalog as Record<string, unknown>[]).map((serie) => [String(serie.id ?? ""), serie]),
+  );
+  const library = (catalog as Record<string, unknown>[])
+    .filter((serie) => serie.has_access === true && !isSeriesFree(serie))
+    .map((serie) => ({ ...serie, has_access: true }));
+  const favorites = favoriteRows
+    .map((row) => catalogById.get(String(row.series_id ?? "")))
+    .filter((serie): serie is Record<string, unknown> => Boolean(serie));
+  const history = progressRows
+    .slice()
+    .sort((left, right) => (Date.parse(String(right.last_opened_at ?? "")) || 0) - (Date.parse(String(left.last_opened_at ?? "")) || 0))
+    .map((row) => {
+      const seriesId = String(row.series_id ?? "");
+      const serie = catalogById.get(seriesId);
+      return {
+        series_id: seriesId,
+        title: String(serie?.title ?? row.series_title ?? "Serie"),
+        cover_url: serie?.cover_url ?? null,
+        completion_percent: Number(row.completion_percent ?? 0) || 0,
+        last_position_seconds: Number(row.last_position_seconds ?? 0) || 0,
+        duration_seconds: Number(row.duration_seconds ?? 0) || 0,
+        completed: row.completed === true,
+        last_opened_at: row.last_opened_at ?? null,
+        playback_mode: String(serie?.playback_mode ?? row.last_playback_mode ?? ""),
+        available: Boolean(serie),
+      };
+    });
+  const serializedOrders = orders.map(serializeCustomerOrder);
+  const approvedOrders = serializedOrders.filter((order) => order.status.toLowerCase() === "approved");
+  const displayName = [validated.user.first_name, validated.user.last_name]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+
+  return json(req, {
+    ok: true,
+    account: {
+      telegram_user_id: userId,
+      name: displayName || "Cliente",
+      username: String(validated.user.username ?? ""),
+      language_code: String(validated.user.language_code ?? ""),
+    },
+    summary: {
+      library_total: library.length,
+      orders_total: serializedOrders.length,
+      approved_orders_total: approvedOrders.length,
+      approved_amount: Number(approvedOrders.reduce((sum, order) => sum + order.amount, 0).toFixed(2)),
+      favorites_total: favorites.length,
+      history_total: history.length,
+    },
+    library,
+    orders: serializedOrders,
+    favorites,
+    history,
+  });
+}
+
 function countByStatus(rows: Record<string, unknown>[]) {
   return rows.reduce((acc: Record<string, number>, row) => {
     const status = String(row.status ?? "unknown").trim().toLowerCase() || "unknown";
@@ -6173,6 +6282,10 @@ Deno.serve(async (req) => {
 
     if (action === "favorite-sync") {
       return await handleFavoriteSync(req);
+    }
+
+    if (action === "customer-area" && req.method === "POST") {
+      return await handleCustomerArea(req);
     }
 
     if (action === "analytics-event" && req.method === "POST") {

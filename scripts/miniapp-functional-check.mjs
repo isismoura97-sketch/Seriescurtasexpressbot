@@ -361,6 +361,30 @@ async function installRoutes(page, options = {}) {
       return;
     }
 
+    if (action === 'customer-area') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          account: { telegram_user_id: TEST_OWNER_ID, name: 'Isis Teste', username: 'isisteste', language_code: 'pt-br' },
+          summary: { library_total: 1, orders_total: 1, approved_orders_total: 1, approved_amount: 5.9, favorites_total: 1, history_total: 1 },
+          library: [{ ...fixtureSeries.find((serie) => serie.id === 'paid-series'), has_access: true }],
+          orders: [{
+            order_id: 'customer-order-test', status: 'approved', payment_method: 'pix_qr', amount: 5.9,
+            created_at: '2026-07-11T12:00:00Z', confirmed_at: '2026-07-11T12:01:00Z', delivery_status: 'completed',
+            items: [{ series_id: 'paid-series', title: 'Pago Protegido', price: 5.9 }],
+          }],
+          favorites: [fixtureSeries.find((serie) => serie.id === 'direct-ok')],
+          history: [{
+            series_id: 'direct-ok', title: 'Direto Funcional', cover_url: svgCover('Direto', '#1A2744'),
+            completion_percent: 42, last_position_seconds: 420, duration_seconds: 1000,
+            completed: false, last_opened_at: '2026-07-11T12:00:00Z', playback_mode: 'direct', available: true,
+          }],
+        }),
+      });
+      return;
+    }
+
     if (action === 'owner-dashboard') {
       const catalog = ownerMigrationApplied
         ? {
@@ -840,6 +864,37 @@ async function main() {
       playerError: await page.evaluate(() => document.querySelector('#playerError')?.classList.contains('active')),
     };
 
+    await page.locator('#accountBtn').click();
+    await page.waitForSelector('.customer-shell', { timeout: 10000 });
+    const customerOverviewState = await page.evaluate(() => ({
+      path: location.pathname,
+      title: document.querySelector('.customer-hero h1')?.textContent?.trim() || '',
+      summaryCards: document.querySelectorAll('.customer-summary-card').length,
+      libraryCards: document.querySelectorAll('.customer-series-card').length,
+      accountVisible: document.querySelector('#accountBtn')?.hidden === false,
+    }));
+    await page.locator('.customer-nav-link[href="/minha-biblioteca"]').click();
+    await page.waitForFunction(() => location.pathname === '/minha-biblioteca');
+    const customerLibraryState = await page.evaluate(() => ({
+      path: location.pathname,
+      cards: document.querySelectorAll('.customer-series-card').length,
+      action: document.querySelector('[data-customer-series-id="paid-series"]')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+    }));
+    await page.locator('.customer-nav-link[href="/minhas-compras"]').click();
+    await page.waitForFunction(() => location.pathname === '/minhas-compras');
+    const customerOrdersState = await page.evaluate(() => ({
+      path: location.pathname,
+      cards: document.querySelectorAll('.customer-order-card').length,
+      paid: document.querySelector('.customer-status-approved')?.textContent?.trim() || '',
+    }));
+    await page.locator('.customer-nav-link[href="/historico"]').click();
+    await page.waitForFunction(() => location.pathname === '/historico');
+    const customerHistoryState = await page.evaluate(() => ({
+      path: location.pathname,
+      cards: document.querySelectorAll('.customer-history-card').length,
+      progressWidth: document.querySelector('.customer-progress span')?.style.width || '',
+    }));
+
     await page.locator('#ownerBtn').click();
     await page.fill('#ownerPasswordInput', 'owner-test');
     await page.locator('#ownerLoginBtn').click();
@@ -920,6 +975,13 @@ async function main() {
       heading: document.querySelector('#contentPage h1')?.textContent?.trim() || '',
       catalogHidden: document.querySelector('#catalogSection')?.hidden === true,
     }));
+    await webPage.goto(`http://127.0.0.1:${port}/minha-conta`, { waitUntil: 'domcontentloaded' });
+    await webPage.waitForSelector('[data-customer-open-telegram]', { timeout: 10000 });
+    const webCustomerState = await webPage.evaluate(() => ({
+      path: location.pathname,
+      heading: document.querySelector('#contentPage h1')?.textContent?.trim() || '',
+      telegramAction: document.querySelector('[data-customer-open-telegram]')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+    }));
     await webPage.close();
 
     const sitemapText = fs.readFileSync(path.join(appDir, 'sitemap.xml'), 'utf8');
@@ -929,7 +991,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260711-02')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260711-03')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -964,6 +1026,10 @@ async function main() {
     if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
     if (!paidCardAfterPayment.action.includes('Receber no Telegram')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
     if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
+    if (customerOverviewState.path !== '/minha-conta' || !customerOverviewState.title.includes('Isis') || customerOverviewState.summaryCards !== 4 || customerOverviewState.libraryCards !== 1 || !customerOverviewState.accountVisible) failures.push(`customer overview failed: ${JSON.stringify(customerOverviewState)}`);
+    if (customerLibraryState.path !== '/minha-biblioteca' || customerLibraryState.cards !== 1 || !customerLibraryState.action.includes('Receber no Telegram')) failures.push(`customer library failed: ${JSON.stringify(customerLibraryState)}`);
+    if (customerOrdersState.path !== '/minhas-compras' || customerOrdersState.cards !== 1 || customerOrdersState.paid !== 'Pago') failures.push(`customer orders failed: ${JSON.stringify(customerOrdersState)}`);
+    if (customerHistoryState.path !== '/historico' || customerHistoryState.cards !== 1 || customerHistoryState.progressWidth !== '42%') failures.push(`customer history failed: ${JSON.stringify(customerHistoryState)}`);
     if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral')) || !ownerState.text.includes('Conversão e abandono')) failures.push('owner area failed');
     if (!ownerState.seoField || !ownerState.statusField || !ownerState.deliveryField || ownerState.editorialButtons < 2 || ownerState.statusPills < 2) failures.push(`owner CMS lifecycle failed: ${JSON.stringify(ownerState)}`);
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Prontas2') && !migratedOwnerState.text.includes('Em fila0'))) failures.push('owner migration failed');
@@ -974,6 +1040,7 @@ async function main() {
     if (!webPaidState.path.includes('/series/serie-paga') || !webPaidState.action.includes('Comprar por R$ 5,90')) failures.push(`public paid details failed: ${JSON.stringify(webPaidState)}`);
     if (!webTelegramOpenState.includes('t.me/ShortNovelsBot') || deliveryLog.length !== webDeliveryCountBefore) failures.push('public Telegram handoff failed');
     if (!webContentState.title.includes('Política de privacidade') || webContentState.heading !== 'Política de privacidade' || !webContentState.catalogHidden) failures.push(`public content page failed: ${JSON.stringify(webContentState)}`);
+    if (webCustomerState.path !== '/minha-conta' || webCustomerState.heading !== 'Abra pelo Telegram' || !webCustomerState.telegramAction.includes('Abrir no Telegram')) failures.push(`web customer fallback failed: ${JSON.stringify(webCustomerState)}`);
     if (!sitemapText.includes('/series/') || !sitemapText.includes('/blog/o-que-sao-series-curtas-verticais') || !robotsText.includes('Sitemap:')) failures.push('SEO files failed');
     if (!generatedSeriesPageText.includes('<title>A Prometida do Príncipe Vampiro') || !generatedSeriesPageText.includes('property="og:title"') || !generatedSeriesPageText.includes('"@type":"Movie"')) failures.push('pre-rendered series SEO failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
@@ -998,6 +1065,10 @@ async function main() {
         checkoutState,
         paidCardAfterPayment,
         paidAfterPayment,
+        customerOverviewState,
+        customerLibraryState,
+        customerOrdersState,
+        customerHistoryState,
         ownerState,
         migratedOwnerState,
         ownerRetryState,
@@ -1007,6 +1078,7 @@ async function main() {
         webPaidState,
         webTelegramOpenState,
         webContentState,
+        webCustomerState,
       },
     };
 

@@ -63,6 +63,18 @@ Os arquivos resultantes ficam em `series-app/sitemap.xml` e `series-app/series/[
 
 O frontend nunca usa o modo web para liberar conteúdo pago. Compra, entrega, progresso remoto e área da proprietária continuam dependendo de `initData` validado pela Edge Function.
 
+## Área da cliente
+
+Quando aberto pelo Telegram, o Mini App disponibiliza:
+
+- `/minha-conta` com o resumo da conta;
+- `/minha-biblioteca` com séries compradas e aprovadas;
+- `/minhas-compras` com pedidos e estados de pagamento;
+- `/historico` com progresso real registrado;
+- `/favoritos` com os favoritos já sincronizados.
+
+O endpoint `action=customer-area` valida o `initData` no backend e consulta somente registros ligados ao Telegram ID autenticado. A biblioteca não confia no frontend: apenas compras aprovadas retornam com acesso. Fora do Telegram, essas rotas exibem um convite seguro para abrir o bot, sem expor dados privados.
+
 ## Backend Supabase
 
 Há uma Edge Function preparada em `supabase/functions/bot-unificado/index.ts` para:

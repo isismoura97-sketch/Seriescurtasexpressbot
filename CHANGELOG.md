@@ -6,6 +6,11 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 
 ### Adicionado
 
+- Área da cliente com visão geral, biblioteca, compras e histórico.
+- Endpoint privado consolidado para dados da conta autenticada pelo Telegram.
+- Navegação responsiva da conta e fallback seguro fora do Telegram.
+- Biblioteca formada somente por acessos aprovados no backend.
+
 - Ciclo editorial no CMS com rascunho, publicação, ocultação e arquivamento.
 - Ações administrativas protegidas para duplicar e alterar a situação de séries.
 - SEO administrável por série, com canonical, Open Graph e `noindex`.
@@ -44,6 +49,10 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 - Grade de cards e tipografia foram ajustadas para melhorar leitura e responsividade.
 
 ### Seguranca
+
+- Dados da cliente são filtrados pelo Telegram ID extraído do `initData` validado.
+- A área da cliente não retorna File_ID, URL protegida ou detalhes internos do Mercado Pago.
+- A entrega pela biblioteca reaproveita a validação server-side de acesso.
 
 - Publicação exige validação server-side de título, descrição, capa, vídeo e preço.
 - Ações editoriais exigem `initData`, conta proprietária e senha validados no backend.
