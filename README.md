@@ -10,12 +10,14 @@ Aplicação web estática para o catálogo "Séries Curtas Express", com integra
 - `series-app/app.js` - lógica de catálogo, player, carrinho e integração com Telegram
 - `series-app/styles.css` - estilos visuais
 - `series-app/vercel.json` - configuração de SPA para Vercel
+- `docs/architecture-audit.md` - arquitetura, riscos e estratégia incremental
+- `CHANGELOG.md` - histórico de mudanças relevantes
 
 ## Execução local
 
 1. Abra a pasta `series-app`.
 2. Sirva os arquivos estáticos com qualquer servidor local.
-3. Abra a página dentro do Telegram WebApp para liberar o acesso completo.
+3. Abra a página em um navegador comum para consultar o catálogo público ou dentro do Telegram para compras, entrega e recursos vinculados à conta.
 
 Exemplo com Python:
 
@@ -26,9 +28,40 @@ python -m http.server 8000
 
 ## Observações
 
-- O app depende de `window.Telegram.WebApp` para identificar o usuário.
+- O catálogo funciona dentro e fora do Telegram.
+- `window.Telegram.WebApp` identifica o usuário apenas quando o app é aberto pelo Telegram.
 - O catálogo é carregado do backend em Supabase.
-- Fora do Telegram, o app exibe "Acesso Negado" por design.
+- Fora do Telegram, páginas, busca e favoritos locais funcionam normalmente; ações privadas levam o usuário ao bot.
+
+## Rotas públicas e SEO
+
+- `/series/[slug]` - detalhes públicos da série
+- `/categoria/[slug]` - catálogo filtrado por gênero ou tipo
+- `/busca?q=termo` - busca por título, sinopse, gênero, tags, idioma e temas
+- `/favoritos` - favoritos sincronizados no Telegram ou mantidos no navegador
+- `/ajuda`, `/termos` e `/privacidade` - páginas institucionais
+- `/blog` - conteúdo editorial local
+
+Os metadados da página de série incluem canonical, Open Graph, Twitter Cards e Schema.org com dados reais. O sitemap é gerado a partir do catálogo público:
+
+```bash
+node scripts/generate-seo-files.mjs
+```
+
+O arquivo resultante fica em `series-app/sitemap.xml`.
+
+## Contexto híbrido
+
+`series-app/app.js` expõe internamente uma camada de contexto com:
+
+- `isTelegram`
+- `isMobile`
+- `user`
+- `theme`
+- `openTelegramLink`
+- `openExternalLink`
+
+O frontend nunca usa o modo web para liberar conteúdo pago. Compra, entrega, progresso remoto e área da proprietária continuam dependendo de `initData` validado pela Edge Function.
 
 ## Backend Supabase
 
@@ -150,6 +183,10 @@ O acesso exige duas validações no backend:
 
 1. `initData` válido do Telegram WebApp
 2. senha definida em `OWNER_AREA_PASSWORD` ou hash SHA-256 em `OWNER_AREA_PASSWORD_SHA256`
+
+O cadastro também aceita metadados opcionais para descoberta: endereço amigável, título alternativo, resumo, tags, idioma, legenda, duração, ano, classificação, dublagem e destaque editorial. A migration correspondente é `supabase/migrations/20260711024417_add_series_discovery_metadata.sql`.
+
+Por segurança, clientes não leem `public.series` diretamente. A Edge Function monta o catálogo público e remove identificadores, caminhos e URLs internas de vídeo antes de responder.
 
 ## Pagamentos
 

@@ -7,10 +7,10 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260710-02';
+const BUILD_VERSION = '20260711-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
-const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
+const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
 const TELEGRAM_BOT_LINK = `https://t.me/${TELEGRAM_BOT_USERNAME}`;
 let tg = null;
 let userId = null;
@@ -27,11 +27,11 @@ const FAVORITES_STORAGE_KEY = 'series_favorites';
 const CART_UPDATED_AT_STORAGE_KEY = 'cart_updated_at';
 const ANALYTICS_SESSION_STORAGE_KEY = 'analytics_session_id';
 const ANALYTICS_ENDPOINT = `${API_URL}?action=analytics-event`;
-const STATIC_PIX_QR_IMAGE_URL = `assets/pix-qr.png?v=${BUILD_VERSION}`;
+const STATIC_PIX_QR_IMAGE_URL = `/assets/pix-qr.png?v=${BUILD_VERSION}`;
 const SUPPORT_INBOX_EMAIL = 'isismoura97@gmail.com';
 const COVER_FALLBACKS = {
-    '814e3fba-38ce-47d5-b554-9e6b26c6eb58': `assets/covers/marido-pobre-bilionario.webp?v=${BUILD_VERSION}`,
-    'e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15': `assets/covers/o-quaterback-perdido-retorna.webp?v=${BUILD_VERSION}`,
+    '814e3fba-38ce-47d5-b554-9e6b26c6eb58': `/assets/covers/marido-pobre-bilionario.webp?v=${BUILD_VERSION}`,
+    'e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15': `/assets/covers/o-quaterback-perdido-retorna.webp?v=${BUILD_VERSION}`,
 };
 
 function sanitizeUserId(raw) {
@@ -44,12 +44,57 @@ function sanitizeUserId(raw) {
 function resolveTelegramContext() {
     tg = window.Telegram?.WebApp ?? null;
     userId = sanitizeUserId(tg?.initDataUnsafe?.user?.id);
+    const isTelegram = Boolean(tg?.initData && userId);
+    appContext = {
+        isTelegram,
+        isMobile: window.matchMedia('(max-width: 767px)').matches || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent),
+        user: isTelegram ? tg.initDataUnsafe.user : null,
+        theme: isTelegram ? String(tg.colorScheme || 'dark') : (document.body.classList.contains('light-mode') ? 'light' : 'dark'),
+        openTelegramLink: openTelegramBotLink,
+        openExternalLink,
+    };
+    document.documentElement.dataset.runtime = isTelegram ? 'telegram' : 'web';
+    document.body.classList.toggle('runtime-telegram', isTelegram);
+    document.body.classList.toggle('runtime-web', !isTelegram);
+}
+
+let appContext = {
+    isTelegram: false,
+    isMobile: false,
+    user: null,
+    theme: 'dark',
+    openTelegramLink: openTelegramBotLink,
+    openExternalLink,
+};
+
+function getTelegramContext() {
+    return { ...appContext };
+}
+
+function slugify(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 100);
+}
+
+function getSeriesSlug(serie) {
+    return String(serie?.slug || '').trim() || slugify(serie?.title || serie?.id || 'serie');
+}
+
+function buildTelegramSeriesLink(serie) {
+    const seriesId = normalizeId(serie?.id);
+    return `${TELEGRAM_BOT_LINK}${seriesId ? `?start=serie_${encodeURIComponent(seriesId)}` : ''}`;
 }
 
 let allSeries = [];
 let cart = [];
 let currentSearchTerm = '';
 let currentCategory = 'all';
+let searchDebounceTimer = null;
 let selectedPaymentMethod = localStorage.getItem(PAYMENT_METHOD_STORAGE_KEY) || 'pix_qr';
 let buyerEmail = localStorage.getItem(BUYER_EMAIL_STORAGE_KEY) || '';
 let activePaymentOrder = null;
@@ -305,6 +350,7 @@ async function toggleFavoriteSeries(serie) {
         showToast('Removida das favoritas.', 'info');
     } else {
         favoriteSeriesIds.add(serieId);
+        trackAnalyticsEvent('favorite_added', { series_id: serieId });
         saveFavoriteSeries();
         syncFavoriteStateToSeries(serieId, true);
         showToast('Adicionada às favoritas.', 'success');
@@ -359,6 +405,11 @@ function setPlayerLoadingView(title = 'Abrindo agora', subtitle = 'Seu vídeo es
 function handleSeriesClick(serie) {
     if (!serie) return;
     trackAnalyticsEvent('series_viewed', { series_id: serie.id });
+    if (isFree(serie)) trackAnalyticsEvent('free_series_opened', { series_id: serie.id });
+    if (!appContext.isTelegram) {
+        openSeriesDetails(serie);
+        return;
+    }
     if (hasSeriesAccess(serie) && getPlaybackMode(serie) !== 'missing') {
         if (isOwnerUser()) {
             void openPlayer(serie.id, serie.title || 'Reproduzir');
@@ -405,11 +456,15 @@ const DOM = {
     paymentSummaryDetails: document.getElementById('paymentSummaryDetails'),
     paymentSummaryActions: document.getElementById('paymentSummaryActions'),
     cartBadge: document.getElementById('cartBadge'),
+    cartBtn: document.getElementById('cartBtn'),
     modalOverlay: document.getElementById('modalOverlay'),
     modalImg: document.getElementById('modalImg'),
     modalTitle: document.getElementById('modalTitle'),
     modalPrice: document.getElementById('modalPrice'),
     modalDesc: document.getElementById('modalDesc'),
+    modalSeriesMeta: document.getElementById('modalSeriesMeta'),
+    relatedSeriesSection: document.getElementById('relatedSeriesSection'),
+    relatedSeriesGrid: document.getElementById('relatedSeriesGrid'),
     telegramGuide: document.getElementById('telegramGuide'),
     modalActions: document.getElementById('modalActions'),
     heroImg: document.getElementById('heroImg'),
@@ -417,6 +472,8 @@ const DOM = {
     heroDesc: document.getElementById('heroDesc'),
     heroBadge: document.getElementById('heroBadge'),
     heroPlayBtn: document.getElementById('heroPlayBtn'),
+    heroDetailsBtn: document.getElementById('heroDetailsBtn'),
+    heroMeta: document.getElementById('heroMeta'),
     catalogGrid: document.getElementById('catalogGrid'),
     netflixScroll: document.getElementById('netflixScroll'),
     telegramScroll: document.getElementById('telegramScroll'),
@@ -425,8 +482,15 @@ const DOM = {
     searchInput: document.getElementById('searchInput'),
     toastContainer: document.getElementById('toastContainer'),
     header: document.getElementById('header'),
+    hero: document.querySelector('.hero'),
+    netflixRow: document.getElementById('netflixRow'),
+    catalogSection: document.getElementById('catalogSection'),
+    contentPage: document.getElementById('contentPage'),
     themeIcon: document.getElementById('themeIcon'),
     supportBtn: document.getElementById('supportBtn'),
+    openTelegramBtn: document.getElementById('openTelegramBtn'),
+    headerSearchInput: document.getElementById('headerSearchInput'),
+    currentYear: document.getElementById('currentYear'),
     ownerBtn: document.getElementById('ownerBtn'),
     ownerOverlay: document.getElementById('ownerOverlay'),
     ownerCloseBtn: document.getElementById('ownerCloseBtn'),
@@ -540,12 +604,171 @@ function isAccessDeniedError(error) {
         || code === 'unauthorized';
 }
 
-function buildSeriesPageUrl(serieId) {
-    const baseUrl = new URL(window.location.pathname, window.location.origin);
-    if (serieId) {
-        baseUrl.searchParams.set('play', normalizeId(serieId));
-    }
+function buildSeriesPageUrl(serieOrId) {
+    const serie = typeof serieOrId === 'object' ? serieOrId : findSeriesById(serieOrId);
+    if (serie) return new URL(`/series/${getSeriesSlug(serie)}`, window.location.origin).toString();
+    const baseUrl = new URL('/', window.location.origin);
+    if (serieOrId) baseUrl.searchParams.set('play', normalizeId(serieOrId));
     return baseUrl.toString();
+}
+
+function findSeriesBySlug(slug) {
+    const normalized = slugify(decodeURIComponent(String(slug || '')));
+    return allSeries.find((serie) => getSeriesSlug(serie) === normalized) || null;
+}
+
+function setMetaContent(selector, content) {
+    const node = document.querySelector(selector);
+    if (node) node.setAttribute('content', String(content || ''));
+}
+
+function updatePageMetadata(serie = null) {
+    const siteName = 'Séries Curtas Express';
+    const title = serie ? `${serie.title} — Série Curta Completa` : siteName;
+    const description = serie
+        ? String(serie.short_description || serie.description || `Conheça ${serie.title}, uma série curta completa.`).slice(0, 160)
+        : 'Descubra séries curtas completas, gratuitas e premium, com acesso pelo Telegram.';
+    const canonical = serie ? buildSeriesPageUrl(serie) : new URL('/', window.location.origin).toString();
+    const image = serie ? getCoverUrl(serie) : new URL('/assets/logo-welcome.png', window.location.origin).toString();
+
+    document.title = title;
+    setMetaContent('meta[name="description"]', description);
+    setMetaContent('meta[property="og:title"]', title);
+    setMetaContent('meta[property="og:description"]', description);
+    setMetaContent('meta[property="og:url"]', canonical);
+    setMetaContent('meta[property="og:image"]', image);
+    setMetaContent('meta[name="twitter:title"]', title);
+    setMetaContent('meta[name="twitter:description"]', description);
+    setMetaContent('meta[name="twitter:image"]', image);
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', canonical);
+
+    const schemaNode = document.getElementById('seriesStructuredData');
+    if (!schemaNode) return;
+    if (!serie) {
+        schemaNode.textContent = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: siteName, url: canonical });
+        return;
+    }
+    const genres = normalizeSeriesTerms(serie.genre || serie.genres || serie.category);
+    const durationMinutes = Number(serie.duration_minutes || serie.durationMinutes || 0);
+    schemaNode.textContent = JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'Movie',
+        name: String(serie.title || ''),
+        description,
+        image,
+        genre: genres.length ? genres : undefined,
+        inLanguage: String(serie.language || serie.audio_language || 'pt-BR'),
+        duration: durationMinutes > 0 ? `PT${Math.round(durationMinutes)}M` : undefined,
+        url: canonical,
+        offers: isFree(serie) ? undefined : {
+            '@type': 'Offer',
+            price: getSeriesPriceValue(serie).toFixed(2),
+            priceCurrency: getSeriesCurrency(serie),
+            availability: 'https://schema.org/InStock',
+            url: canonical,
+        },
+    });
+}
+
+function openSeriesDetails(serie, options = {}) {
+    if (!serie) return;
+    if (options.updateHistory !== false) {
+        history.pushState({ route: 'series', seriesId: normalizeId(serie.id) }, '', `/series/${getSeriesSlug(serie)}`);
+    }
+    updatePageMetadata(serie);
+    openModal(serie);
+}
+
+const STATIC_CONTENT_PAGES = {
+    '/ajuda': {
+        title: 'Ajuda',
+        description: 'Encontre orientações sobre catálogo, pagamento e entrega das séries.',
+        body: `<p class="content-page-kicker">Atendimento</p><h1>Como podemos ajudar?</h1><p>Use o suporte para informar seu e-mail, o assunto e os detalhes do problema. Se a solicitação envolver uma compra, inclua o identificador do pedido.</p><div class="content-page-actions"><button type="button" class="btn btn-primary" data-open-support><i class="fas fa-headset"></i> Abrir suporte</button><a class="btn btn-secondary" href="https://t.me/${TELEGRAM_BOT_USERNAME}"><i class="fab fa-telegram"></i> Abrir bot</a></div>`,
+    },
+    '/termos': {
+        title: 'Termos de uso',
+        description: 'Termos de uso do catálogo Séries Curtas Express.',
+        body: '<p class="content-page-kicker">Informações legais</p><h1>Termos de uso</h1><h2>Acesso ao serviço</h2><p>O catálogo pode ser consultado publicamente. Compras, entregas e recursos vinculados à conta exigem acesso pelo Telegram.</p><h2>Conteúdo e disponibilidade</h2><p>A disponibilidade das séries pode mudar por motivos técnicos, editoriais ou de licenciamento. O preço é informado antes da confirmação da compra.</p><h2>Suporte</h2><p>Em caso de falha de pagamento ou entrega, envie uma solicitação pelo suporte com os dados do pedido.</p>',
+    },
+    '/privacidade': {
+        title: 'Política de privacidade',
+        description: 'Como o Séries Curtas Express utiliza dados necessários para operar o serviço.',
+        body: '<p class="content-page-kicker">Privacidade</p><h1>Política de privacidade</h1><h2>Dados utilizados</h2><p>Quando aberto pelo Telegram, o serviço utiliza o identificador validado da conta para registrar favoritos, progresso, compras e entregas. No navegador, favoritos podem permanecer somente neste dispositivo.</p><h2>Pagamentos</h2><p>Dados de pagamento são processados pelo Mercado Pago. O sistema registra apenas os dados necessários para acompanhar o pedido e confirmar a entrega.</p><h2>Contato</h2><p>Solicitações relacionadas a dados e privacidade podem ser enviadas para <a href="mailto:${SUPPORT_INBOX_EMAIL}">${SUPPORT_INBOX_EMAIL}</a>.</p>',
+    },
+    '/blog': {
+        title: 'Blog',
+        description: 'Guias sobre séries curtas, microdramas e como escolher o próximo título.',
+        body: '<p class="content-page-kicker">Guias</p><h1>Universo das séries curtas</h1><div class="blog-list"><a href="/blog/o-que-sao-series-curtas-verticais"><strong>O que são séries curtas verticais?</strong><span>Entenda o formato dos microdramas e por que ele funciona tão bem no celular.</span></a></div>',
+    },
+    '/blog/o-que-sao-series-curtas-verticais': {
+        title: 'O que são séries curtas verticais?',
+        description: 'Entenda o formato das séries curtas verticais e dos microdramas feitos para celular.',
+        body: '<p class="content-page-kicker">Guia de formato</p><h1>O que são séries curtas verticais?</h1><p>Séries curtas verticais, também chamadas de microdramas, são histórias divididas em cenas rápidas e pensadas principalmente para a tela do celular. Elas usam ritmo direto, conflitos claros e episódios breves.</p><h2>Como assistir</h2><p>No Séries Curtas Express, alguns títulos reúnem todos os episódios em um único vídeo. A página de cada série informa se o acesso é gratuito ou pago antes de levar você ao Telegram.</p><h2>Como escolher uma série</h2><p>Use a busca por gênero ou tema, como romance, máfia, fantasia e suspense. Na página do título, consulte a sinopse e as recomendações relacionadas.</p>',
+    },
+};
+
+function setCatalogPageVisibility(visible) {
+    if (DOM.hero) DOM.hero.hidden = !visible;
+    if (DOM.netflixRow) DOM.netflixRow.hidden = !visible;
+    if (DOM.catalogSection) DOM.catalogSection.hidden = !visible;
+    if (DOM.contentPage) DOM.contentPage.hidden = visible;
+}
+
+function renderStaticContentPage(path) {
+    const page = STATIC_CONTENT_PAGES[path];
+    if (!page || !DOM.contentPage) return false;
+    setCatalogPageVisibility(false);
+    DOM.contentPage.innerHTML = `<article class="content-page-card">${page.body}</article>`;
+    DOM.contentPage.querySelector('[data-open-support]')?.addEventListener('click', openSupportForm);
+    document.title = `${page.title} — Séries Curtas Express`;
+    setMetaContent('meta[name="description"]', page.description);
+    const canonical = new URL(path, window.location.origin).toString();
+    document.querySelector('link[rel="canonical"]')?.setAttribute('href', canonical);
+    setMetaContent('meta[property="og:title"]', document.title);
+    setMetaContent('meta[property="og:description"]', page.description);
+    setMetaContent('meta[property="og:url"]', canonical);
+    return true;
+}
+
+function renderNotFoundPage() {
+    if (!DOM.contentPage) return;
+    setCatalogPageVisibility(false);
+    DOM.contentPage.innerHTML = '<article class="content-page-card content-page-empty"><p class="content-page-kicker">Erro 404</p><h1>Página não encontrada</h1><p>O endereço pode ter mudado ou não existe.</p><a class="btn btn-primary" href="/"><i class="fas fa-arrow-left"></i> Voltar ao catálogo</a></article>';
+    document.title = 'Página não encontrada — Séries Curtas Express';
+    setMetaContent('meta[name="robots"]', 'noindex,follow');
+}
+
+function applyPublicRoute() {
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    const params = new URLSearchParams(window.location.search);
+    const seriesMatch = path.match(/^\/series\/([^/]+)$/);
+    if (seriesMatch) {
+        setCatalogPageVisibility(true);
+        const serie = findSeriesBySlug(seriesMatch[1]);
+        if (serie) openSeriesDetails(serie, { updateHistory: false });
+        else renderNotFoundPage();
+        return;
+    }
+
+    if (DOM.modalOverlay?.classList.contains('active')) closeModal();
+    if (renderStaticContentPage(path)) return;
+    const isCatalogRoute = path === '/' || path === '/series' || path === '/busca' || path === '/favoritos' || /^\/categoria\/[^/]+$/.test(path);
+    if (!isCatalogRoute) {
+        renderNotFoundPage();
+        return;
+    }
+    setCatalogPageVisibility(true);
+    setMetaContent('meta[name="robots"]', 'index,follow,max-image-preview:large');
+
+    if (path === '/busca') {
+        searchSeries(params.get('q') || '', { updateUrl: false });
+    } else if (path === '/favoritos') {
+        filterCategory('favorites', { updateUrl: false });
+    } else {
+        const categoryMatch = path.match(/^\/categoria\/([^/]+)$/);
+        if (categoryMatch) filterCategory(categoryMatch[1], { updateUrl: false });
+    }
+    updatePageMetadata(null);
 }
 
 function buildSeriesShareText(serie) {
@@ -560,7 +783,7 @@ async function shareSeriesPage(serie) {
         return;
     }
 
-    const shareUrl = buildSeriesPageUrl(sourceSerie.id);
+    const shareUrl = buildSeriesPageUrl(sourceSerie);
     const shareText = buildSeriesShareText(sourceSerie);
     const fullText = `${shareText} ${shareUrl}`;
 
@@ -1410,6 +1633,9 @@ function openExternalLink(url) {
 
 function openTelegramBotLink(url) {
     if (!url) return;
+    if (appContext.isTelegram) {
+        trackAnalyticsEvent('telegram_open', { metadata: { destination: 'telegram' } });
+    }
     try {
         if (tg && typeof tg.openTelegramLink === 'function') {
             tg.openTelegramLink(url);
@@ -2401,6 +2627,25 @@ function updateOwnerFormMode(serie = null) {
     if (descriptionInput instanceof HTMLTextAreaElement) {
         descriptionInput.value = serie?.description || '';
     }
+    const optionalFieldValues = {
+        slug: serie?.slug || '',
+        alternate_title: serie?.alternate_title || '',
+        short_description: serie?.short_description || '',
+        tags: Array.isArray(serie?.tags) ? serie.tags.join(', ') : (serie?.tags || ''),
+        language: serie?.language || 'Português',
+        subtitle_language: serie?.subtitle_language || '',
+        duration_minutes: serie?.duration_minutes || '',
+        release_year: serie?.release_year || '',
+        age_rating: serie?.age_rating || '',
+    };
+    Object.entries(optionalFieldValues).forEach(([name, value]) => {
+        const field = form?.querySelector(`[name="${name}"]`);
+        if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = String(value ?? '');
+    });
+    ['is_featured', 'is_dubbed', 'is_subtitled'].forEach((name) => {
+        const field = form?.querySelector(`[name="${name}"]`);
+        if (field instanceof HTMLInputElement) field.checked = serie?.[name] === true;
+    });
     if (freeToggle instanceof HTMLInputElement) {
         freeToggle.checked = isFree(serie);
     }
@@ -3002,6 +3247,55 @@ function renderOwnerDashboard(data) {
                         </section>
                         <section class="owner-form-group">
                             <div class="owner-form-group-head">
+                                <strong>Descoberta e página pública</strong>
+                                <span>Campos opcionais para busca, organização e apresentação da série.</span>
+                            </div>
+                            <div class="owner-upload-grid">
+                                <label class="payment-field">
+                                    <span>Título alternativo</span>
+                                    <input type="text" name="alternate_title" placeholder="Outro nome conhecido">
+                                </label>
+                                <label class="payment-field">
+                                    <span>Endereço amigável</span>
+                                    <input type="text" name="slug" placeholder="Gerado automaticamente se vazio" pattern="[a-z0-9-]*">
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Resumo curto</span>
+                                    <textarea name="short_description" rows="2" maxlength="220" placeholder="Resumo para cards, compartilhamento e busca"></textarea>
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Tags</span>
+                                    <input type="text" name="tags" placeholder="CEO, bilionário, máfia, casamento, vingança">
+                                </label>
+                                <label class="payment-field">
+                                    <span>Idioma</span>
+                                    <input type="text" name="language" value="Português" placeholder="Português">
+                                </label>
+                                <label class="payment-field">
+                                    <span>Idioma da legenda</span>
+                                    <input type="text" name="subtitle_language" placeholder="Português, se houver">
+                                </label>
+                                <label class="payment-field">
+                                    <span>Duração em minutos</span>
+                                    <input type="number" name="duration_minutes" min="1" max="1440" placeholder="Ex.: 95">
+                                </label>
+                                <label class="payment-field">
+                                    <span>Ano</span>
+                                    <input type="number" name="release_year" min="1900" max="2100" placeholder="Ex.: 2026">
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Classificação indicativa</span>
+                                    <input type="text" name="age_rating" placeholder="Ex.: 14 anos">
+                                </label>
+                            </div>
+                            <div class="owner-editor-flags">
+                                <label class="owner-upload-toggle"><input type="checkbox" name="is_dubbed"><span>Dublada</span></label>
+                                <label class="owner-upload-toggle"><input type="checkbox" name="is_subtitled"><span>Legendada</span></label>
+                                <label class="owner-upload-toggle"><input type="checkbox" name="is_featured"><span>Destaque editorial</span></label>
+                            </div>
+                        </section>
+                        <section class="owner-form-group">
+                            <div class="owner-form-group-head">
                                 <strong>Acesso e preço</strong>
                                 <span>Escolha se a série será gratuita ou paga.</span>
                             </div>
@@ -3406,6 +3700,8 @@ function findSeriesById(serieId) {
 
 function getPlaybackMode(serie) {
     if (isPlaybackLocked(serie)) return 'locked';
+    const declaredMode = String(serie?.playback_mode || '').trim().toLowerCase();
+    if (['direct', 'telegram', 'missing'].includes(declaredMode)) return declaredMode;
     if (hasDirectPlaybackUrl(serie)) return 'direct';
     if (serie?.has_video_file_id || getTelegramFileId(serie) || Number(serie?.playable_episode_count || 0) > 0) return 'telegram';
     return 'missing';
@@ -3429,12 +3725,10 @@ async function init() {
     applyTheme();
     updatePaymentMethodUI();
     updateOwnerVisibility();
-
-    if (!userId) {
-        if (DOM.heroTitle) DOM.heroTitle.textContent = 'Acesso Negado';
-        if (DOM.heroDesc) DOM.heroDesc.textContent = 'Abra este app pelo Telegram.';
-        return;
-    }
+    if (DOM.openTelegramBtn) DOM.openTelegramBtn.hidden = appContext.isTelegram;
+    if (DOM.cartBtn) DOM.cartBtn.hidden = !appContext.isTelegram;
+    if (DOM.currentYear) DOM.currentYear.textContent = String(new Date().getFullYear());
+    renderCatalogSkeleton();
 
     try {
         const url = new URL(API_URL);
@@ -3453,6 +3747,7 @@ async function init() {
         initHero();
         updateCartUI();
         renderPaymentSummary(activePaymentOrder);
+        applyPublicRoute({ replace: true });
 
         if (isAwaitingPayment(activePaymentOrder)) {
             startPaymentStatusPolling(String(activePaymentOrder.order_id || ''));
@@ -3495,6 +3790,10 @@ function setupEventListeners() {
     });
 
     DOM.supportBtn?.addEventListener('click', openSupportForm);
+    DOM.openTelegramBtn?.addEventListener('click', () => {
+        trackAnalyticsEvent('telegram_open', { metadata: { source: 'header' } });
+        openTelegramBotLink(TELEGRAM_BOT_LINK);
+    });
     DOM.supportCloseBtn?.addEventListener('click', closeSupportForm);
     DOM.supportCancelBtn?.addEventListener('click', closeSupportForm);
     DOM.supportForm?.addEventListener('submit', submitSupportRequest);
@@ -3509,7 +3808,7 @@ function setupEventListeners() {
     DOM.ownerOverlay?.addEventListener('click', (e) => {
         if (e.target.id === 'ownerOverlay') closeOwnerArea();
     });
-    document.getElementById('cartBtn')?.addEventListener('click', () => toggleCart(true));
+    DOM.cartBtn?.addEventListener('click', () => toggleCart(true));
     DOM.checkoutBtn?.addEventListener('click', checkout);
     DOM.cartOverlay?.addEventListener('click', (e) => {
         if (e.target.id === 'cartOverlay') toggleCart(false);
@@ -3531,14 +3830,27 @@ function setupEventListeners() {
         savePaymentPrefs();
     });
 
-    DOM.searchInput?.addEventListener('input', (e) => searchSeries(e.target.value.trim()));
+    [DOM.searchInput, DOM.headerSearchInput].forEach((input) => {
+        input?.addEventListener('input', (e) => {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(() => searchSeries(e.target.value.trim(), { updateUrl: true }), 220);
+        });
+        input?.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.currentTarget.value = '';
+                searchSeries('', { updateUrl: true });
+            }
+        });
+    });
+
+    window.addEventListener('popstate', () => applyPublicRoute({ replace: true }));
 
     document.querySelectorAll('.category-chip').forEach((chip) => {
         chip.addEventListener('click', () => {
             document.querySelectorAll('.category-chip').forEach(c => c.classList.remove('active'));
             chip.classList.add('active');
             const category = chip.dataset.category || 'all';
-            filterCategory(category);
+            filterCategory(category, { updateUrl: true });
         });
     });
 
@@ -3607,16 +3919,37 @@ function updateHero(index) {
     DOM.heroDesc.textContent = serie.description || 'Uma história emocionante...';
     DOM.heroImg.src = getCoverUrl(serie);
     DOM.heroImg.alt = serie.title || '';
+    DOM.heroImg.decoding = 'async';
 
     const free = isFree(serie);
     DOM.heroBadge.className = free ? 'hero-badge-free' : 'hero-badge';
-    DOM.heroBadge.innerHTML = free 
-        ? '<i class="fas fa-gift"></i> GRÁTIS' 
-        : '<i class="fas fa-fire"></i> Destaque da Semana';
+    DOM.heroBadge.innerHTML = free
+        ? '<i class="fas fa-gift"></i> Grátis'
+        : serie.is_featured === true
+            ? '<i class="fas fa-star"></i> Destaque da semana'
+            : '<i class="fas fa-play-circle"></i> Série em destaque';
+
+    if (DOM.heroMeta) {
+        const metadata = [
+            ...normalizeSeriesTerms(serie.genre || serie.category).slice(0, 1),
+            serie.language || serie.audio_language,
+            serie.duration_minutes ? `${serie.duration_minutes} min` : '',
+            'Série completa',
+        ].filter(Boolean);
+        DOM.heroMeta.innerHTML = metadata.map((item) => `<span>${escapeHtml(String(item))}</span>`).join('');
+    }
 
     DOM.heroPlayBtn.style.display = 'inline-flex';
-    DOM.heroPlayBtn.innerHTML = '<i class="fab fa-telegram"></i> RECEBER';
+    DOM.heroPlayBtn.innerHTML = free
+        ? '<i class="fas fa-play"></i> Assistir grátis'
+        : hasSeriesAccess(serie)
+            ? '<i class="fas fa-play"></i> Assistir agora'
+            : `<i class="fas fa-ticket"></i> Ver detalhes • ${escapeHtml(formatPrice(serie))}`;
     DOM.heroPlayBtn.onclick = () => handleSeriesClick(serie);
+    if (DOM.heroDetailsBtn) {
+        DOM.heroDetailsBtn.style.display = 'inline-flex';
+        DOM.heroDetailsBtn.onclick = () => openSeriesDetails(serie);
+    }
 }
 
 // ==================== RENDERIZAÇÃO ====================
@@ -3636,6 +3969,7 @@ function renderNetflixRow(series) {
 function renderGrid(series) {
     const grid = DOM.catalogGrid;
     if (!grid) return;
+    grid.setAttribute('aria-busy', 'false');
     grid.innerHTML = '';
     if (!series.length) {
         grid.innerHTML = '<p style="text-align:center; color:var(--gray); padding:40px 0;">Nenhuma série encontrada.</p>';
@@ -3701,17 +4035,29 @@ function renderGrid(series) {
     grid.appendChild(fragment);
 }
 
+function renderCatalogSkeleton(count = 6) {
+    if (!DOM.catalogGrid) return;
+    DOM.catalogGrid.setAttribute('aria-busy', 'true');
+    DOM.catalogGrid.innerHTML = `<div class="catalog-skeleton-grid" aria-hidden="true">${Array.from({ length: count }, () => `
+        <div class="catalog-skeleton-card">
+            <div class="catalog-skeleton-cover"></div>
+            <div class="catalog-skeleton-line"></div>
+            <div class="catalog-skeleton-line catalog-skeleton-line-short"></div>
+        </div>
+    `).join('')}</div>`;
+}
+
 function getVisibleSeries() {
     let filtered = allSeries.slice();
 
     if (currentCategory === 'favorites') {
         filtered = filtered.filter((s) => isFavoriteSeries(s.id));
     } else if (currentCategory !== 'all') {
-        filtered = filtered.filter(s => s.category?.toLowerCase() === currentCategory);
+        filtered = filtered.filter((serie) => seriesMatchesCategory(serie, currentCategory));
     }
 
     if (currentSearchTerm) {
-        filtered = filtered.filter(s => s.title?.toLowerCase().includes(currentSearchTerm));
+        filtered = filtered.filter((serie) => buildSeriesSearchText(serie).includes(normalizeSearchText(currentSearchTerm)));
     }
 
     return filtered;
@@ -3757,6 +4103,7 @@ function createCard(serie, isNetflix = false) {
     img.src = coverUrl;
     img.alt = serie.title || '';
     img.loading = 'lazy';
+    img.decoding = 'async';
     img.onerror = function() { this.src = PLACEHOLDER_IMAGE; };
     cover.appendChild(img);
 
@@ -3850,7 +4197,7 @@ function createCard(serie, isNetflix = false) {
             buyBtn.disabled = true;
             buyBtn.innerHTML = '<i class="fas fa-ban"></i> Vídeo em preparo';
         } else {
-            buyBtn.innerHTML = `<i class="fas fa-cart-plus"></i> Comprar ${escapeHtml(formatPrice(serie))}`;
+            buyBtn.innerHTML = '<i class="fas fa-circle-info"></i> Ver detalhes';
         }
         buyBtn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -3863,9 +4210,7 @@ function createCard(serie, isNetflix = false) {
                 void deliverSeriesToTelegram(serie);
                 return;
             }
-            if (!missingPlayback) {
-                addToCart(serie);
-            }
+            if (!missingPlayback) openSeriesDetails(serie);
         });
         actions.appendChild(buyBtn);
         infoDiv.appendChild(actions);
@@ -4076,6 +4421,7 @@ function openModal(serie) {
         return;
     }
     DOM.modalImg.src = getCoverUrl(serie);
+    DOM.modalImg.alt = `Capa de ${serie.title || 'série'}`;
     DOM.modalTitle.textContent = serie.title || 'Série';
     
     const free = isFree(serie);
@@ -4088,9 +4434,22 @@ function openModal(serie) {
 
     const baseDescription = serie.description || 'Sem descrição disponível.';
     const canDeliver = hasAccess && playbackMode !== 'missing';
+    const canDeliverInTelegram = appContext.isTelegram && canDeliver;
     const ownerCanWatch = canDeliver && isOwnerUser();
 
-    DOM.modalDesc.textContent = canDeliver
+    if (DOM.modalSeriesMeta) {
+        const metadata = [
+            ...normalizeSeriesTerms(serie.genre || serie.genres || serie.category).slice(0, 2),
+            serie.language || serie.audio_language,
+            serie.duration_minutes ? `${serie.duration_minutes} min` : '',
+            'Série completa',
+        ].filter(Boolean);
+        DOM.modalSeriesMeta.innerHTML = metadata.map((item) => `<span>${escapeHtml(String(item))}</span>`).join('');
+    }
+
+    DOM.modalDesc.textContent = !appContext.isTelegram
+        ? `${baseDescription} Série curta completa, com todos os episódios em um único vídeo.`
+        : canDeliver
         ? ownerCanWatch
             ? `${baseDescription} Toque para assistir agora no Mini App.`
             : `${baseDescription} Toque para receber a série no chat do bot pelo Telegram.`
@@ -4102,6 +4461,10 @@ function openModal(serie) {
 
     if (ownerCanWatch) {
         DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fas fa-circle-play"></i> DISPONÍVEL</span>';
+    } else if (!appContext.isTelegram && free) {
+        DOM.modalPrice.innerHTML = '<span class="free-badge"><i class="fas fa-gift"></i> GRÁTIS</span>';
+    } else if (!appContext.isTelegram && !free) {
+        DOM.modalPrice.innerHTML = `<span class="locked-badge"><i class="fas fa-ticket"></i> ${escapeHtml(formatPrice(serie.price))}</span>`;
     } else if (!free && canDeliver) {
         DOM.modalPrice.innerHTML = '<span class="telegram-badge"><i class="fab fa-telegram"></i> LIBERADO NO TELEGRAM</span>';
     } else if (!free && playbackMode === 'locked') {
@@ -4120,22 +4483,31 @@ function openModal(serie) {
     const btn = document.createElement('button');
     btn.className = free ? 'btn btn-free' : 'btn btn-primary';
 
-    if (ownerCanWatch) {
+    if (!appContext.isTelegram && playbackMode !== 'missing') {
+        btn.className = free ? 'btn btn-free' : 'btn btn-primary';
+        btn.innerHTML = free
+            ? '<i class="fab fa-telegram"></i> Assistir grátis no Telegram'
+            : `<i class="fab fa-telegram"></i> Comprar por ${escapeHtml(formatPrice(serie))}`;
+    } else if (ownerCanWatch) {
         btn.className = 'btn btn-primary';
         btn.innerHTML = '<i class="fas fa-circle-play"></i> Assistir agora';
-    } else if (canDeliver) {
+    } else if (canDeliverInTelegram) {
         btn.className = 'btn btn-free';
-        btn.innerHTML = '<i class="fab fa-telegram"></i> RECEBER NO TELEGRAM';
+        btn.innerHTML = free
+            ? '<i class="fab fa-telegram"></i> Assistir grátis'
+            : '<i class="fab fa-telegram"></i> Assistir agora';
     } else if (playbackMode === 'missing') {
         btn.className = 'btn btn-secondary';
         btn.innerHTML = '<i class="fas fa-ban"></i> VÍDEO INDISPONÍVEL';
     } else {
-        btn.innerHTML = '<i class="fas fa-cart-plus"></i> Adicionar ao Carrinho';
+        btn.innerHTML = `<i class="fas fa-cart-plus"></i> Comprar por ${escapeHtml(formatPrice(serie))}`;
     }
     
     btn.onclick = () => {
         closeModal();
-        if (ownerCanWatch) {
+        if (!appContext.isTelegram && playbackMode !== 'missing') {
+            openTelegramBotLink(buildTelegramSeriesLink(serie));
+        } else if (ownerCanWatch) {
             void openPlayer(serie.id, serie.title || 'Reproduzir');
         } else if (canDeliver) {
             void deliverSeriesToTelegram(serie);
@@ -4177,14 +4549,75 @@ function openModal(serie) {
     };
     DOM.modalActions.appendChild(shareBtn);
 
+    renderRelatedSeries(serie);
+
     DOM.modalOverlay.classList.add('active');
     document.body.classList.add('modal-open');
+}
+
+function getRelatedSeries(currentSerie, catalog = allSeries, limit = 4) {
+    if (!currentSerie) return [];
+    const currentTerms = new Set(normalizeSearchText([
+        currentSerie.category,
+        currentSerie.genre,
+        currentSerie.genres,
+        currentSerie.tags,
+        currentSerie.language,
+    ].flatMap((value) => normalizeSeriesTerms(value)).join(' ')).split(' ').filter(Boolean));
+
+    return catalog
+        .filter((candidate) => candidate && !sameId(candidate.id, currentSerie.id))
+        .map((candidate) => {
+            const candidateTerms = new Set(normalizeSearchText([
+                candidate.category,
+                candidate.genre,
+                candidate.genres,
+                candidate.tags,
+                candidate.language,
+            ].flatMap((value) => normalizeSeriesTerms(value)).join(' ')).split(' ').filter(Boolean));
+            let score = 0;
+            currentTerms.forEach((term) => {
+                if (candidateTerms.has(term)) score += 2;
+            });
+            if (isFree(candidate) === isFree(currentSerie)) score += 1;
+            return { candidate, score };
+        })
+        .filter((entry) => entry.score > 0)
+        .sort((left, right) => right.score - left.score || String(left.candidate.title).localeCompare(String(right.candidate.title), 'pt-BR'))
+        .slice(0, limit)
+        .map((entry) => entry.candidate);
+}
+
+function renderRelatedSeries(serie) {
+    if (!DOM.relatedSeriesSection || !DOM.relatedSeriesGrid) return;
+    const related = getRelatedSeries(serie);
+    DOM.relatedSeriesGrid.innerHTML = '';
+    DOM.relatedSeriesSection.hidden = related.length === 0;
+    related.forEach((item) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'related-series-card';
+        const image = document.createElement('img');
+        image.src = getCoverUrl(item);
+        image.alt = '';
+        image.loading = 'lazy';
+        image.decoding = 'async';
+        const title = document.createElement('span');
+        title.textContent = item.title || 'Série';
+        button.append(image, title);
+        button.addEventListener('click', () => openSeriesDetails(item));
+        DOM.relatedSeriesGrid.appendChild(button);
+    });
 }
 
 function closeModal() {
     DOM.modalOverlay?.classList.remove('active');
     if (!DOM.cartDrawer?.classList.contains('active')) {
         document.body.classList.remove('modal-open');
+    }
+    if (window.location.pathname.startsWith('/series/')) {
+        history.pushState({ route: 'home' }, '', '/');
+        updatePageMetadata(null);
     }
 }
 
@@ -4300,6 +4733,11 @@ function removeFromCart(id) {
 }
 
 function checkout() {
+    if (!appContext.isTelegram) {
+        showToast('Abra o bot no Telegram para comprar com segurança.', 'info');
+        openTelegramBotLink(TELEGRAM_BOT_LINK);
+        return;
+    }
     if (isAwaitingPayment(activePaymentOrder)) {
         showToast('Seu pagamento já está pronto aqui embaixo.', 'info');
         toggleCart(true);
@@ -4364,14 +4802,81 @@ function checkout() {
 }
 
 // ==================== FILTROS ====================
-function filterCategory(category) {
-    currentCategory = (category || 'all').trim().toLowerCase();
-    refreshCatalog();
+function normalizeSearchText(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
 }
 
-function searchSeries(term) {
-    currentSearchTerm = (term || '').trim().toLowerCase();
+function normalizeSeriesTerms(value) {
+    const entries = Array.isArray(value) ? value : String(value || '').split(/[,/|;]/);
+    return entries.map((entry) => String(entry || '').trim()).filter(Boolean);
+}
+
+function buildSeriesSearchText(serie) {
+    const terms = [
+        serie?.title,
+        serie?.alternate_title,
+        serie?.alternateTitle,
+        serie?.short_description,
+        serie?.description,
+        serie?.category,
+        serie?.genre,
+        serie?.genres,
+        serie?.tags,
+        serie?.language,
+        serie?.audio_language,
+        serie?.subtitle_language,
+        serie?.theme,
+        serie?.keywords,
+    ].flatMap((value) => normalizeSeriesTerms(value));
+    return normalizeSearchText(terms.join(' '));
+}
+
+function seriesMatchesCategory(serie, category) {
+    const normalizedCategory = slugify(category);
+    if (normalizedCategory === 'gratuitas') return isFree(serie);
+    if (normalizedCategory === 'pagas') return !isFree(serie);
+    const searchable = buildSeriesSearchText(serie);
+    if (normalizedCategory === 'dubladas') return searchable.includes('dublad');
+    if (normalizedCategory === 'legendadas') return searchable.includes('legendad');
+    return searchable.includes(normalizeSearchText(normalizedCategory));
+}
+
+function filterCategory(category, options = {}) {
+    currentCategory = (category || 'all').trim().toLowerCase();
+    document.querySelectorAll('.category-chip').forEach((chip) => {
+        chip.classList.toggle('active', (chip.dataset.category || 'all') === currentCategory);
+    });
     refreshCatalog();
+    if (options.updateUrl) {
+        const nextPath = currentCategory === 'all'
+            ? '/'
+            : currentCategory === 'favorites'
+                ? '/favoritos'
+                : `/categoria/${slugify(currentCategory)}`;
+        history.pushState({ route: 'category', category: currentCategory }, '', nextPath);
+        updatePageMetadata(null);
+    }
+}
+
+function searchSeries(term, options = {}) {
+    currentSearchTerm = (term || '').trim().toLowerCase();
+    [DOM.searchInput, DOM.headerSearchInput].forEach((input) => {
+        if (input && input.value !== term) input.value = term;
+    });
+    DOM.catalogGrid?.setAttribute('aria-busy', 'true');
+    refreshCatalog();
+    DOM.catalogGrid?.setAttribute('aria-busy', 'false');
+    if (options.updateUrl) {
+        if (currentSearchTerm) trackAnalyticsEvent('series_search', { metadata: { query_length: term.trim().length, result_count: getVisibleSeries().length } });
+        const target = currentSearchTerm ? `/busca?q=${encodeURIComponent(term.trim())}` : '/';
+        history.replaceState({ route: 'search', query: term.trim() }, '', target);
+        updatePageMetadata(null);
+    }
 }
 
 // =================== EXPORT GLOBAL }

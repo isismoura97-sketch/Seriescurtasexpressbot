@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /verify.html
+
+Sitemap: https://seriescurtasexpressbot.vercel.app/sitemap.xml
+

@@ -3,8 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <meta name="description" content="Séries Curtas Express - Catálogo completo de séries curtas em HD. Assista online com acesso vitalício.">
+    <meta name="description" content="Descubra séries curtas completas, gratuitas e premium, com acesso pelo Telegram.">
     <meta name="theme-color" content="#FFD700">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Séries Curtas Express">
+    <meta property="og:title" content="Séries Curtas Express">
+    <meta property="og:description" content="Descubra séries curtas completas, gratuitas e premium, com acesso pelo Telegram.">
+    <meta property="og:url" content="https://seriescurtasexpressbot.vercel.app/">
+    <meta property="og:image" content="https://seriescurtasexpressbot.vercel.app/assets/logo-welcome.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Séries Curtas Express">
+    <meta name="twitter:description" content="Descubra séries curtas completas, gratuitas e premium, com acesso pelo Telegram.">
+    <meta name="twitter:image" content="https://seriescurtasexpressbot.vercel.app/assets/logo-welcome.png">
+    <link rel="canonical" href="https://seriescurtasexpressbot.vercel.app/">
+    <script id="seriesStructuredData" type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Séries Curtas Express","url":"https://seriescurtasexpressbot.vercel.app/"}</script>
 
     <title>Séries Curtas Express</title>
 
@@ -14,13 +27,13 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="styles.css?v=20260710-02">
+    <link rel="stylesheet" href="/styles.css?v=20260711-01">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
@@ -67,7 +80,7 @@
             </div>
 
             <div class="loading-player" id="playerLoading">
-                <img class="player-loading-logo" src="assets/logo-welcome.png?v=20260710-02" alt="Séries Express">
+                <img class="player-loading-logo" src="/assets/logo-welcome.png?v=20260711-01" alt="Séries Express">
                 <div class="spinner"></div>
                 <div class="player-loading-title" id="playerLoadingTitle">Preparando reprodução</div>
                 <div class="player-loading-subtitle" id="playerLoadingSubtitle">Carregando vídeo dentro do Mini App...</div>
@@ -162,6 +175,10 @@
                 <div class="payment-summary-details" id="paymentSummaryDetails"></div>
                 <div class="payment-summary-actions" id="paymentSummaryActions"></div>
             </div>
+            <div class="checkout-disclosure">
+                <i class="fas fa-shield-halved"></i>
+                <span>Pagamento confirmado pelo backend. A entrega é vinculada à sua conta do Telegram.</span>
+            </div>
             <button class="btn btn-primary" id="checkoutBtn" type="button">
                 <i class="fas fa-check"></i> Finalizar Compra
             </button>
@@ -178,7 +195,11 @@
                 </button>
             </div>
             <div class="modal-body">
+                <nav class="series-breadcrumb" aria-label="Navegação estrutural">
+                    <a href="/">Início</a><i class="fas fa-chevron-right" aria-hidden="true"></i><span>Série</span>
+                </nav>
                 <h2 class="modal-title" id="modalTitle">Título da Série</h2>
+                <div class="modal-series-meta" id="modalSeriesMeta"></div>
                 <div class="modal-price" id="modalPrice"></div>
                 <p class="modal-desc" id="modalDesc">Descrição da série...</p>
                 <div class="telegram-guide" id="telegramGuide" hidden>
@@ -193,6 +214,10 @@
                     </ol>
                 </div>
                 <div class="modal-actions" id="modalActions"></div>
+                <section class="related-series" id="relatedSeriesSection" hidden>
+                    <h3>Você também pode gostar</h3>
+                    <div class="related-series-grid" id="relatedSeriesGrid"></div>
+                </section>
             </div>
         </div>
     </div>
@@ -275,11 +300,20 @@
     </div>
     <!-- ==================== HEADER ==================== -->
     <header class="header" id="header" role="banner">
-        <a href="#" class="logo" aria-label="Início">
+        <a href="/" class="logo" aria-label="Ir para o início">
             <i class="fas fa-play-circle" style="color: var(--primary); filter: drop-shadow(0 0 8px rgba(255,215,0,0.5));"></i>
             <span>SÉRIES EXPRESS</span>
         </a>
+        <label class="header-search" for="headerSearchInput">
+            <i class="fas fa-search" aria-hidden="true"></i>
+            <span class="sr-only">Buscar no catálogo</span>
+            <input type="search" id="headerSearchInput" placeholder="Buscar séries, gêneros ou temas..." autocomplete="off">
+        </label>
         <nav class="header-actions">
+            <button id="openTelegramBtn" class="telegram-open-btn" type="button" hidden>
+                <i class="fab fa-telegram"></i>
+                <span>Abrir no Telegram</span>
+            </button>
             <button id="supportBtn" class="support-btn" type="button" title="Suporte" aria-label="Precisa de ajuda?">
                 <i class="fas fa-life-ring"></i>
                 <span>Precisa de ajuda?</span>
@@ -310,9 +344,15 @@
                 </span>
                 <h1 id="heroTitle">Carregando destaque...</h1>
                 <p id="heroDesc">Preparando o catálogo...</p>
-                <button class="btn btn-play" id="heroPlayBtn" style="display:none;">
-                    <i class="fas fa-play"></i> ASSISTIR
-                </button>
+                <div class="hero-meta" id="heroMeta"></div>
+                <div class="hero-actions">
+                    <button class="btn btn-play" id="heroPlayBtn" style="display:none;">
+                        <i class="fas fa-play"></i> Assistir
+                    </button>
+                    <button class="btn btn-secondary" id="heroDetailsBtn" style="display:none;">
+                        <i class="fas fa-circle-info"></i> Ver detalhes
+                    </button>
+                </div>
             </div>
             <div class="hero-image-container">
                 <img id="heroImg" class="hero-poster" alt="Poster da série em destaque">
@@ -320,9 +360,9 @@
         </section>
 
         <!-- NETFLIX ROW -->
-        <section class="netflix-row" id="netflixRow" role="region" aria-label="Em alta" style="display:none;">
+        <section class="netflix-row" id="netflixRow" role="region" aria-label="Descubra agora" style="display:none;">
             <div class="netflix-row-title">
-                <i class="fas fa-fire" style="color:var(--primary);"></i> Em Alta
+                <i class="fas fa-compass" style="color:var(--primary);"></i> Descubra agora
             </div>
             <div class="netflix-scroll" id="netflixScroll"></div>
         </section>
@@ -331,7 +371,7 @@
         <section class="section" id="catalogSection" role="region" aria-label="Catálogo">
             <div class="search-box">
                 <i class="fas fa-search"></i>
-                <input type="text" id="searchInput" placeholder="Buscar séries..." aria-label="Buscar séries">
+                <input type="search" id="searchInput" placeholder="Buscar séries, gêneros ou temas..." aria-label="Buscar séries, gêneros ou temas" autocomplete="off">
             </div>
 
             <div class="categories">
@@ -340,19 +380,31 @@
                 <button class="category-chip" data-category="romance">Romance</button>
                 <button class="category-chip" data-category="suspense">Suspense</button>
                 <button class="category-chip" data-category="drama">Drama</button>
+                <button class="category-chip" data-category="dubladas">Dubladas</button>
+                <button class="category-chip" data-category="legendadas">Legendadas</button>
             </div>
 
             <h2 class="section-title">Catálogo Completo</h2>
             <div class="catalog-groups" id="catalogGrid" role="region" aria-label="Grade de séries"></div>
         </section>
+
+        <section class="content-page" id="contentPage" hidden aria-live="polite"></section>
     </main>
 
     <!-- FOOTER -->
-    <footer style="padding:40px 4%; text-align:center; color:var(--gray); font-size:13px; border-top:1px solid rgba(255,215,0,0.1);">
-        <p>© 2025 Séries Curtas Express. Todos os direitos reservados.</p>
-        <p style="margin-top:8px; font-size:12px; color:rgba(255,215,0,0.4);">
-            Desenvolvido com <i class="fas fa-heart" style="color:var(--primary);"></i> para você
-        </p>
+    <footer class="site-footer">
+        <div class="site-footer-brand">
+            <strong>Séries Curtas Express</strong>
+            <span>Descubra séries curtas completas para assistir de uma vez.</span>
+        </div>
+        <nav class="site-footer-links" aria-label="Links institucionais">
+            <a href="/ajuda">Ajuda</a>
+            <a href="/termos">Termos de uso</a>
+            <a href="/privacidade">Privacidade</a>
+            <a href="/blog">Blog</a>
+            <a href="mailto:isismoura97@gmail.com">Contato</a>
+        </nav>
+        <p>© <span id="currentYear"></span> Séries Curtas Express.</p>
     </footer>
 
     <!-- Vercel Speed Insights -->
@@ -362,7 +414,7 @@
     <script defer src="/_vercel/speed-insights/script.js"></script>
 
     <!-- Script Principal -->
-    <script defer src="app.min.js?v=20260710-02"></script>
+    <script defer src="/app.min.js?v=20260711-01"></script>
 </body>
 </html>
 

@@ -78,8 +78,10 @@ function classify(row) {
   const direct = hasDirectPlaybackUrl(row);
   const locked = isLockedContent(row);
   const telegram = hasTelegramFile(row);
+  const declaredMode = String(row?.playback_mode || '').trim().toLowerCase();
 
   if (locked) return 'locked';
+  if (['direct', 'telegram', 'missing'].includes(declaredMode)) return declaredMode;
   if (direct) return 'direct';
   if (telegram) return 'telegram';
   return 'missing';

@@ -151,6 +151,19 @@ function createServer() {
 
     fs.readFile(filePath, (err, buffer) => {
       if (err) {
+        const acceptsHtml = !path.extname(url.pathname) || req.headers.accept?.includes('text/html');
+        if (acceptsHtml) {
+          fs.readFile(path.join(appDir, 'index.html'), (indexError, indexBuffer) => {
+            if (indexError) {
+              res.writeHead(404);
+              res.end('Not found');
+              return;
+            }
+            res.writeHead(200, { 'content-type': mime['.html'] });
+            res.end(indexBuffer);
+          });
+          return;
+        }
         res.writeHead(404);
         res.end('Not found');
         return;
@@ -166,11 +179,12 @@ function listen(server) {
   return new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
 }
 
-async function installRoutes(page) {
+async function installRoutes(page, options = {}) {
+  const telegramEnabled = options.telegram !== false;
   await page.route('https://telegram.org/js/telegram-web-app.js', async (route) => {
     await route.fulfill({
       contentType: 'text/javascript',
-      body: `
+      body: telegramEnabled ? `
         window.Telegram = {
           WebApp: {
             initData: 'user=%7B%22id%22%3A123456789%2C%22first_name%22%3A%22Teste%22%7D',
@@ -183,7 +197,7 @@ async function installRoutes(page) {
             openLink(url) { window.__openedLink = url; },
           }
         };
-      `,
+      ` : 'window.Telegram = undefined;',
     });
   });
 
@@ -799,6 +813,10 @@ async function main() {
       summaryHidden: document.querySelector('#paymentSummaryPanel')?.hidden,
       summaryText: document.querySelector('#paymentSummaryPanel')?.textContent?.replace(/\s+/g, ' ').trim(),
     }));
+    await page.waitForFunction(() => (
+      document.querySelector('#catalogGrid .card[data-id="paid-series"] .card-cart-btn')
+        ?.textContent?.includes('Receber no Telegram')
+    ), null, { timeout: 10000 });
     const paidCardAfterPayment = await page.evaluate(() => ({
       action: document.querySelector('#catalogGrid .card[data-id="paid-series"] .card-cart-btn')?.textContent?.replace(/\s+/g, ' ').trim() || '',
     }));
@@ -842,16 +860,72 @@ async function main() {
       retryButton: Boolean(document.querySelector('[data-owner-order-retry="order-failed-test"]')),
     }));
 
+    const webDeliveryCountBefore = deliveryLog.length;
+    const webPage = await browser.newPage();
+    webPage.on('pageerror', (err) => errors.push(`web: ${err.message || err}`));
+    await webPage.addInitScript(() => {
+      window.open = (url) => {
+        window.__webOpenedUrl = String(url || '');
+        return null;
+      };
+    });
+    await installRoutes(webPage, { telegram: false });
+    await webPage.goto(`http://127.0.0.1:${port}/series/direto-funcional`, { waitUntil: 'domcontentloaded' });
+    await webPage.waitForSelector('#modalOverlay.active', { timeout: 10000 });
+    const webRouteState = await webPage.evaluate(() => ({
+      runtime: document.documentElement.dataset.runtime,
+      title: document.title,
+      modalTitle: document.querySelector('#modalTitle')?.textContent?.trim() || '',
+      canonical: document.querySelector('link[rel="canonical"]')?.getAttribute('href') || '',
+      telegramButtonVisible: document.querySelector('#openTelegramBtn')?.hidden === false,
+      structuredType: JSON.parse(document.querySelector('#seriesStructuredData')?.textContent || '{}')['@type'],
+    }));
+    await webPage.locator('.modal-close').click();
+    await webPage.fill('#headerSearchInput', 'Somente Telegram');
+    await webPage.waitForTimeout(350);
+    const webSearchState = await webPage.evaluate(() => ({
+      path: `${location.pathname}${location.search}`,
+      cards: document.querySelectorAll('#catalogGrid .card').length,
+    }));
+    await webPage.fill('#headerSearchInput', '');
+    await webPage.waitForTimeout(350);
+    await webPage.locator('#catalogGrid .card[data-id="direct-ok"] .card-favorite-btn').click();
+    await webPage.locator('.category-chip[data-category="favorites"]').click();
+    const webFavoritesState = await webPage.evaluate(() => ({
+      path: location.pathname,
+      cards: document.querySelectorAll('#catalogGrid .card').length,
+      favoriteActive: document.querySelector('#catalogGrid .card[data-id="direct-ok"] .card-favorite-btn')?.classList.contains('active'),
+    }));
+    await webPage.locator('.category-chip[data-category="all"]').click();
+    await webPage.locator('#catalogGrid .card[data-id="paid-series"]').click();
+    const webPaidState = await webPage.evaluate(() => ({
+      path: location.pathname,
+      action: document.querySelector('#modalActions button')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+    }));
+    await webPage.locator('#modalActions button').first().click();
+    const webTelegramOpenState = await webPage.evaluate(() => window.__webOpenedUrl || '');
+    await webPage.goto(`http://127.0.0.1:${port}/privacidade`, { waitUntil: 'domcontentloaded' });
+    await webPage.waitForSelector('#contentPage:not([hidden])', { timeout: 10000 });
+    const webContentState = await webPage.evaluate(() => ({
+      title: document.title,
+      heading: document.querySelector('#contentPage h1')?.textContent?.trim() || '',
+      catalogHidden: document.querySelector('#catalogSection')?.hidden === true,
+    }));
+    await webPage.close();
+
+    const sitemapText = fs.readFileSync(path.join(appDir, 'sitemap.xml'), 'utf8');
+    const robotsText = fs.readFileSync(path.join(appDir, 'robots.txt'), 'utf8');
+
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260710-02')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260711-01')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
     if (!initial.groupTitles.includes('Séries Gratuitas') || !initial.groupTitles.includes('Séries Pagas')) failures.push(`catalog groups missing: ${initial.groupTitles.join(', ')}`);
     if (!initial.groupCounts.includes('8 títulos') || !initial.groupCounts.includes('1 título')) failures.push(`catalog group counts unexpected: ${initial.groupCounts.join(', ')}`);
-    if (!initial.paidCardAction.includes('Comprar')) failures.push(`paid card action before payment: ${initial.paidCardAction}`);
+    if (!initial.paidCardAction.includes('Ver detalhes')) failures.push(`paid card action before payment: ${initial.paidCardAction}`);
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
     if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
     if (initial.missingPlayback !== 'missing') failures.push(`missing playback state: ${initial.missingPlayback}`);
@@ -883,6 +957,13 @@ async function main() {
     if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral')) || !ownerState.text.includes('Conversão e abandono')) failures.push('owner area failed');
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Prontas2') && !migratedOwnerState.text.includes('Em fila0'))) failures.push('owner migration failed');
     if (!ownerOrderRetried || ownerRetryState.retryButton || !ownerRetryState.text.includes('Nenhuma entrega precisa de intervenção')) failures.push('owner delivery retry failed');
+    if (webRouteState.runtime !== 'web' || !webRouteState.telegramButtonVisible || webRouteState.modalTitle !== 'Direto Funcional' || !webRouteState.title.includes('Direto Funcional') || !webRouteState.canonical.endsWith('/series/direto-funcional') || webRouteState.structuredType !== 'Movie') failures.push('public series route failed');
+    if (webSearchState.path !== '/busca?q=Somente%20Telegram' || webSearchState.cards !== 1) failures.push(`public search failed: ${JSON.stringify(webSearchState)}`);
+    if (webFavoritesState.path !== '/favoritos' || webFavoritesState.cards !== 1 || !webFavoritesState.favoriteActive) failures.push(`public favorites failed: ${JSON.stringify(webFavoritesState)}`);
+    if (!webPaidState.path.includes('/series/serie-paga') || !webPaidState.action.includes('Comprar por R$ 5,90')) failures.push(`public paid details failed: ${JSON.stringify(webPaidState)}`);
+    if (!webTelegramOpenState.includes('t.me/ShortNovelsBot') || deliveryLog.length !== webDeliveryCountBefore) failures.push('public Telegram handoff failed');
+    if (!webContentState.title.includes('Política de privacidade') || webContentState.heading !== 'Política de privacidade' || !webContentState.catalogHidden) failures.push(`public content page failed: ${JSON.stringify(webContentState)}`);
+    if (!sitemapText.includes('/series/') || !sitemapText.includes('/blog/o-que-sao-series-curtas-verticais') || !robotsText.includes('Sitemap:')) failures.push('SEO files failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
 
     const result = {
@@ -908,6 +989,12 @@ async function main() {
         ownerState,
         migratedOwnerState,
         ownerRetryState,
+        webRouteState,
+        webSearchState,
+        webFavoritesState,
+        webPaidState,
+        webTelegramOpenState,
+        webContentState,
       },
     };
 
