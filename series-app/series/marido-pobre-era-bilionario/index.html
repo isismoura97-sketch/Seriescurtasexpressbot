@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="description" content="Uma história repleta de reviravoltas sobre um homem que esconde sua verdadeira identidade bilionária.">
+    <meta name="theme-color" content="#FFD700">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta property="og:type" content="video.movie">
+    <meta property="og:site_name" content="Séries Curtas Express">
+    <meta property="og:title" content="Marido &quot;Pobre&quot; Era Bilionário — Série Curta Completa">
+    <meta property="og:description" content="Uma história repleta de reviravoltas sobre um homem que esconde sua verdadeira identidade bilionária.">
+    <meta property="og:url" content="https://seriescurtasexpressbot.vercel.app/series/marido-pobre-era-bilionario">
+    <meta property="og:image" content="https://uyyeascxvnrkjtlygdoe.supabase.co/storage/v1/object/public/covers/promos/marido-pobre-bilionario.webp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Marido &quot;Pobre&quot; Era Bilionário — Série Curta Completa">
+    <meta name="twitter:description" content="Uma história repleta de reviravoltas sobre um homem que esconde sua verdadeira identidade bilionária.">
+    <meta name="twitter:image" content="https://uyyeascxvnrkjtlygdoe.supabase.co/storage/v1/object/public/covers/promos/marido-pobre-bilionario.webp">
+    <link rel="canonical" href="https://seriescurtasexpressbot.vercel.app/series/marido-pobre-era-bilionario">
+    <script id="seriesStructuredData" type="application/ld+json">{"@context":"https://schema.org","@type":"Movie","name":"Marido \"Pobre\" Era Bilionário","description":"Uma história repleta de reviravoltas sobre um homem que esconde sua verdadeira identidade bilionária.","image":"https://uyyeascxvnrkjtlygdoe.supabase.co/storage/v1/object/public/covers/promos/marido-pobre-bilionario.webp","genre":["romance"],"inLanguage":"pt-BR","url":"https://seriescurtasexpressbot.vercel.app/series/marido-pobre-era-bilionario"}</script>
+
+    <title>Marido &quot;Pobre&quot; Era Bilionário — Série Curta Completa</title>
+
+    <!-- Telegram Mini App -->
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
+
+    <!-- CSS Principal -->
+    <link rel="stylesheet" href="/styles.css?v=20260711-01">
+
+    <!-- Content Security Policy -->
+    <meta http-equiv="Content-Security-Policy" 
+          content="default-src 'self' https:; 
+                   script-src 'self' https://telegram.org 'unsafe-inline'; 
+                   style-src 'self' https://fonts.googleapis.com https://cdn.jsdelivr.net 'unsafe-inline'; 
+                   font-src https://fonts.gstatic.com https://cdn.jsdelivr.net data:; 
+                   connect-src 'self' https://uyyeascxvnrkjtlygdoe.supabase.co https://*.supabase.co; 
+                   img-src 'self' https://*.supabase.co https://cdn.jsdelivr.net https: data: blob:;
+                   media-src 'self' https://*.supabase.co https: blob:;
+                   frame-src 'self' https:;">
+
+</head>
+<body>
+
+    <!-- Skip Link (Acessibilidade) -->
+    <a href="#main-content" class="skip-link">Pular para conteúdo principal</a>
+
+    <!-- ==================== PLAYER ==================== -->
+    <div class="video-player-overlay" id="playerOverlay" role="dialog" aria-modal="true" aria-labelledby="playerTitle">
+        <div class="player-container">
+            <div class="player-header">
+                <div class="player-header-main">
+                    <button class="player-back" aria-label="Voltar">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <div class="player-header-copy">
+                        <div class="player-kicker" id="playerKicker">
+                            <i class="fas fa-play"></i>
+                            Reprodução em destaque
+                        </div>
+                        <div class="player-title" id="playerTitle">Carregando...</div>
+                        <div class="player-meta" id="playerMeta">Abra diretamente no player.</div>
+                    </div>
+                </div>
+                <div class="player-header-actions">
+                    <button class="player-share" id="playerShareBtn" type="button" aria-label="Compartilhar página da série">
+                        <i class="fas fa-share-nodes"></i>
+                    </button>
+                    <button class="player-close" aria-label="Fechar player">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="loading-player" id="playerLoading">
+                <img class="player-loading-logo" src="/assets/logo-welcome.png?v=20260711-01" alt="Séries Express">
+                <div class="spinner"></div>
+                <div class="player-loading-title" id="playerLoadingTitle">Preparando reprodução</div>
+                <div class="player-loading-subtitle" id="playerLoadingSubtitle">Carregando vídeo dentro do Mini App...</div>
+            </div>
+
+            <div class="player-error" id="playerError" role="alert">
+                <div class="player-error-panel">
+                    <div class="player-error-icon" id="playerErrorIcon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="player-error-copy">
+                        <h3 id="playerErrorTitle">Erro ao reproduzir o vídeo</h3>
+                        <p id="playerErrorDesc">Tente novamente dentro do Mini App.</p>
+                    </div>
+                    <div class="player-error-actions">
+                        <button class="btn btn-primary" id="playerErrorAction" onclick="retryPlayer()">
+                            <i class="fas fa-redo"></i> Tentar Novamente
+                        </button>
+                        <button class="btn btn-secondary" onclick="closePlayer()">
+                            <i class="fas fa-times"></i> Fechar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="player-stage">
+                <video id="mainVideo" 
+                       playsinline 
+                       webkit-playsinline
+                       controlsList="nodownload noplaybackrate noremoteplayback"
+                       disablePictureInPicture
+                       preload="metadata" 
+                       aria-label="Vídeo da série"
+                       style="display:none;">
+                </video>
+                <div class="player-controls" id="playerControls" aria-label="Controles do player">
+                    <div class="player-timeline-row">
+                        <span class="player-time" id="playerCurrentTime">00:00</span>
+                        <input type="range" id="playerSeekInput" class="player-seek" min="0" max="1000" value="0" aria-label="Barra de progresso">
+                        <span class="player-time" id="playerDuration">00:00</span>
+                    </div>
+                    <div class="player-actions-row">
+                        <button type="button" class="player-control-btn" id="playerPlayBtn" aria-label="Reproduzir ou pausar">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <button type="button" class="player-control-btn" id="playerMuteBtn" aria-label="Silenciar ou ativar som">
+                            <i class="fas fa-volume-high"></i>
+                        </button>
+                        <input type="range" id="playerVolumeInput" class="player-volume" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+                        <button type="button" class="player-control-btn" id="playerFullscreenBtn" aria-label="Abrir em tela cheia">
+                            <i class="fas fa-expand"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ==================== CART DRAWER ==================== -->
+    <div class="cart-overlay" id="cartOverlay"></div>
+    <aside class="cart-drawer" id="cartDrawer" role="dialog" aria-modal="true" aria-labelledby="cartTitle">
+        <div class="cart-header">
+            <h3 id="cartTitle"><i class="fas fa-shopping-cart"></i> Seu Carrinho</h3>
+            <button class="icon-btn" onclick="toggleCart(false)" aria-label="Fechar carrinho">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="cart-body" id="cartItems"></div>
+        <div class="cart-footer">
+            <div class="cart-total">
+                <span>Total:</span>
+                <span id="cartTotal">R$ 0,00</span>
+            </div>
+            <div class="payment-methods" aria-label="Métodos de pagamento">
+                <button type="button" class="payment-chip active" data-payment-method="pix_qr">
+                    <i class="fas fa-qrcode"></i> Pix com QR Code
+                </button>
+                <button type="button" class="payment-chip" data-payment-method="mercado_pago_link">
+                    <i class="fas fa-link"></i> Link Mercado Pago
+                </button>
+                <button type="button" class="payment-chip" data-payment-method="telegram_checkout">
+                    <i class="fab fa-telegram"></i> Checkout no Telegram
+                </button>
+            </div>
+            <label class="payment-field" id="buyerEmailField" hidden>
+                <span>E-mail para o Pix</span>
+                <input type="email" id="buyerEmailInput" placeholder="seu@email.com" autocomplete="email" inputmode="email">
+            </label>
+            <div class="payment-summary" id="paymentSummaryPanel" hidden>
+                <div class="payment-summary-status" id="paymentSummaryStatus"></div>
+                <div class="payment-summary-details" id="paymentSummaryDetails"></div>
+                <div class="payment-summary-actions" id="paymentSummaryActions"></div>
+            </div>
+            <div class="checkout-disclosure">
+                <i class="fas fa-shield-halved"></i>
+                <span>Pagamento confirmado pelo backend. A entrega é vinculada à sua conta do Telegram.</span>
+            </div>
+            <button class="btn btn-primary" id="checkoutBtn" type="button">
+                <i class="fas fa-check"></i> Finalizar Compra
+            </button>
+        </div>
+    </aside>
+
+    <!-- ==================== MODAL ==================== -->
+    <div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true">
+        <div class="modal-content">
+            <div class="modal-hero">
+                <img id="modalImg" src="" alt="Capa da série">
+                <button class="modal-close" aria-label="Fechar modal">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <nav class="series-breadcrumb" aria-label="Navegação estrutural">
+                    <a href="/">Início</a><i class="fas fa-chevron-right" aria-hidden="true"></i><span>Série</span>
+                </nav>
+                <h2 class="modal-title" id="modalTitle">Título da Série</h2>
+                <div class="modal-series-meta" id="modalSeriesMeta"></div>
+                <div class="modal-price" id="modalPrice"></div>
+                <p class="modal-desc" id="modalDesc">Descrição da série...</p>
+                <div class="telegram-guide" id="telegramGuide" hidden>
+                    <div class="telegram-guide-title">
+                        <i class="fas fa-shield-halved"></i>
+                        Como assistir no Mini App
+                    </div>
+                    <ol class="telegram-guide-steps">
+                        <li>Toque em <strong>Assistir no Mini App</strong>.</li>
+                        <li>A reprodução vai carregar dentro desta tela.</li>
+                        <li>Se aparecer aviso de preparo, tente novamente mais tarde.</li>
+                    </ol>
+                </div>
+                <div class="modal-actions" id="modalActions"></div>
+                <section class="related-series" id="relatedSeriesSection" hidden>
+                    <h3>Você também pode gostar</h3>
+                    <div class="related-series-grid" id="relatedSeriesGrid"></div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== TOAST ==================== -->
+    <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+    <!-- ==================== OWNER AREA ==================== -->
+    <div class="owner-overlay" id="ownerOverlay" role="dialog" aria-modal="true" aria-labelledby="ownerTitle">
+        <div class="owner-panel">
+            <div class="owner-panel-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-shield-halved"></i> Área Restrita</span>
+                    <h2 id="ownerTitle">Área do Proprietário</h2>
+                    <p>Visão rápida do catálogo, player e pagamentos. Entre com a conta Telegram do proprietário e a senha da área do proprietário.</p>
+                </div>
+                <button class="icon-btn" id="ownerCloseBtn" type="button" aria-label="Fechar área do proprietário">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <form class="owner-login" id="ownerLoginForm">
+                <label class="payment-field">
+                    <span>Senha do proprietário</span>
+                    <input type="password" id="ownerPasswordInput" placeholder="Digite sua senha" autocomplete="current-password" required>
+                </label>
+                <button class="btn btn-primary" id="ownerLoginBtn" type="submit">
+                    <i class="fas fa-lock-open"></i> Entrar
+                </button>
+            </form>
+
+            <div class="owner-status" id="ownerStatus"></div>
+            <div class="owner-dashboard" id="ownerDashboard" hidden></div>
+        </div>
+    </div>
+
+    <!-- ==================== SUPPORT ==================== -->
+    <div class="support-overlay" id="supportOverlay" role="dialog" aria-modal="true" aria-labelledby="supportTitle">
+        <div class="support-panel">
+            <div class="support-panel-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-headset"></i> Suporte</span>
+                    <h2 id="supportTitle">Precisa de ajuda?</h2>
+                    <p>Envie um requerimento com seu e-mail, assunto e descrição do problema. A equipe de suporte recebe a solicitação diretamente.</p>
+                </div>
+                <button class="icon-btn" id="supportCloseBtn" type="button" aria-label="Fechar suporte">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <form class="support-form" id="supportForm">
+                <div class="support-grid">
+                    <label class="payment-field">
+                        <span>Seu e-mail</span>
+                        <input type="email" id="supportEmailInput" name="email" placeholder="seu@email.com" autocomplete="email" inputmode="email" required>
+                    </label>
+                    <label class="payment-field">
+                        <span>Assunto</span>
+                        <input type="text" id="supportSubjectInput" name="subject" placeholder="Descreva em poucas palavras" minlength="3" maxlength="120" required>
+                    </label>
+                    <label class="payment-field support-span-2">
+                        <span>Descrição do problema</span>
+                        <textarea id="supportDescriptionInput" name="description" rows="6" placeholder="Explique o que aconteceu, em qual tela, e qualquer detalhe que ajude o suporte." minlength="20" maxlength="4000" required></textarea>
+                    </label>
+                    <label class="payment-field support-span-2">
+                        <span>Contexto opcional</span>
+                        <input type="text" id="supportContextInput" name="context" placeholder="Ex.: pedido, série, horário, captura de tela ou outro detalhe">
+                    </label>
+                </div>
+                <div class="support-actions">
+                    <button class="btn btn-secondary" id="supportCancelBtn" type="button">
+                        <i class="fas fa-xmark"></i> Cancelar
+                    </button>
+                    <button class="btn btn-primary" id="supportSubmitBtn" type="submit">
+                        <i class="fas fa-paper-plane"></i> Enviar solicitação
+                    </button>
+                </div>
+                <div class="support-status" id="supportStatus"></div>
+            </form>
+        </div>
+    </div>
+    <!-- ==================== HEADER ==================== -->
+    <header class="header" id="header" role="banner">
+        <a href="/" class="logo" aria-label="Ir para o início">
+            <i class="fas fa-play-circle" style="color: var(--primary); filter: drop-shadow(0 0 8px rgba(255,215,0,0.5));"></i>
+            <span>SÉRIES EXPRESS</span>
+        </a>
+        <label class="header-search" for="headerSearchInput">
+            <i class="fas fa-search" aria-hidden="true"></i>
+            <span class="sr-only">Buscar no catálogo</span>
+            <input type="search" id="headerSearchInput" placeholder="Buscar séries, gêneros ou temas..." autocomplete="off">
+        </label>
+        <nav class="header-actions">
+            <button id="openTelegramBtn" class="telegram-open-btn" type="button" hidden>
+                <i class="fab fa-telegram"></i>
+                <span>Abrir no Telegram</span>
+            </button>
+            <button id="supportBtn" class="support-btn" type="button" title="Suporte" aria-label="Precisa de ajuda?">
+                <i class="fas fa-life-ring"></i>
+                <span>Precisa de ajuda?</span>
+                <strong>!</strong>
+            </button>
+            <button id="ownerBtn" class="icon-btn owner-btn" title="Área do proprietário" aria-label="Abrir área do proprietário" hidden>
+                <i class="fas fa-crown"></i>
+            </button>
+            <button id="themeBtn" class="icon-btn" title="Alternar tema claro/escuro">
+                <i class="fas fa-moon" id="themeIcon"></i>
+            </button>
+            <button id="cartBtn" class="icon-btn" aria-label="Abrir carrinho">
+                <i class="fas fa-shopping-cart"></i>
+                <span class="badge" id="cartBadge" style="display:none;">0</span>
+            </button>
+        </nav>
+    </header>
+
+    <!-- ==================== MAIN CONTENT ==================== -->
+    <main id="main-content">
+
+        <!-- HERO -->
+        <section class="hero" role="region" aria-label="Destaque">
+            <div class="hero-gradient"></div>
+            <div class="hero-content">
+                <span class="hero-badge" id="heroBadge">
+                    <i class="fas fa-fire"></i> Destaque da Semana
+                </span>
+                <h1 id="heroTitle">Carregando destaque...</h1>
+                <p id="heroDesc">Preparando o catálogo...</p>
+                <div class="hero-meta" id="heroMeta"></div>
+                <div class="hero-actions">
+                    <button class="btn btn-play" id="heroPlayBtn" style="display:none;">
+                        <i class="fas fa-play"></i> Assistir
+                    </button>
+                    <button class="btn btn-secondary" id="heroDetailsBtn" style="display:none;">
+                        <i class="fas fa-circle-info"></i> Ver detalhes
+                    </button>
+                </div>
+            </div>
+            <div class="hero-image-container">
+                <img id="heroImg" class="hero-poster" alt="Poster da série em destaque">
+            </div>
+        </section>
+
+        <!-- NETFLIX ROW -->
+        <section class="netflix-row" id="netflixRow" role="region" aria-label="Descubra agora" style="display:none;">
+            <div class="netflix-row-title">
+                <i class="fas fa-compass" style="color:var(--primary);"></i> Descubra agora
+            </div>
+            <div class="netflix-scroll" id="netflixScroll"></div>
+        </section>
+
+        <!-- CATÁLOGO -->
+        <section class="section" id="catalogSection" role="region" aria-label="Catálogo">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="search" id="searchInput" placeholder="Buscar séries, gêneros ou temas..." aria-label="Buscar séries, gêneros ou temas" autocomplete="off">
+            </div>
+
+            <div class="categories">
+                <button class="category-chip active" data-category="all">Todas</button>
+                <button class="category-chip" data-category="favorites">Favoritas</button>
+                <button class="category-chip" data-category="romance">Romance</button>
+                <button class="category-chip" data-category="suspense">Suspense</button>
+                <button class="category-chip" data-category="drama">Drama</button>
+                <button class="category-chip" data-category="dubladas">Dubladas</button>
+                <button class="category-chip" data-category="legendadas">Legendadas</button>
+            </div>
+
+            <h2 class="section-title">Catálogo Completo</h2>
+            <div class="catalog-groups" id="catalogGrid" role="region" aria-label="Grade de séries"></div>
+        </section>
+
+        <section class="content-page" id="contentPage" hidden aria-live="polite"></section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="site-footer">
+        <div class="site-footer-brand">
+            <strong>Séries Curtas Express</strong>
+            <span>Descubra séries curtas completas para assistir de uma vez.</span>
+        </div>
+        <nav class="site-footer-links" aria-label="Links institucionais">
+            <a href="/ajuda">Ajuda</a>
+            <a href="/termos">Termos de uso</a>
+            <a href="/privacidade">Privacidade</a>
+            <a href="/blog">Blog</a>
+            <a href="mailto:isismoura97@gmail.com">Contato</a>
+        </nav>
+        <p>© <span id="currentYear"></span> Séries Curtas Express.</p>
+    </footer>
+
+    <!-- Vercel Speed Insights -->
+    <script>
+      window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
+    </script>
+    <script defer src="/_vercel/speed-insights/script.js"></script>
+
+    <!-- Script Principal -->
+    <script defer src="/app.min.js?v=20260711-01"></script>
+</body>
+</html>
+
+

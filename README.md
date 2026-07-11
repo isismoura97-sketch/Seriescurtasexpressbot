@@ -48,7 +48,7 @@ Os metadados da página de série incluem canonical, Open Graph, Twitter Cards e
 node scripts/generate-seo-files.mjs
 ```
 
-O arquivo resultante fica em `series-app/sitemap.xml`.
+Os arquivos resultantes ficam em `series-app/sitemap.xml` e `series-app/series/[slug]/index.html`. As páginas geradas já entregam título, description, canonical, Open Graph e Schema.org no HTML inicial, antes da execução do JavaScript.
 
 ## Contexto híbrido
 

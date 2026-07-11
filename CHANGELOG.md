@@ -10,6 +10,7 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 - Contexto hibrido para navegador comum e Telegram Mini App.
 - Rotas publicas para series, categorias, busca, favoritos, ajuda, termos, privacidade e blog.
 - Metadados dinamicos, Open Graph, Twitter Cards, Schema.org, robots e sitemap.
+- HTML pre-renderizado por serie para indexadores e previews de compartilhamento.
 - Recomendacoes deterministicas por genero, tags, idioma e tipo de acesso.
 - Busca com debounce por titulo, sinopse, genero, tags, idioma e temas.
 - Testes funcionais separados para o modo Telegram e o modo web.

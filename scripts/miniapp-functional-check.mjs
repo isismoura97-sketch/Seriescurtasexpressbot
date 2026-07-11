@@ -915,6 +915,7 @@ async function main() {
 
     const sitemapText = fs.readFileSync(path.join(appDir, 'sitemap.xml'), 'utf8');
     const robotsText = fs.readFileSync(path.join(appDir, 'robots.txt'), 'utf8');
+    const generatedSeriesPageText = fs.readFileSync(path.join(appDir, 'series', 'a-prometida-do-principe-vampiro-legendado-pt-br', 'index.html'), 'utf8');
 
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
@@ -964,6 +965,7 @@ async function main() {
     if (!webTelegramOpenState.includes('t.me/ShortNovelsBot') || deliveryLog.length !== webDeliveryCountBefore) failures.push('public Telegram handoff failed');
     if (!webContentState.title.includes('Política de privacidade') || webContentState.heading !== 'Política de privacidade' || !webContentState.catalogHidden) failures.push(`public content page failed: ${JSON.stringify(webContentState)}`);
     if (!sitemapText.includes('/series/') || !sitemapText.includes('/blog/o-que-sao-series-curtas-verticais') || !robotsText.includes('Sitemap:')) failures.push('SEO files failed');
+    if (!generatedSeriesPageText.includes('<title>A Prometida do Príncipe Vampiro') || !generatedSeriesPageText.includes('property="og:title"') || !generatedSeriesPageText.includes('"@type":"Movie"')) failures.push('pre-rendered series SEO failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
 
     const result = {
