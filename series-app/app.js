@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260710-01';
+const BUILD_VERSION = '20260710-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -83,6 +83,7 @@ let ownerSeriesSearchTerm = '';
 let ownerSeriesFilterMode = 'all';
 let ownerSessionAuthorized = false;
 let supportRequestPending = false;
+const ownerOrderRetryInFlightIds = new Set();
 
 function getAnalyticsSessionId() {
     try {
@@ -1761,6 +1762,14 @@ async function requestOwnerDashboard(password) {
     }, 20000);
 }
 
+async function requestOwnerOrderRetry(orderId) {
+    return await requestJson(`${API_URL}?action=owner-order-retry`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        order_id: String(orderId || ''),
+    }, 2 * 60 * 1000);
+}
+
 function isOwnerUser() {
     return ownerSessionAuthorized;
 }
@@ -2212,6 +2221,12 @@ function restoreOwnerSeriesEditorState() {
 }
 
 function wireOwnerDashboardControls() {
+    const retryOrderButtons = document.querySelectorAll('[data-owner-order-retry]');
+    retryOrderButtons.forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.onclick = () => retryOwnerOrderDelivery(button.dataset.ownerOrderRetry || '', button);
+    });
+
     const searchInput = document.getElementById('ownerSeriesSearchInput');
     if (searchInput instanceof HTMLInputElement) {
         searchInput.value = ownerSeriesSearchTerm;
@@ -2588,6 +2603,112 @@ function formatOwnerCurrency(value) {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value) || 0);
 }
 
+function getOwnerDeliveryStatusMeta(status, isProcessing = false) {
+    const normalized = String(status || 'pending').toLowerCase();
+    if (isProcessing || normalized === 'processing') return { label: 'Processando', tone: 'info', icon: 'fa-spinner fa-spin' };
+    if (normalized === 'completed') return { label: 'Concluída', tone: 'success', icon: 'fa-circle-check' };
+    if (normalized === 'partial') return { label: 'Parcial', tone: 'warning', icon: 'fa-triangle-exclamation' };
+    if (normalized === 'failed') return { label: 'Falhou', tone: 'danger', icon: 'fa-circle-xmark' };
+    if (normalized === 'retry') return { label: 'Aguardando nova tentativa', tone: 'warning', icon: 'fa-rotate' };
+    return { label: 'Pendente', tone: 'muted', icon: 'fa-clock' };
+}
+
+function getOwnerPaymentStatusLabel(status) {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'approved') return 'Pagamento aprovado';
+    if (['pending', 'pending_payment', 'in_process'].includes(normalized)) return 'Pagamento pendente';
+    if (normalized === 'rejected') return 'Pagamento recusado';
+    if (['cancelled', 'canceled'].includes(normalized)) return 'Pagamento cancelado';
+    return normalized || 'Status desconhecido';
+}
+
+function renderOwnerOrderCard(order, priority = false) {
+    const orderId = String(order?.order_id || '');
+    const shortOrderId = String(order?.order_short_id || orderId.slice(0, 8) || '---');
+    const deliveryMeta = getOwnerDeliveryStatusMeta(order?.delivery_status, order?.is_processing);
+    const items = Array.isArray(order?.items) ? order.items : [];
+    const itemRows = items.map((item) => `
+        <div class="owner-order-item ${item.delivered ? 'is-delivered' : ''}">
+            <i class="fas ${item.delivered ? 'fa-circle-check' : 'fa-clock'}"></i>
+            <span>${escapeHtml(item.title || 'Série')}</span>
+            <strong>${escapeHtml(formatOwnerCurrency(item.price))}</strong>
+        </div>
+    `).join('') || '<div class="owner-order-item"><i class="fas fa-circle-info"></i><span>Itens não informados</span></div>';
+    const customer = [order?.buyer_email, order?.user_id ? `Telegram ${order.user_id}` : ''].filter(Boolean).join(' • ');
+    const canRetry = order?.can_retry_delivery === true;
+    const retrying = ownerOrderRetryInFlightIds.has(orderId);
+
+    return `
+        <article class="owner-order-card ${priority ? 'owner-order-card-priority' : ''}" data-owner-order-id="${escapeAttr(orderId)}">
+            <div class="owner-order-card-head">
+                <div>
+                    <span class="owner-order-kicker">Pedido ${escapeHtml(shortOrderId)}</span>
+                    <strong>${escapeHtml(formatOwnerCurrency(order?.amount))}</strong>
+                </div>
+                <div class="owner-order-badges">
+                    <span class="owner-order-badge owner-order-badge-payment"><i class="fas fa-shield-halved"></i> ${escapeHtml(getOwnerPaymentStatusLabel(order?.status))}</span>
+                    <span class="owner-order-badge owner-order-badge-${escapeAttr(deliveryMeta.tone)}"><i class="fas ${escapeAttr(deliveryMeta.icon)}"></i> ${escapeHtml(deliveryMeta.label)}</span>
+                </div>
+            </div>
+            <div class="owner-order-meta">
+                <span><i class="fas fa-user"></i> ${escapeHtml(customer || 'Cliente não informado')}</span>
+                <span><i class="fas fa-calendar"></i> ${escapeHtml(formatOwnerDate(order?.created_at))}</span>
+                <span><i class="fas fa-box"></i> ${escapeHtml(String(order?.delivered_count ?? 0))}/${escapeHtml(String(order?.item_count ?? items.length))} entregues</span>
+            </div>
+            <div class="owner-order-items">${itemRows}</div>
+            ${order?.delivery_last_error ? `<div class="owner-order-error"><i class="fas fa-triangle-exclamation"></i><span>${escapeHtml(order.delivery_last_error)}</span></div>` : ''}
+            <div class="owner-order-card-footer">
+                <span>Tentativas: <strong>${escapeHtml(String(order?.delivery_attempts ?? 0))}</strong></span>
+                ${canRetry ? `
+                    <button type="button" class="btn btn-primary owner-order-retry-btn" data-owner-order-retry="${escapeAttr(orderId)}" ${retrying ? 'disabled' : ''}>
+                        <i class="fas ${retrying ? 'fa-spinner fa-spin' : 'fa-rotate-right'}"></i> ${retrying ? 'Reprocessando...' : 'Reprocessar entrega'}
+                    </button>
+                ` : `<span class="owner-order-locked"><i class="fas ${order?.is_processing ? 'fa-spinner fa-spin' : 'fa-lock'}"></i> ${order?.is_processing ? 'Entrega em andamento' : deliveryMeta.label}</span>`}
+            </div>
+        </article>
+    `;
+}
+
+async function retryOwnerOrderDelivery(orderId, button) {
+    const normalizedOrderId = String(orderId || '');
+    if (!normalizedOrderId || ownerOrderRetryInFlightIds.has(normalizedOrderId)) return;
+    if (!window.confirm('Confirmar nova tentativa? O sistema enviará somente os títulos que ainda não foram entregues.')) return;
+
+    ownerOrderRetryInFlightIds.add(normalizedOrderId);
+    if (button instanceof HTMLButtonElement) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Reprocessando...';
+    }
+    setOwnerStatus('Validando o pagamento e reprocessando somente os itens pendentes...', '');
+
+    try {
+        const payload = await requestOwnerOrderRetry(normalizedOrderId);
+        if (payload?.dashboard) {
+            ownerDashboardSnapshot = payload.dashboard;
+            renderOwnerDashboard(payload.dashboard);
+        }
+        const status = String(payload?.order?.delivery_status || '').toLowerCase();
+        if (status === 'completed') {
+            setOwnerStatus('Entrega reprocessada e concluída com sucesso.', 'success');
+            showToast('Entrega concluída no Telegram.', 'success');
+        } else {
+            setOwnerStatus('A nova tentativa terminou, mas ainda existem itens pendentes.', 'error');
+            showToast('Ainda existem itens pendentes nessa entrega.', 'info');
+        }
+    } catch (error) {
+        setOwnerStatus(error?.message || 'Não foi possível reprocessar a entrega.', 'error');
+        showToast(error?.message || 'Falha ao reprocessar a entrega.', 'error');
+    } finally {
+        ownerOrderRetryInFlightIds.delete(normalizedOrderId);
+        const currentButton = Array.from(document.querySelectorAll('[data-owner-order-retry]'))
+            .find((candidate) => candidate.dataset.ownerOrderRetry === normalizedOrderId);
+        if (currentButton instanceof HTMLButtonElement && currentButton.isConnected) {
+            currentButton.disabled = false;
+            currentButton.innerHTML = '<i class="fas fa-rotate-right"></i> Reprocessar entrega';
+        }
+    }
+}
+
 function renderOwnerDashboard(data) {
     if (!DOM.ownerDashboard) return;
 
@@ -2601,6 +2722,7 @@ function renderOwnerDashboard(data) {
     const catalogSeries = seriesItems.length ? seriesItems : recentSeries;
     const statusCounts = payments.status_counts || {};
     const recentOrders = Array.isArray(payments.recent_orders) ? payments.recent_orders : [];
+    const deliveryQueue = Array.isArray(payments.delivery_queue) ? payments.delivery_queue : [];
     ownerSeriesCatalog = catalogSeries;
     const visibleSeries = filterOwnerSeries(ownerSeriesCatalog);
     const filterCounts = getOwnerSeriesFilterCounts(ownerSeriesCatalog);
@@ -2630,14 +2752,19 @@ function renderOwnerDashboard(data) {
         `)
         .join('') || '<div class="owner-list-row"><span>Nenhum pedido registrado</span><strong>0</strong></div>';
 
-    const recentRows = recentOrders
-        .map((order) => `
-            <div class="owner-list-row">
-                <span>${escapeHtml(order.order_id || '---')} • ${escapeHtml(order.payment_method || '---')} • ${escapeHtml(order.status || '---')} • entrega: ${escapeHtml(order.delivery_status || 'pendente')}</span>
-                <strong>${escapeHtml(formatOwnerCurrency(order.amount))}</strong>
+    const deliveryQueueRows = deliveryQueue
+        .map((order) => renderOwnerOrderCard(order, true))
+        .join('') || `
+            <div class="owner-empty-state owner-order-empty-state">
+                <i class="fas fa-circle-check"></i>
+                <strong>Nenhuma entrega precisa de intervenção.</strong>
+                <span>Pedidos aprovados e concluídos ficam apenas no histórico.</span>
             </div>
-        `)
-        .join('') || '<div class="owner-list-row"><span>Nenhum pedido recente</span><strong>-</strong></div>';
+        `;
+
+    const recentRows = recentOrders
+        .map((order) => renderOwnerOrderCard(order, false))
+        .join('') || '<div class="owner-empty-state"><strong>Nenhum pedido recente</strong><span>Os novos pedidos aparecerão aqui automaticamente.</span></div>';
 
     const prioritySeriesRows = prioritySeries.slice(0, 4)
         .map((serie) => {
@@ -2788,6 +2915,14 @@ function renderOwnerDashboard(data) {
                     <span>Total aprovado</span>
                     <strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong>
                 </div>
+                <div class="owner-card ${Number(payments.delivery_queue_total || 0) ? 'owner-card-warning' : 'owner-card-accent'}">
+                    <span>Fila de entregas</span>
+                    <strong>${escapeHtml(String(payments.delivery_queue_total ?? 0))}</strong>
+                </div>
+                <div class="owner-card ${Number(payments.delivery_failed_total || 0) ? 'owner-card-danger' : 'owner-card-accent'}">
+                    <span>Falhas de entrega</span>
+                    <strong>${escapeHtml(String(payments.delivery_failed_total ?? 0))}</strong>
+                </div>
                 <div class="owner-card owner-card-accent">
                     <span>Usuários ativos (30 dias)</span>
                     <strong>${escapeHtml(String(analytics.unique_users ?? 0))}</strong>
@@ -2811,6 +2946,17 @@ function renderOwnerDashboard(data) {
                     <i class="fas fa-wand-magic-sparkles"></i> Aplicar migração
                 </button>
             </div>
+        </section>
+        <section class="owner-section owner-orders-section owner-orders-priority-section">
+            <div class="owner-section-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-truck-fast"></i> Operação de entregas</span>
+                    <h3>Fila que precisa de atenção</h3>
+                    <p>Somente pedidos aprovados e ainda incompletos aparecem aqui. O reprocessamento preserva tudo que já foi entregue.</p>
+                </div>
+                <div class="owner-series-count">${escapeHtml(String(payments.delivery_queue_total ?? deliveryQueue.length))} pendentes</div>
+            </div>
+            <div class="owner-orders-grid">${deliveryQueueRows}</div>
         </section>
         <div class="owner-workspace-grid">
             <section class="owner-section owner-section-featured owner-editor-section">
@@ -2970,9 +3116,15 @@ function renderOwnerDashboard(data) {
             <input type="file" id="ownerQuickTrailerInput" accept="video/*" hidden>
             <div class="owner-series-list">${recentSeriesRows}</div>
         </section>
-        <section class="owner-section">
-            <h3>Pedidos recentes</h3>
-            <div class="owner-list">${recentRows}</div>
+        <section class="owner-section owner-orders-section">
+            <div class="owner-section-head">
+                <div>
+                    <h3>Histórico operacional</h3>
+                    <p>Últimos pedidos com situação do pagamento, entrega e itens enviados.</p>
+                </div>
+                <div class="owner-series-count">${escapeHtml(String(recentOrders.length))} pedidos</div>
+            </div>
+            <div class="owner-orders-grid">${recentRows}</div>
         </section>
         <section class="owner-section owner-analytics-section">
             <div class="owner-section-head">

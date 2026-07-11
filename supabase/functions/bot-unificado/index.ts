@@ -17,7 +17,7 @@ const TELEGRAM_BOT_USERNAME = (
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
 const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "SÃ©ries Curtas Express <onboarding@resend.dev>";
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260710-01";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260710-02";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -4854,12 +4854,62 @@ function sumApprovedPayments(rows: Record<string, unknown>[]) {
 async function getOwnerPaymentRows() {
   try {
     const data = await supabaseFetch(
-      `${PAYMENT_ORDERS_TABLE}?select=order_id,status,payment_method,amount,created_at,confirmed_at,delivery_status,delivery_attempts,delivery_last_error&order=created_at.desc&limit=100`,
+      `${PAYMENT_ORDERS_TABLE}?select=order_id,user_id,status,payment_method,amount,items,buyer_email,created_at,confirmed_at,mercado_pago_payment_id,delivery_status,delivery_attempts,delivered_item_ids,delivery_started_at,delivery_completed_at,delivery_last_error&order=created_at.desc&limit=100`,
     );
     return Array.isArray(data) ? data as Record<string, unknown>[] : [];
   } catch {
     return [];
   }
+}
+
+function isDeliveryProcessingFresh(row: Record<string, unknown>) {
+  const status = String(row.delivery_status ?? "pending").trim().toLowerCase();
+  const startedAt = Date.parse(String(row.delivery_started_at ?? "")) || 0;
+  return status === "processing" && startedAt > Date.now() - 10 * 60 * 1000;
+}
+
+function canOwnerRetryOrder(row: Record<string, unknown>) {
+  const paymentStatus = String(row.status ?? "").trim().toLowerCase();
+  const deliveryStatus = String(row.delivery_status ?? "pending").trim().toLowerCase();
+  return paymentStatus === "approved" && deliveryStatus !== "completed" && !isDeliveryProcessingFresh(row);
+}
+
+function serializeOwnerPaymentOrder(row: Record<string, unknown>) {
+  const rawItems = Array.isArray(row.items) ? row.items as Record<string, unknown>[] : [];
+  const deliveredIds = getDeliveredItemIds(row);
+  const items = rawItems.map((item) => {
+    const seriesId = String(item.id ?? item.serie_id ?? item.series_id ?? "").trim();
+    return {
+      series_id: seriesId,
+      title: String(item.title ?? item.name ?? "Serie").trim() || "Serie",
+      price: Number(item.price ?? 0) || 0,
+      quantity: Number(item.quantity ?? 1) || 1,
+      delivered: seriesId ? deliveredIds.has(seriesId) : false,
+    };
+  });
+
+  const orderId = String(row.order_id ?? "").trim();
+  return {
+    order_id: orderId,
+    order_short_id: orderId.slice(0, 8),
+    user_id: String(row.user_id ?? ""),
+    status: String(row.status ?? "unknown"),
+    payment_method: String(row.payment_method ?? "unknown"),
+    amount: Number(row.amount ?? 0) || 0,
+    buyer_email: String(row.buyer_email ?? ""),
+    created_at: row.created_at ?? null,
+    confirmed_at: row.confirmed_at ?? null,
+    delivery_status: String(row.delivery_status ?? "pending"),
+    delivery_attempts: Number(row.delivery_attempts ?? 0) || 0,
+    delivery_started_at: row.delivery_started_at ?? null,
+    delivery_completed_at: row.delivery_completed_at ?? null,
+    delivery_last_error: String(row.delivery_last_error ?? ""),
+    delivered_count: items.filter((item) => item.delivered).length,
+    item_count: items.length,
+    items,
+    can_retry_delivery: canOwnerRetryOrder(row),
+    is_processing: isDeliveryProcessingFresh(row),
+  };
 }
 
 function sortByCreatedAtDesc(rows: Record<string, unknown>[]) {
@@ -5014,6 +5064,10 @@ async function buildOwnerDashboardPayload(userId: string) {
   const missingPlayback = sortedSeries.filter((row) => !hasAnyPlayback(row));
   const playableEpisodes = episodes.filter((row) => getEpisodeFileId(row));
   const statusCounts = countByStatus(payments);
+  const serializedOrders = payments.map((row) => serializeOwnerPaymentOrder(row));
+  const deliveryQueue = serializedOrders.filter((order) => (
+    order.status.toLowerCase() === "approved" && order.delivery_status.toLowerCase() !== "completed"
+  ));
 
   return {
     ok: true,
@@ -5034,17 +5088,11 @@ async function buildOwnerDashboardPayload(userId: string) {
       orders_total: payments.length,
       status_counts: statusCounts,
       approved_amount: sumApprovedPayments(payments),
-      recent_orders: payments.slice(0, 8).map((row) => ({
-        order_id: String(row.order_id ?? "").slice(0, 8),
-        status: row.status ?? null,
-        payment_method: row.payment_method ?? null,
-        amount: Number(row.amount ?? 0) || 0,
-        created_at: row.created_at ?? null,
-        confirmed_at: row.confirmed_at ?? null,
-        delivery_status: row.delivery_status ?? null,
-        delivery_attempts: Number(row.delivery_attempts ?? 0) || 0,
-        delivery_last_error: row.delivery_last_error ?? null,
-      })),
+      delivery_queue_total: deliveryQueue.length,
+      delivery_failed_total: deliveryQueue.filter((order) => ["failed", "partial", "retry"].includes(order.delivery_status.toLowerCase())).length,
+      delivery_processing_total: deliveryQueue.filter((order) => order.is_processing).length,
+      delivery_queue: deliveryQueue.slice(0, 20),
+      recent_orders: serializedOrders.slice(0, 30),
     },
     analytics,
     series_items: sortedSeries.map((row) => serializeOwnerSeries(row)),
@@ -5091,6 +5139,89 @@ async function handleOwnerDashboard(req: Request) {
 
   const payload = await buildOwnerDashboardPayload(access.userId);
   return json(req, payload);
+}
+
+async function verifyApprovedOrderForOwnerRetry(order: Record<string, unknown>) {
+  if (String(order.status ?? "").trim().toLowerCase() !== "approved") {
+    return { ok: false as const, status: 409, error: "Somente pedidos aprovados podem ser reprocessados" };
+  }
+
+  const paymentId = String(order.mercado_pago_payment_id ?? "").trim();
+  if (!paymentId) {
+    return { ok: true as const, source: "approved_order" };
+  }
+
+  try {
+    const payment = await fetchMercadoPagoPayment(paymentId);
+    const paymentStatus = normalizeWebhookStatus(payment.status);
+    const orderId = String(order.order_id ?? "").trim();
+    const externalReference = String(payment.external_reference ?? "").trim();
+    const metadata = payment.metadata as Record<string, unknown> | undefined;
+    const metadataOrderId = String(metadata?.order_id ?? "").trim();
+    const matchesOrder = externalReference === orderId || metadataOrderId === orderId;
+
+    if (paymentStatus !== "approved" || !matchesOrder) {
+      return { ok: false as const, status: 409, error: "O Mercado Pago nao confirmou este pedido como aprovado" };
+    }
+
+    return { ok: true as const, source: "mercado_pago" };
+  } catch (error) {
+    console.error("[OWNER][DELIVERY] Falha ao validar pagamento antes do reprocessamento:", error instanceof Error ? error.message : String(error));
+    return { ok: false as const, status: 502, error: "Nao foi possivel confirmar o pagamento agora. Tente novamente em instantes" };
+  }
+}
+
+async function handleOwnerOrderRetry(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
+
+  const orderId = String(body.order_id ?? body.orderId ?? "").trim();
+  if (!orderId || orderId.length > 160) {
+    return json(req, { error: "Pedido invalido" }, 400);
+  }
+
+  const order = await getPaymentOrderById(orderId);
+  if (!order) return json(req, { error: "Pedido nao encontrado" }, 404);
+
+  const deliveryStatus = String(order.delivery_status ?? "pending").trim().toLowerCase();
+  if (deliveryStatus === "completed") {
+    return json(req, { error: "A entrega deste pedido ja foi concluida" }, 409);
+  }
+  if (isDeliveryProcessingFresh(order)) {
+    return json(req, { error: "A entrega ja esta sendo processada" }, 409);
+  }
+
+  const paymentVerification = await verifyApprovedOrderForOwnerRetry(order);
+  if (!paymentVerification.ok) {
+    return json(req, { error: paymentVerification.error }, paymentVerification.status);
+  }
+
+  const retryOrder = await updatePaymentOrderRecord(orderId, {
+    delivery_status: "retry",
+    delivery_last_error: null,
+  }) as Record<string, unknown>;
+  const summary = await deliverApprovedOrderSeries(retryOrder);
+  const updatedOrder = await getPaymentOrderById(orderId) || retryOrder;
+  const dashboard = await buildOwnerDashboardPayload(access.userId);
+
+  console.info("[OWNER][DELIVERY] Reprocessamento concluido", stringifyJson({
+    order_id: orderId,
+    owner_user_id: access.userId,
+    payment_verification: paymentVerification.source,
+    delivery_status: updatedOrder.delivery_status,
+    delivered_now: summary.delivered.length,
+    failed_now: summary.failed.length,
+  }));
+
+  return json(req, {
+    ok: true,
+    order: serializeOwnerPaymentOrder(updatedOrder),
+    summary,
+    dashboard,
+  });
 }
 
 async function handleOwnerUploadSign(req: Request) {
@@ -5739,6 +5870,10 @@ Deno.serve(async (req) => {
 
     if (action === "owner-dashboard") {
       return await handleOwnerDashboard(req);
+    }
+
+    if (action === "owner-order-retry" && req.method === "POST") {
+      return await handleOwnerOrderRetry(req);
     }
 
     if (action === "owner-upload-sign") {

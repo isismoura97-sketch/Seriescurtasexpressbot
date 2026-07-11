@@ -114,6 +114,7 @@ const fixtureSeries = [
 
 let paidGranted = false;
 let ownerMigrationApplied = false;
+let ownerOrderRetried = false;
 const deliveryLog = [];
 const progressLog = [];
 
@@ -438,7 +439,27 @@ async function installRoutes(page) {
             orders_total: 1,
             approved_amount: 5.9,
             status_counts: { approved: 1 },
-            recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 5.9 }],
+            delivery_queue_total: ownerOrderRetried ? 0 : 1,
+            delivery_failed_total: ownerOrderRetried ? 0 : 1,
+            delivery_processing_total: 0,
+            delivery_queue: ownerOrderRetried ? [] : [{
+              order_id: 'order-failed-test', order_short_id: 'order-fa', user_id: TEST_OWNER_ID,
+              buyer_email: 'cliente@example.com', status: 'approved', payment_method: 'pix_qr', amount: 5.9,
+              created_at: '2026-07-10T12:00:00Z', delivery_status: 'failed', delivery_attempts: 1,
+              delivery_last_error: 'Falha temporaria no Telegram', delivered_count: 0, item_count: 1,
+              items: [{ series_id: 'paid-series', title: 'Pago Protegido', price: 5.9, delivered: false }],
+              can_retry_delivery: true, is_processing: false,
+            }],
+            recent_orders: [{
+              order_id: 'order-failed-test', order_short_id: 'order-fa', user_id: TEST_OWNER_ID,
+              buyer_email: 'cliente@example.com', status: 'approved', payment_method: 'pix_qr', amount: 5.9,
+              created_at: '2026-07-10T12:00:00Z', delivery_status: ownerOrderRetried ? 'completed' : 'failed',
+              delivery_attempts: ownerOrderRetried ? 2 : 1,
+              delivery_last_error: ownerOrderRetried ? '' : 'Falha temporaria no Telegram',
+              delivered_count: ownerOrderRetried ? 1 : 0, item_count: 1,
+              items: [{ series_id: 'paid-series', title: 'Pago Protegido', price: 5.9, delivered: ownerOrderRetried }],
+              can_retry_delivery: false, is_processing: false,
+            }],
           },
           analytics: {
             period_days: 30,
@@ -449,6 +470,43 @@ async function installRoutes(page) {
           },
           series_items: seriesItems,
           recent_series: seriesItems,
+        }),
+      });
+      return;
+    }
+
+    if (action === 'owner-order-retry') {
+      ownerOrderRetried = true;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          order: { order_id: 'order-failed-test', delivery_status: 'completed' },
+          summary: { delivered: [{ seriesId: 'paid-series', title: 'Pago Protegido' }], failed: [] },
+          dashboard: {
+            catalog: {
+              series_total: 2, playable_series: 2, internal_playback_series: 2, migration_needed: 0,
+              missing_playback: 0, episodes_total: 1, playable_episodes: 1, series_with_episode_files: 1,
+            },
+            payments: {
+              orders_total: 1, approved_amount: 5.9, status_counts: { approved: 1 },
+              delivery_queue_total: 0, delivery_failed_total: 0, delivery_processing_total: 0, delivery_queue: [],
+              recent_orders: [{
+                order_id: 'order-failed-test', order_short_id: 'order-fa', user_id: TEST_OWNER_ID,
+                buyer_email: 'cliente@example.com', status: 'approved', payment_method: 'pix_qr', amount: 5.9,
+                created_at: '2026-07-10T12:00:00Z', delivery_status: 'completed', delivery_attempts: 2,
+                delivery_last_error: '', delivered_count: 1, item_count: 1,
+                items: [{ series_id: 'paid-series', title: 'Pago Protegido', price: 5.9, delivered: true }],
+                can_retry_delivery: false, is_processing: false,
+              }],
+            },
+            analytics: {
+              period_days: 30, events_total: 12, unique_users: 3, abandonment_rate: 25,
+              funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, delivery_completed: 1, cart_abandoned: 1 },
+            },
+            series_items: [],
+            recent_series: [],
+          },
         }),
       });
       return;
@@ -490,7 +548,18 @@ async function installRoutes(page) {
               orders_total: 1,
               approved_amount: 5.9,
               status_counts: { approved: 1 },
-              recent_orders: [{ order_id: 'order-te', status: 'approved', payment_method: 'pix_qr', amount: 5.9 }],
+              delivery_queue_total: 1,
+              delivery_failed_total: 1,
+              delivery_processing_total: 0,
+              delivery_queue: [{
+                order_id: 'order-failed-test', order_short_id: 'order-fa', user_id: TEST_OWNER_ID,
+                buyer_email: 'cliente@example.com', status: 'approved', payment_method: 'pix_qr', amount: 5.9,
+                created_at: '2026-07-10T12:00:00Z', delivery_status: 'failed', delivery_attempts: 1,
+                delivery_last_error: 'Falha temporaria no Telegram', delivered_count: 0, item_count: 1,
+                items: [{ series_id: 'paid-series', title: 'Pago Protegido', price: 5.9, delivered: false }],
+                can_retry_delivery: true, is_processing: false,
+              }],
+              recent_orders: [],
             },
             analytics: {
               period_days: 30,
@@ -765,10 +834,18 @@ async function main() {
       text: document.querySelector('#ownerDashboard')?.textContent?.replace(/\s+/g, ' ').trim(),
     }));
 
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('[data-owner-order-retry="order-failed-test"]').first().click();
+    await page.waitForFunction(() => document.querySelector('#ownerDashboard')?.textContent?.includes('Nenhuma entrega precisa de intervenção'), null, { timeout: 10000 });
+    const ownerRetryState = await page.evaluate(() => ({
+      text: document.querySelector('#ownerDashboard')?.textContent?.replace(/\s+/g, ' ').trim(),
+      retryButton: Boolean(document.querySelector('[data-owner-order-retry="order-failed-test"]')),
+    }));
+
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260710-01')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260710-02')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -805,6 +882,7 @@ async function main() {
     if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
     if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral')) || !ownerState.text.includes('Conversão e abandono')) failures.push('owner area failed');
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Prontas2') && !migratedOwnerState.text.includes('Em fila0'))) failures.push('owner migration failed');
+    if (!ownerOrderRetried || ownerRetryState.retryButton || !ownerRetryState.text.includes('Nenhuma entrega precisa de intervenção')) failures.push('owner delivery retry failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
 
     const result = {
@@ -829,6 +907,7 @@ async function main() {
         paidAfterPayment,
         ownerState,
         migratedOwnerState,
+        ownerRetryState,
       },
     };
 
