@@ -62,4 +62,17 @@ O Series Curtas Express e uma aplicacao estatica hospedada na Vercel. A interfac
 - Series pagas exibem preco antes do checkout.
 - Busca e filtros sao acessiveis e representados na URL.
 - Testes existentes e novos testes hibridos passam.
+# Sprint 2 - Administração e CMS
+
+Implementado em 11/07/2026:
+
+- ciclo editorial não destrutivo para séries;
+- validação de publicação no backend;
+- duplicação como rascunho sem replicar mídia protegida;
+- SEO administrável e redirecionamento de slug;
+- preço em centavos sincronizado com o modelo legado;
+- filtros e ações editoriais no painel da proprietária;
+- RLS e revogação de acesso público para a tabela de redirecionamentos.
+
+Trade-off: a autenticação administrativa continua vinculada ao Telegram, evitando introduzir uma segunda pilha de autenticação web nesta etapa. Uma conta web independente deve ser avaliada apenas quando houver necessidade operacional comprovada.
 

@@ -4037,6 +4037,26 @@ function getSeriesPrice(row: Record<string, unknown>) {
   return accessType === "paid" || accessType === "premium" ? 5.9 : 0;
 }
 
+async function getSeriesBySlug(slug: string) {
+  const normalized = slugifySeriesTitle(slug);
+  if (!normalized) return null;
+  const data = await supabaseFetch(`${SERIES_TABLE}?select=*&slug=eq.${encodeURIComponent(normalized)}&limit=1`);
+  return Array.isArray(data) && data.length > 0 ? data[0] as Record<string, unknown> : null;
+}
+
+async function handleSeriesSlugResolve(req: Request, url: URL) {
+  const oldSlug = slugifySeriesTitle(url.searchParams.get("slug"));
+  if (!oldSlug) return json(req, { error: "Slug invalido" }, 400);
+  const redirects = await supabaseFetch(
+    `series_slug_redirects?select=new_slug&old_slug=eq.${encodeURIComponent(oldSlug)}&limit=1`,
+  );
+  const newSlug = Array.isArray(redirects) ? String(redirects[0]?.new_slug ?? "").trim() : "";
+  if (!newSlug) return json(req, { error: "Redirecionamento nao encontrado" }, 404);
+  const target = await getSeriesBySlug(newSlug);
+  if (!target || !isSeriesActive(target)) return json(req, { error: "Serie indisponivel" }, 404);
+  return json(req, { ok: true, slug: newSlug });
+}
+
 function isSeriesFree(row: Record<string, unknown>) {
   return getSeriesPrice(row) <= 0;
 }
@@ -4954,6 +4974,11 @@ function isTruthyInput(value: unknown) {
 function isSeriesActive(row: Record<string, unknown> | null) {
   if (!row) return false;
 
+  const status = String(row.status ?? row.series_status ?? "").trim().toLowerCase();
+  if (["inactive", "draft", "archived", "disabled", "hidden", "blocked", "deleted"].includes(status)) {
+    return false;
+  }
+
   if (row.is_active != null) {
     return isTruthyInput(row.is_active);
   }
@@ -4967,9 +4992,8 @@ function isSeriesActive(row: Record<string, unknown> | null) {
     return isTruthyInput(row.visible);
   }
 
-  const status = String(row.status ?? row.series_status ?? "").trim().toLowerCase();
   if (!status) return true;
-  return !["inactive", "draft", "archived", "disabled", "hidden", "blocked", "deleted"].includes(status);
+  return status === "published" || status === "active";
 }
 
 function logProtectedPlayback(event: string, payload: Record<string, unknown>) {
@@ -4985,6 +5009,47 @@ function normalizeOwnerPrice(value: unknown, forceFree: boolean) {
   const raw = Number(value ?? 0);
   if (!Number.isFinite(raw) || raw < 0) return 0;
   return Number(raw.toFixed(2));
+}
+
+const OWNER_SERIES_STATUSES = new Set(["draft", "published", "hidden", "archived"]);
+const OWNER_DELIVERY_TYPES = new Set(["telegram", "web", "hybrid"]);
+
+function normalizeOwnerSeriesStatus(value: unknown, fallback = "draft") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return OWNER_SERIES_STATUSES.has(normalized) ? normalized : fallback;
+}
+
+function normalizeOwnerDeliveryType(value: unknown, fallback = "telegram") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return OWNER_DELIVERY_TYPES.has(normalized) ? normalized : fallback;
+}
+
+function normalizeOwnerOptionalUrl(value: unknown) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return null;
+  try {
+    const parsed = new URL(normalized);
+    return parsed.protocol === "https:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function getOwnerSeriesValidationError(row: Record<string, unknown>, targetStatus: string) {
+  const title = String(row.title ?? "").trim();
+  const description = String(row.description ?? "").trim();
+  const hasCover = Boolean(row.cover_url || row.cover_storage_path || row.cover_file_id);
+  const hasPlayback = Boolean(extractVideoStoragePath(row) || extractDirectUrl(row) || extractTelegramFileId(row));
+  const free = isSeriesFree(row);
+  const price = Number(row.price ?? 0);
+
+  if (!title) return "Informe o titulo da serie";
+  if (targetStatus !== "published") return "";
+  if (!description) return "Informe a descricao antes de publicar";
+  if (!hasCover) return "Adicione uma capa antes de publicar";
+  if (!hasPlayback) return "Adicione o video principal antes de publicar";
+  if (!free && (!Number.isFinite(price) || price <= 0)) return "Informe um preco maior que zero antes de publicar";
+  return "";
 }
 
 function serializeOwnerSeries(row: Record<string, unknown>) {
@@ -5005,6 +5070,20 @@ function serializeOwnerSeries(row: Record<string, unknown>) {
     is_featured: row.is_featured === true,
     is_dubbed: row.is_dubbed === true,
     is_subtitled: row.is_subtitled === true,
+    is_new: row.is_new === true,
+    is_active: isTruthyInput(row.is_active),
+    status: normalizeOwnerSeriesStatus(row.status, "published"),
+    content_delivery_type: normalizeOwnerDeliveryType(row.content_delivery_type, "telegram"),
+    currency: String(row.currency ?? "BRL"),
+    price_cents: Number(row.price_cents ?? Math.round((Number(row.price ?? 0) || 0) * 100)),
+    published_at: row.published_at ?? null,
+    seo_title: String(row.seo_title ?? ""),
+    seo_description: String(row.seo_description ?? ""),
+    canonical_url: String(row.canonical_url ?? ""),
+    og_title: String(row.og_title ?? ""),
+    og_description: String(row.og_description ?? ""),
+    og_image_url: String(row.og_image_url ?? ""),
+    seo_noindex: row.seo_noindex === true,
     price: Number(row.price ?? 0) || 0,
     created_at: row.created_at ?? null,
     cover_url: row.cover_url ?? null,
@@ -5395,6 +5474,7 @@ async function handleOwnerSeriesCreate(req: Request) {
   const isFeatured = isTruthyInput(form.get("is_featured"));
   const isDubbed = isTruthyInput(form.get("is_dubbed"));
   const isSubtitled = isTruthyInput(form.get("is_subtitled"));
+  const isNew = isTruthyInput(form.get("is_new"));
   const forceFree = isTruthyInput(form.get("is_free"));
   const seriesIdInput = String(form.get("series_id") ?? form.get("id") ?? "").trim();
   const uploadedCoverPath = String(form.get("uploaded_cover_path") ?? "").trim();
@@ -5406,13 +5486,43 @@ async function handleOwnerSeriesCreate(req: Request) {
   const trailer = form.get("trailer_file");
   const existingRow = seriesIdInput ? await getSeriesById(seriesIdInput) : null;
   const isEdit = Boolean(existingRow);
+  const status = normalizeOwnerSeriesStatus(form.get("status"), normalizeOwnerSeriesStatus(existingRow?.status, "published"));
+  const deliveryType = normalizeOwnerDeliveryType(
+    form.get("content_delivery_type"),
+    normalizeOwnerDeliveryType(existingRow?.content_delivery_type, "telegram"),
+  );
+  const seoTitle = String(form.get("seo_title") ?? "").trim() || null;
+  const seoDescription = String(form.get("seo_description") ?? "").trim() || null;
+  const canonicalInput = String(form.get("canonical_url") ?? "").trim();
+  const ogTitle = String(form.get("og_title") ?? "").trim() || null;
+  const ogDescription = String(form.get("og_description") ?? "").trim() || null;
+  const ogImageInput = String(form.get("og_image_url") ?? "").trim();
+  const canonicalUrl = normalizeOwnerOptionalUrl(canonicalInput);
+  const ogImageUrl = normalizeOwnerOptionalUrl(ogImageInput);
+  const seoNoindex = isTruthyInput(form.get("seo_noindex"));
 
   if (!title) {
     return json(req, { error: "Informe o tÃ­tulo da sÃ©rie" }, 400);
   }
 
-  if (!description) {
-    return json(req, { error: "Informe a descriÃ§Ã£o da sÃ©rie" }, 400);
+  if (status === "published" && !description) {
+    return json(req, { error: "Informe a descricao antes de publicar" }, 400);
+  }
+
+  if (seoTitle && seoTitle.length > 70) {
+    return json(req, { error: "O titulo SEO deve ter no maximo 70 caracteres" }, 400);
+  }
+
+  if (seoDescription && seoDescription.length > 180) {
+    return json(req, { error: "A descricao SEO deve ter no maximo 180 caracteres" }, 400);
+  }
+
+  if (canonicalInput && !canonicalUrl) {
+    return json(req, { error: "A URL canonica deve usar HTTPS" }, 400);
+  }
+
+  if (ogImageInput && !ogImageUrl) {
+    return json(req, { error: "A imagem social deve usar uma URL HTTPS" }, 400);
   }
 
   if (durationMinutes != null && (durationMinutes < 1 || durationMinutes > 1440)) {
@@ -5423,13 +5533,13 @@ async function handleOwnerSeriesCreate(req: Request) {
     return json(req, { error: "Informe um ano de lancamento valido" }, 400);
   }
 
-  if (!(cover instanceof File) && !uploadedCoverPath) {
+  if (status === "published" && !(cover instanceof File) && !uploadedCoverPath) {
     if (!existingRow) {
       return json(req, { error: "Envie a imagem de capa" }, 400);
     }
   }
 
-  if (!(video instanceof File) && !uploadedVideoPath && !videoFileIdInput) {
+  if (status === "published" && !(video instanceof File) && !uploadedVideoPath && !videoFileIdInput) {
     if (!existingRow) {
       return json(req, { error: "Envie o vÃ­deo principal da sÃ©rie" }, 400);
     }
@@ -5440,12 +5550,16 @@ async function handleOwnerSeriesCreate(req: Request) {
   const normalizedPrice = priceInput === "" ? existingPrice : normalizeOwnerPrice(priceInput, forceFree);
   const price = forceFree ? 0 : normalizedPrice;
 
-  if (!forceFree && price <= 0 && !isEdit) {
+  if (status === "published" && !forceFree && price <= 0) {
     return json(req, { error: "Informe um valor maior que zero para a sÃ©rie paga" }, 400);
   }
 
   const seriesId = seriesIdInput || String(existingRow?.id ?? "").trim() || crypto.randomUUID();
   const slug = requestedSlug || String(existingRow?.slug ?? "").trim() || `${slugifySeriesTitle(title)}-${seriesId.slice(0, 8)}`;
+  const slugOwner = await getSeriesBySlug(slug);
+  if (slugOwner && String(slugOwner.id ?? "") !== seriesId) {
+    return json(req, { error: "Este endereco amigavel ja esta sendo usado por outra serie" }, 409);
+  }
   const coverObjectPath = cover instanceof File && cover.size > 0 ? getStorageObjectName(seriesId, "cover", cover.name || "cover") : "";
   const videoObjectPath = video instanceof File && video.size > 0 ? getStorageObjectName(seriesId, "video", video.name || "video") : "";
   const trailerFile = trailer instanceof File && trailer.size > 0 ? trailer : null;
@@ -5488,7 +5602,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     || String(existingRow?.trailer_storage_path ?? "").trim()
     || null;
 
-  if (!coverUrl || (!videoPath && !videoUrl && !videoFileIdInput && !String(existingRow?.[PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN] ?? "").trim())) {
+  if (status === "published" && (!coverUrl || (!videoPath && !videoUrl && !videoFileIdInput && !String(existingRow?.[PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN] ?? "").trim()))) {
     return json(req, { error: "A sÃ©rie precisa de capa e vÃ­deo principal" }, 400);
   }
 
@@ -5509,6 +5623,21 @@ async function handleOwnerSeriesCreate(req: Request) {
     is_featured: isFeatured,
     is_dubbed: isDubbed,
     is_subtitled: isSubtitled,
+    is_new: isNew,
+    is_active: status === "published",
+    status,
+    access_type: forceFree ? "free" : "paid",
+    content_delivery_type: deliveryType,
+    currency: "BRL",
+    price_cents: Math.round(price * 100),
+    published_at: status === "published" ? (existingRow?.published_at ?? new Date().toISOString()) : existingRow?.published_at ?? null,
+    seo_title: seoTitle,
+    seo_description: seoDescription,
+    canonical_url: canonicalUrl,
+    og_title: ogTitle,
+    og_description: ogDescription,
+    og_image_url: ogImageUrl,
+    seo_noindex: seoNoindex,
     price,
     cover_url: coverUrl,
     cover_storage_path: coverPath,
@@ -5541,6 +5670,22 @@ async function handleOwnerSeriesCreate(req: Request) {
     return json(req, { error: "NÃ£o foi possÃ­vel registrar a sÃ©rie" }, 500);
   }
 
+  const previousSlug = String(existingRow?.slug ?? "").trim();
+  if (isEdit && previousSlug && slug && previousSlug.toLowerCase() !== slug.toLowerCase()) {
+    try {
+      await supabaseRestRequest("series_slug_redirects?on_conflict=old_slug", {
+        method: "POST",
+        headers: {
+          prefer: "resolution=merge-duplicates,return=minimal",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify([{ series_id: seriesId, old_slug: previousSlug, new_slug: slug }]),
+      });
+    } catch (error) {
+      console.warn("[CMS] Falha ao registrar redirecionamento de slug:", error instanceof Error ? error.message : String(error));
+    }
+  }
+
   const previousCoverPath = String(existingRow?.cover_storage_path ?? "").trim();
   const previousVideoPath = String(existingRow?.video_storage_path ?? "").trim();
   const previousTrailerPath = String(existingRow?.trailer_storage_path ?? "").trim();
@@ -5561,7 +5706,8 @@ async function handleOwnerSeriesCreate(req: Request) {
     }
   }
 
-  if (!isEdit) {
+  const wasPublished = normalizeOwnerSeriesStatus(existingRow?.status, "published") === "published";
+  if (status === "published" && (!isEdit || !wasPublished)) {
     try {
       await postSeriesAnnouncementToChannel(finalRow as Record<string, unknown>);
     } catch (error) {
@@ -5709,6 +5855,115 @@ async function handleOwnerSeriesDelete(req: Request) {
     ok: true,
     dashboard,
   });
+}
+
+async function handleOwnerSeriesAction(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) {
+    return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  }
+
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) {
+    return json(req, { error: access.error }, access.status);
+  }
+
+  const seriesId = String(body.series_id ?? body.id ?? "").trim();
+  const operation = String(body.operation ?? "").trim().toLowerCase();
+  if (!seriesId) return json(req, { error: "Informe o id da serie" }, 400);
+
+  const existingRow = await getSeriesById(seriesId);
+  if (!existingRow) return json(req, { error: "Serie nao encontrada" }, 404);
+
+  if (operation === "duplicate") {
+    const duplicateId = crypto.randomUUID();
+    const originalTitle = String(existingRow.title ?? "Serie").trim() || "Serie";
+    const duplicateTitle = `${originalTitle} - copia`;
+    const duplicateSlug = `${slugifySeriesTitle(originalTitle)}-copia-${duplicateId.slice(0, 8)}`;
+    const duplicate: Record<string, unknown> = {
+      id: duplicateId,
+      title: duplicateTitle,
+      description: String(existingRow.description ?? ""),
+      category: String(existingRow.category ?? "Geral") || "Geral",
+      slug: duplicateSlug,
+      alternate_title: existingRow.alternate_title ?? null,
+      short_description: existingRow.short_description ?? null,
+      tags: normalizeSeriesTags(existingRow.tags),
+      language: existingRow.language ?? null,
+      subtitle_language: existingRow.subtitle_language ?? null,
+      duration_minutes: existingRow.duration_minutes ?? null,
+      release_year: existingRow.release_year ?? null,
+      age_rating: existingRow.age_rating ?? null,
+      is_featured: false,
+      is_dubbed: existingRow.is_dubbed === true,
+      is_subtitled: existingRow.is_subtitled === true,
+      is_new: false,
+      is_active: false,
+      status: "draft",
+      access_type: String(existingRow.access_type ?? (isSeriesFree(existingRow) ? "free" : "paid")),
+      content_delivery_type: normalizeOwnerDeliveryType(existingRow.content_delivery_type, "telegram"),
+      currency: "BRL",
+      price: Number(existingRow.price ?? 0) || 0,
+      price_cents: Number(existingRow.price_cents ?? Math.round((Number(existingRow.price ?? 0) || 0) * 100)),
+      cover_url: existingRow.cover_url ?? null,
+      cover_storage_path: null,
+      video_url: null,
+      video_storage_path: null,
+      trailer_url: existingRow.trailer_url ?? null,
+      trailer_storage_path: null,
+      seo_title: null,
+      seo_description: null,
+      canonical_url: null,
+      og_title: null,
+      og_description: null,
+      og_image_url: existingRow.og_image_url ?? null,
+      seo_noindex: true,
+      published_at: null,
+    };
+    duplicate[PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN] = null;
+
+    const inserted = await supabaseRestRequest(SERIES_TABLE, {
+      method: "POST",
+      headers: { prefer: "return=representation", "content-type": "application/json" },
+      body: JSON.stringify([duplicate]),
+    }) as Record<string, unknown>[];
+    const created = Array.isArray(inserted) ? inserted[0] : null;
+    const dashboard = await buildOwnerDashboardPayload(access.userId);
+    return json(req, { ok: true, series: created ? serializeOwnerSeries(created) : null, dashboard }, 201);
+  }
+
+  if (!OWNER_SERIES_STATUSES.has(operation)) {
+    return json(req, { error: "Acao editorial invalida" }, 400);
+  }
+
+  const validationError = getOwnerSeriesValidationError(existingRow as Record<string, unknown>, operation);
+  if (validationError) return json(req, { error: validationError }, 409);
+
+  const wasPublished = normalizeOwnerSeriesStatus(existingRow.status, "published") === "published";
+  const patch: Record<string, unknown> = {
+    status: operation,
+    is_active: operation === "published",
+    seo_noindex: operation === "published" ? existingRow.seo_noindex === true : true,
+  };
+  if (operation === "published" && !existingRow.published_at) patch.published_at = new Date().toISOString();
+
+  const updatedRows = await supabaseRestRequest(buildSeriesRowFilter(seriesId), {
+    method: "PATCH",
+    headers: { prefer: "return=representation", "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  }) as Record<string, unknown>[];
+  const updated = Array.isArray(updatedRows) ? updatedRows[0] : null;
+
+  if (operation === "published" && !wasPublished && updated) {
+    try {
+      await postSeriesAnnouncementToChannel(updated);
+    } catch (error) {
+      console.warn("[CHANNEL] Falha ao anunciar serie publicada:", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const dashboard = await buildOwnerDashboardPayload(access.userId);
+  return json(req, { ok: true, series: updated ? serializeOwnerSeries(updated) : null, dashboard });
 }
 
 async function handleSupportSubmit(req: Request) {
@@ -5896,6 +6151,10 @@ Deno.serve(async (req) => {
       return json(req, series);
     }
 
+    if (action === "series-slug-resolve" && req.method === "GET") {
+      return await handleSeriesSlugResolve(req, url);
+    }
+
     if (action === "support-submit" && req.method === "POST") {
       return await handleSupportSubmitV2(req);
     }
@@ -5965,6 +6224,10 @@ Deno.serve(async (req) => {
 
     if (action === "owner-series-delete") {
       return await handleOwnerSeriesDelete(req);
+    }
+
+    if (action === "owner-series-action" && req.method === "POST") {
+      return await handleOwnerSeriesAction(req);
     }
 
     if (action === "mercado-pago-webhook") {

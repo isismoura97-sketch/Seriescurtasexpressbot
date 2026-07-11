@@ -3295,6 +3295,13 @@ body.light-mode .cart-item {
     background: rgba(255,255,255,0.035);
 }
 
+.owner-form-group-editorial {
+    border-color: rgba(255,215,0,0.24);
+    background:
+        linear-gradient(135deg, rgba(255,215,0,0.08), rgba(255,255,255,0.025)),
+        rgba(255,255,255,0.035);
+}
+
 .owner-form-group-head {
     display: grid;
     gap: 4px;
@@ -3394,6 +3401,31 @@ body.light-mode .cart-item {
     background:
         linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02)),
         rgba(255,255,255,0.03);
+}
+
+.owner-upload-form select {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,215,0,0.16);
+    background: #18233d;
+    color: var(--text-main);
+    font: inherit;
+}
+
+.owner-upload-form input:focus-visible,
+.owner-upload-form textarea:focus-visible,
+.owner-upload-form select:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-color: rgba(255,215,0,0.55);
+}
+
+.payment-field small {
+    float: right;
+    color: var(--text-dim);
+    font-weight: 600;
 }
 
 .owner-editor-flags {
@@ -3503,6 +3535,28 @@ body.light-mode .cart-item {
     border: 1px solid rgba(255,215,0,0.16);
     font-size: 12px;
     white-space: nowrap;
+}
+
+.owner-pill-status {
+    gap: 6px;
+    font-weight: 800;
+}
+
+.owner-pill-published {
+    color: #baf7d0;
+    border-color: rgba(70,210,120,0.28);
+    background: rgba(70,210,120,0.1);
+}
+
+.owner-pill-draft {
+    color: #ffe88a;
+}
+
+.owner-pill-hidden,
+.owner-pill-archived {
+    color: #c8d1e5;
+    border-color: rgba(190,200,225,0.2);
+    background: rgba(190,200,225,0.08);
 }
 
 /* ====================== TOAST ====================== */

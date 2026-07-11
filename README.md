@@ -188,6 +188,22 @@ O cadastro também aceita metadados opcionais para descoberta: endereço amigáv
 
 Por segurança, clientes não leem `public.series` diretamente. A Edge Function monta o catálogo público e remove identificadores, caminhos e URLs internas de vídeo antes de responder.
 
+### Ciclo editorial e SEO
+
+O CMS administrativo permite manter uma série como `Rascunho`, `Publicada`, `Oculta` ou `Arquivada`. Apenas itens publicados e ativos entram no catálogo público. A publicação é validada no backend e exige título, descrição, capa, vídeo e preço positivo quando a série for paga.
+
+Também estão disponíveis:
+
+- duplicação segura como rascunho, sem copiar o vídeo protegido;
+- filtros por situação editorial;
+- entrega por Telegram, web ou modo híbrido;
+- título e descrição SEO;
+- canonical, Open Graph e controle `noindex`;
+- histórico de slugs para redirecionar endereços antigos;
+- preço em centavos sincronizado com o campo legado `price`.
+
+As migrations correspondentes são `supabase/migrations/20260711175558_add_series_editorial_lifecycle.sql` e `supabase/migrations/20260711232037_add_series_access_type.sql`.
+
 ## Pagamentos
 
 O checkout agora suporta três caminhos:

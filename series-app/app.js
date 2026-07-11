@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260711-01';
+const BUILD_VERSION = '20260711-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -624,23 +624,26 @@ function setMetaContent(selector, content) {
 
 function updatePageMetadata(serie = null) {
     const siteName = 'Séries Curtas Express';
-    const title = serie ? `${serie.title} — Série Curta Completa` : siteName;
+    const title = serie ? String(serie.seo_title || `${serie.title} — Série Curta Completa`).slice(0, 70) : siteName;
     const description = serie
-        ? String(serie.short_description || serie.description || `Conheça ${serie.title}, uma série curta completa.`).slice(0, 160)
+        ? String(serie.seo_description || serie.short_description || serie.description || `Conheça ${serie.title}, uma série curta completa.`).slice(0, 180)
         : 'Descubra séries curtas completas, gratuitas e premium, com acesso pelo Telegram.';
-    const canonical = serie ? buildSeriesPageUrl(serie) : new URL('/', window.location.origin).toString();
-    const image = serie ? getCoverUrl(serie) : new URL('/assets/logo-welcome.png', window.location.origin).toString();
+    const canonical = serie ? (sanitizeUrl(serie.canonical_url) || buildSeriesPageUrl(serie)) : new URL('/', window.location.origin).toString();
+    const image = serie ? (sanitizeUrl(serie.og_image_url) || getCoverUrl(serie)) : new URL('/assets/logo-welcome.png', window.location.origin).toString();
+    const socialTitle = serie ? String(serie.og_title || title) : title;
+    const socialDescription = serie ? String(serie.og_description || description) : description;
 
     document.title = title;
     setMetaContent('meta[name="description"]', description);
-    setMetaContent('meta[property="og:title"]', title);
-    setMetaContent('meta[property="og:description"]', description);
+    setMetaContent('meta[property="og:title"]', socialTitle);
+    setMetaContent('meta[property="og:description"]', socialDescription);
     setMetaContent('meta[property="og:url"]', canonical);
     setMetaContent('meta[property="og:image"]', image);
-    setMetaContent('meta[name="twitter:title"]', title);
-    setMetaContent('meta[name="twitter:description"]', description);
+    setMetaContent('meta[name="twitter:title"]', socialTitle);
+    setMetaContent('meta[name="twitter:description"]', socialDescription);
     setMetaContent('meta[name="twitter:image"]', image);
     document.querySelector('link[rel="canonical"]')?.setAttribute('href', canonical);
+    setMetaContent('meta[name="robots"]', serie?.seo_noindex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large');
 
     const schemaNode = document.getElementById('seriesStructuredData');
     if (!schemaNode) return;
@@ -738,13 +741,33 @@ function renderNotFoundPage() {
     setMetaContent('meta[name="robots"]', 'noindex,follow');
 }
 
-function applyPublicRoute() {
+async function resolveMovedSeriesSlug(slug) {
+    try {
+        const response = await fetch(`${API_URL}?action=series-slug-resolve&slug=${encodeURIComponent(slug)}`, {
+            method: 'GET',
+            cache: 'no-store',
+            headers: { accept: 'application/json' },
+        });
+        if (!response.ok) return '';
+        const payload = await response.json().catch(() => ({}));
+        return slugify(payload?.slug || '');
+    } catch {
+        return '';
+    }
+}
+
+async function applyPublicRoute() {
     const path = window.location.pathname.replace(/\/+$/, '') || '/';
     const params = new URLSearchParams(window.location.search);
     const seriesMatch = path.match(/^\/series\/([^/]+)$/);
     if (seriesMatch) {
         setCatalogPageVisibility(true);
-        const serie = findSeriesBySlug(seriesMatch[1]);
+        let serie = findSeriesBySlug(seriesMatch[1]);
+        if (!serie) {
+            const movedSlug = await resolveMovedSeriesSlug(seriesMatch[1]);
+            serie = movedSlug ? findSeriesBySlug(movedSlug) : null;
+            if (serie) history.replaceState({ route: 'series', seriesId: normalizeId(serie.id) }, '', `/series/${movedSlug}`);
+        }
         if (serie) openSeriesDetails(serie, { updateHistory: false });
         else renderNotFoundPage();
         return;
@@ -2129,6 +2152,10 @@ function getOwnerFileIdCaptureUrl(seriesId = '') {
 function getOwnerSeriesFilterCounts(series = []) {
     return {
         all: series.length,
+        published: series.filter((item) => String(item?.status || 'published') === 'published').length,
+        draft: series.filter((item) => String(item?.status || '') === 'draft').length,
+        hidden: series.filter((item) => String(item?.status || '') === 'hidden').length,
+        archived: series.filter((item) => String(item?.status || '') === 'archived').length,
         free: series.filter((item) => isFree(item)).length,
         paid: series.filter((item) => !isFree(item)).length,
         playable: series.filter((item) => hasOwnerSeriesInternalPlayback(item)).length,
@@ -2148,6 +2175,11 @@ function filterOwnerSeries(series = []) {
         if (!matchesTerm) return false;
 
         switch (ownerSeriesFilterMode) {
+            case 'published':
+            case 'draft':
+            case 'hidden':
+            case 'archived':
+                return String(serie?.status || 'published') === ownerSeriesFilterMode;
             case 'free':
                 return isFree(serie);
             case 'paid':
@@ -2396,6 +2428,66 @@ function requestOwnerSeriesDelete(seriesId) {
     }, 20000);
 }
 
+function requestOwnerSeriesAction(seriesId, operation) {
+    return requestJson(`${API_URL}?action=owner-series-action`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        series_id: String(seriesId || ''),
+        operation: String(operation || ''),
+    }, 30000);
+}
+
+function getOwnerSeriesStatusMeta(serie) {
+    const status = String(serie?.status || 'published').toLowerCase();
+    const labels = {
+        published: { label: 'Publicada', icon: 'fa-circle-check' },
+        draft: { label: 'Rascunho', icon: 'fa-pen-ruler' },
+        hidden: { label: 'Oculta', icon: 'fa-eye-slash' },
+        archived: { label: 'Arquivada', icon: 'fa-box-archive' },
+    };
+    return { status, ...(labels[status] || labels.draft) };
+}
+
+async function runOwnerSeriesAction(seriesId, operation, button = null) {
+    const serie = ownerSeriesCatalog.find((item) => sameId(item.id, seriesId));
+    if (!serie) return;
+    const confirmations = {
+        archived: `Arquivar "${serie.title || 'esta série'}"? Ela deixará o catálogo público.`,
+        duplicate: `Duplicar "${serie.title || 'esta série'}" como rascunho?`,
+    };
+    if (confirmations[operation] && !window.confirm(confirmations[operation])) return;
+
+    const previousHtml = button instanceof HTMLButtonElement ? button.innerHTML : '';
+    if (button instanceof HTMLButtonElement) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processando';
+    }
+    try {
+        const payload = await requestOwnerSeriesAction(seriesId, operation);
+        if (payload?.dashboard) {
+            ownerDashboardSnapshot = payload.dashboard;
+            renderOwnerDashboard(payload.dashboard);
+        }
+        if (payload?.series && String(payload.series.status || 'published') === 'published') {
+            allSeries = [payload.series, ...allSeries.filter((item) => !sameId(item.id, payload.series.id))];
+        } else if (operation !== 'duplicate') {
+            allSeries = allSeries.filter((item) => !sameId(item.id, seriesId));
+        }
+        refreshCatalog();
+        initHero();
+        const labels = { published: 'Série publicada.', draft: 'Série movida para rascunhos.', hidden: 'Série ocultada.', archived: 'Série arquivada.', duplicate: 'Cópia criada como rascunho.' };
+        showToast(labels[operation] || 'Ação concluída.', 'success');
+    } catch (error) {
+        showToast(error.message || 'Não foi possível concluir a ação.', 'error');
+        setOwnerUploadStatus(error.message || 'Não foi possível concluir a ação.', 'error');
+    } finally {
+        if (button instanceof HTMLButtonElement && button.isConnected) {
+            button.disabled = false;
+            button.innerHTML = previousHtml;
+        }
+    }
+}
+
 async function deleteOwnerSeries(seriesId) {
     const serie = ownerSeriesCatalog.find((item) => sameId(item.id, seriesId));
     if (!serie) {
@@ -2527,6 +2619,16 @@ function wireOwnerDashboardControls() {
             button.onclick = () => deleteOwnerSeries(button.dataset.ownerDeleteId || '');
         }
     });
+
+    const editorialButtons = document.querySelectorAll('[data-owner-editorial-action]');
+    editorialButtons.forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.onclick = () => runOwnerSeriesAction(
+            button.dataset.ownerSeriesId || '',
+            button.dataset.ownerEditorialAction || '',
+            button,
+        );
+    });
 }
 
 function releaseOwnerCoverPreviewObjectUrl() {
@@ -2615,7 +2717,7 @@ function updateOwnerFormMode(serie = null) {
     if (submitBtn instanceof HTMLButtonElement) {
         submitBtn.innerHTML = editing
             ? '<i class="fas fa-floppy-disk"></i> Salvar alterações'
-            : '<i class="fas fa-cloud-arrow-up"></i> Publicar série';
+            : '<i class="fas fa-floppy-disk"></i> Salvar série';
     }
 
     if (titleInput instanceof HTMLInputElement) {
@@ -2637,15 +2739,25 @@ function updateOwnerFormMode(serie = null) {
         duration_minutes: serie?.duration_minutes || '',
         release_year: serie?.release_year || '',
         age_rating: serie?.age_rating || '',
+        seo_title: serie?.seo_title || '',
+        seo_description: serie?.seo_description || '',
+        canonical_url: serie?.canonical_url || '',
+        og_title: serie?.og_title || '',
+        og_description: serie?.og_description || '',
+        og_image_url: serie?.og_image_url || '',
     };
     Object.entries(optionalFieldValues).forEach(([name, value]) => {
         const field = form?.querySelector(`[name="${name}"]`);
         if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = String(value ?? '');
     });
-    ['is_featured', 'is_dubbed', 'is_subtitled'].forEach((name) => {
+    ['is_featured', 'is_dubbed', 'is_subtitled', 'is_new', 'seo_noindex'].forEach((name) => {
         const field = form?.querySelector(`[name="${name}"]`);
         if (field instanceof HTMLInputElement) field.checked = serie?.[name] === true;
     });
+    const statusSelect = form?.querySelector('[name="status"]');
+    if (statusSelect instanceof HTMLSelectElement) statusSelect.value = serie?.status || 'published';
+    const deliverySelect = form?.querySelector('[name="content_delivery_type"]');
+    if (deliverySelect instanceof HTMLSelectElement) deliverySelect.value = serie?.content_delivery_type || 'telegram';
     if (freeToggle instanceof HTMLInputElement) {
         freeToggle.checked = isFree(serie);
     }
@@ -2657,11 +2769,12 @@ function updateOwnerFormMode(serie = null) {
     if (videoFileIdInput instanceof HTMLTextAreaElement) {
         videoFileIdInput.value = editing ? getTelegramFileId(serie) : '';
     }
+    const publishing = (serie?.status || 'published') === 'published';
     if (coverInput instanceof HTMLInputElement) {
-        coverInput.required = !editing;
+        coverInput.required = !editing && publishing;
     }
     if (videoInput instanceof HTMLInputElement) {
-        videoInput.required = !editing && !(videoFileIdInput instanceof HTMLTextAreaElement && extractTelegramFileIdInput(videoFileIdInput.value));
+        videoInput.required = !editing && publishing && !(videoFileIdInput instanceof HTMLTextAreaElement && extractTelegramFileIdInput(videoFileIdInput.value));
     }
     if (trailerInput instanceof HTMLInputElement) {
         trailerInput.required = false;
@@ -2729,6 +2842,8 @@ function wireOwnerUploadForm() {
     const videoInput = document.querySelector('input[name="video_file"]');
     const videoFileIdInput = document.getElementById('ownerSeriesVideoFileId');
     const cancelBtn = document.getElementById('ownerFormCancelBtn');
+    const statusSelect = form?.querySelector('[name="status"]');
+    const descriptionInput = form?.querySelector('[name="description"]');
 
     if (freeToggle && priceInput) {
         const syncPriceState = () => {
@@ -2762,12 +2877,34 @@ function wireOwnerUploadForm() {
 
         if (videoInput instanceof HTMLInputElement) {
             const hasUpload = Boolean(videoInput.files?.[0]?.size);
-            videoInput.required = !ownerSeriesEditId && !normalizedFileId;
+            const publishing = !(statusSelect instanceof HTMLSelectElement) || statusSelect.value === 'published';
+            videoInput.required = publishing && !ownerSeriesEditId && !normalizedFileId;
             if (normalizedFileId && hasUpload && videoInput.files?.[0] && videoInput.files[0].size > OWNER_INTERNAL_UPLOAD_LIMIT_BYTES) {
                 videoInput.value = '';
             }
         }
     };
+
+    const syncOwnerEditorialRequirements = () => {
+        const publishing = !(statusSelect instanceof HTMLSelectElement) || statusSelect.value === 'published';
+        if (descriptionInput instanceof HTMLTextAreaElement) descriptionInput.required = publishing;
+        if (coverInput instanceof HTMLInputElement) coverInput.required = publishing && !ownerSeriesEditId;
+        syncOwnerVideoSources();
+    };
+
+    if (statusSelect instanceof HTMLSelectElement) {
+        statusSelect.onchange = syncOwnerEditorialRequirements;
+    }
+
+    form?.querySelectorAll('[maxlength][name]').forEach((field) => {
+        if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) return;
+        const counter = form.querySelector(`[data-owner-count-for="${field.name}"]`);
+        const updateCounter = () => {
+            if (counter) counter.textContent = `${field.value.length}/${field.maxLength}`;
+        };
+        field.addEventListener('input', updateCounter);
+        updateCounter();
+    });
 
     if (videoFileIdInput instanceof HTMLTextAreaElement) {
         videoFileIdInput.onchange = syncOwnerVideoSources;
@@ -2812,7 +2949,7 @@ function wireOwnerUploadForm() {
     if (form) {
         form.onsubmit = submitOwnerSeriesUpload;
     }
-    syncOwnerVideoSources();
+    syncOwnerEditorialRequirements();
 }
 
 function openOwnerArea() {
@@ -2954,6 +3091,28 @@ async function retryOwnerOrderDelivery(orderId, button) {
     }
 }
 
+function renderOwnerEditorialActions(serie) {
+    const id = escapeAttr(String(serie?.id || ''));
+    const status = getOwnerSeriesStatusMeta(serie).status;
+    const primary = status === 'published'
+        ? { operation: 'hidden', label: 'Ocultar', icon: 'fa-eye-slash' }
+        : { operation: 'published', label: 'Publicar', icon: 'fa-cloud-arrow-up' };
+    const secondary = status === 'archived'
+        ? { operation: 'draft', label: 'Restaurar', icon: 'fa-rotate-left' }
+        : { operation: 'archived', label: 'Arquivar', icon: 'fa-box-archive' };
+    return `
+        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-editorial-action="${primary.operation}" data-owner-series-id="${id}">
+            <i class="fas ${primary.icon}"></i> ${primary.label}
+        </button>
+        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-editorial-action="${secondary.operation}" data-owner-series-id="${id}">
+            <i class="fas ${secondary.icon}"></i> ${secondary.label}
+        </button>
+        <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-editorial-action="duplicate" data-owner-series-id="${id}">
+            <i class="fas fa-copy"></i> Duplicar
+        </button>
+    `;
+}
+
 function renderOwnerDashboard(data) {
     if (!DOM.ownerDashboard) return;
 
@@ -3020,6 +3179,7 @@ function renderOwnerDashboard(data) {
             const coverUrl = getCoverUrl(serie);
             const editId = String(serie.id || '');
             const quickActionMeta = getOwnerSeriesQuickVideoActionMeta(serie);
+            const editorialStatus = getOwnerSeriesStatusMeta(serie);
             return `
                 <article class="owner-series-row owner-series-row-priority">
                     <div class="owner-series-thumb-wrap">
@@ -3031,6 +3191,7 @@ function renderOwnerDashboard(data) {
                         <p>${escapeHtml(serie.description || 'Sem descrição')}</p>
                     </div>
                     <div class="owner-series-row-tags">
+                        <span class="owner-pill owner-pill-status owner-pill-${escapeAttr(editorialStatus.status)}"><i class="fas ${escapeAttr(editorialStatus.icon)}"></i> ${escapeHtml(editorialStatus.label)}</span>
                         <span class="owner-pill">${escapeHtml(coverLabel)}</span>
                         <span class="owner-pill">${escapeHtml(videoLabel)}</span>
                         <span class="owner-pill">${escapeHtml(trailerLabel)}</span>
@@ -3042,6 +3203,7 @@ function renderOwnerDashboard(data) {
                         <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="${escapeAttr(quickActionMeta.action)}" data-owner-series-id="${escapeAttr(editId)}">
                             <i class="fas ${escapeAttr(quickActionMeta.icon)}"></i> ${escapeHtml(quickActionMeta.label)}
                         </button>
+                        ${renderOwnerEditorialActions(serie)}
                     </div>
                 </article>
             `;
@@ -3062,6 +3224,7 @@ function renderOwnerDashboard(data) {
             const coverUrl = getCoverUrl(serie);
             const editId = String(serie.id || '');
             const quickActionMeta = getOwnerSeriesQuickVideoActionMeta(serie);
+            const editorialStatus = getOwnerSeriesStatusMeta(serie);
             return `
                 <article class="owner-series-row">
                     <div class="owner-series-thumb-wrap">
@@ -3073,6 +3236,7 @@ function renderOwnerDashboard(data) {
                         <p>${escapeHtml(serie.description || 'Sem descrição')}</p>
                     </div>
                     <div class="owner-series-row-tags">
+                        <span class="owner-pill owner-pill-status owner-pill-${escapeAttr(editorialStatus.status)}"><i class="fas ${escapeAttr(editorialStatus.icon)}"></i> ${escapeHtml(editorialStatus.label)}</span>
                         <span class="owner-pill">${escapeHtml(coverLabel)}</span>
                         <span class="owner-pill">${escapeHtml(videoLabel)}</span>
                         <span class="owner-pill">${escapeHtml(trailerLabel)}</span>
@@ -3087,6 +3251,7 @@ function renderOwnerDashboard(data) {
                         <button type="button" class="btn btn-secondary owner-series-mini-btn" data-owner-quick-action="${escapeAttr(quickActionMeta.action)}" data-owner-series-id="${escapeAttr(editId)}">
                             <i class="fas ${escapeAttr(quickActionMeta.icon)}"></i> ${escapeHtml(quickActionMeta.label)}
                         </button>
+                        ${renderOwnerEditorialActions(serie)}
                         <button type="button" class="btn btn-danger owner-series-mini-btn" data-owner-delete-id="${escapeAttr(editId)}">
                             <i class="fas fa-trash"></i> Excluir
                         </button>
@@ -3098,6 +3263,10 @@ function renderOwnerDashboard(data) {
 
     const toolbarFilters = [
         { key: 'all', label: `Todas (${filterCounts.all})` },
+        { key: 'published', label: `Publicadas (${filterCounts.published})` },
+        { key: 'draft', label: `Rascunhos (${filterCounts.draft})` },
+        { key: 'hidden', label: `Ocultas (${filterCounts.hidden})` },
+        { key: 'archived', label: `Arquivadas (${filterCounts.archived})` },
         { key: 'free', label: `Grátis (${filterCounts.free})` },
         { key: 'paid', label: `Pagas (${filterCounts.paid})` },
         { key: 'playable', label: `Player interno (${filterCounts.playable})` },
@@ -3225,6 +3394,34 @@ function renderOwnerDashboard(data) {
                         </div>
                     </div>
                     <div class="owner-form-groups">
+                        <section class="owner-form-group owner-form-group-editorial">
+                            <div class="owner-form-group-head">
+                                <strong>Publicação e entrega</strong>
+                                <span>Rascunhos ficam privados. Somente séries publicadas aparecem no catálogo.</span>
+                            </div>
+                            <div class="owner-upload-grid owner-upload-grid-tight">
+                                <label class="payment-field">
+                                    <span>Situação</span>
+                                    <select name="status">
+                                        <option value="published">Publicada</option>
+                                        <option value="draft">Rascunho</option>
+                                        <option value="hidden">Oculta</option>
+                                        <option value="archived">Arquivada</option>
+                                    </select>
+                                </label>
+                                <label class="payment-field">
+                                    <span>Forma de entrega</span>
+                                    <select name="content_delivery_type">
+                                        <option value="telegram">Telegram</option>
+                                        <option value="web">Player web</option>
+                                        <option value="hybrid">Web e Telegram</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="owner-editor-flags">
+                                <label class="owner-upload-toggle"><input type="checkbox" name="is_new"><span>Marcar como lançamento</span></label>
+                            </div>
+                        </section>
                         <section class="owner-form-group">
                             <div class="owner-form-group-head">
                                 <strong>Informações da série</strong>
@@ -3241,9 +3438,42 @@ function renderOwnerDashboard(data) {
                                 </label>
                                 <label class="payment-field owner-upload-span-2">
                                     <span>Descrição</span>
-                                    <textarea name="description" rows="4" placeholder="Descreva a série" required></textarea>
+                                    <textarea name="description" rows="4" placeholder="Descreva a série"></textarea>
                                 </label>
                             </div>
+                        </section>
+                        <section class="owner-form-group">
+                            <div class="owner-form-group-head">
+                                <strong>SEO e compartilhamento</strong>
+                                <span>Campos opcionais. Se ficarem vazios, a página usa automaticamente o título, a descrição e a capa.</span>
+                            </div>
+                            <div class="owner-upload-grid">
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Título SEO <small data-owner-count-for="seo_title">0/70</small></span>
+                                    <input type="text" name="seo_title" maxlength="70" placeholder="Título exibido no Google">
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Descrição SEO <small data-owner-count-for="seo_description">0/180</small></span>
+                                    <textarea name="seo_description" rows="3" maxlength="180" placeholder="Resumo exibido nos resultados de busca"></textarea>
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>URL canônica</span>
+                                    <input type="url" name="canonical_url" inputmode="url" placeholder="https://seriescurtasexpressbot.vercel.app/series/...">
+                                </label>
+                                <label class="payment-field">
+                                    <span>Título social</span>
+                                    <input type="text" name="og_title" placeholder="Título ao compartilhar">
+                                </label>
+                                <label class="payment-field">
+                                    <span>Imagem social</span>
+                                    <input type="url" name="og_image_url" inputmode="url" placeholder="https://...">
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Descrição social</span>
+                                    <textarea name="og_description" rows="2" placeholder="Texto ao compartilhar a página"></textarea>
+                                </label>
+                            </div>
+                            <label class="owner-upload-toggle"><input type="checkbox" name="seo_noindex"><span>Não indexar esta página nos buscadores</span></label>
                         </section>
                         <section class="owner-form-group">
                             <div class="owner-form-group-head">
@@ -3343,7 +3573,7 @@ function renderOwnerDashboard(data) {
                     </div>
                     <div class="owner-upload-actions">
                         <button class="btn btn-primary" id="ownerSeriesSubmitBtn" type="submit">
-                            <i class="fas fa-cloud-arrow-up"></i> Publicar série
+                            <i class="fas fa-floppy-disk"></i> Salvar série
                         </button>
                         <p class="owner-upload-note">Use envio rápido apenas para arquivos até ${escapeHtml(getOwnerInternalUploadLimitLabel())}. Arquivos maiores seguem no fluxo alternativo.</p>
                     </div>
@@ -3513,7 +3743,7 @@ async function submitOwnerSeriesUpload(event) {
     try {
         if (submitButton instanceof HTMLButtonElement) {
             submitButton.disabled = true;
-            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Publicando...';
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
         }
         let resolvedSeriesId = ownerSeriesEditId || String(formData.get('series_id') || '');
         const coverFile = formData.get('cover_file');
@@ -3549,8 +3779,12 @@ async function submitOwnerSeriesUpload(event) {
         const created = payload?.series || null;
         const dashboard = payload?.dashboard || null;
 
-        if (created) {
+        if (created && String(created.status || 'published') === 'published') {
             allSeries = [created, ...allSeries.filter((serie) => !sameId(serie.id, created.id))];
+            refreshCatalog();
+            initHero();
+        } else if (created) {
+            allSeries = allSeries.filter((serie) => !sameId(serie.id, created.id));
             refreshCatalog();
             initHero();
         }
@@ -3561,7 +3795,8 @@ async function submitOwnerSeriesUpload(event) {
             renderOwnerDashboard(dashboard);
         }
 
-        setOwnerUploadStatus('Série publicada com sucesso.', 'success');
+        const savedAsDraft = String(created?.status || '') !== 'published';
+        setOwnerUploadStatus(savedAsDraft ? 'Série salva fora do catálogo público.' : 'Série publicada com sucesso.', 'success');
 
         form.reset();
         const freeToggle = document.getElementById('ownerSeriesFree');
@@ -3573,7 +3808,7 @@ async function submitOwnerSeriesUpload(event) {
             priceInput.value = '0';
         }
 
-        showToast('Série publicada com sucesso!', 'success');
+        showToast(savedAsDraft ? 'Série salva com sucesso!' : 'Série publicada com sucesso!', 'success');
     } catch (error) {
         const friendlyMessage = explainOwnerUploadError(error, formData.get('video_file'));
         setOwnerUploadStatus(friendlyMessage || 'Não foi possível publicar a série.', 'error');
@@ -3581,7 +3816,7 @@ async function submitOwnerSeriesUpload(event) {
     } finally {
         if (submitButton instanceof HTMLButtonElement) {
             submitButton.disabled = false;
-            submitButton.innerHTML = previousLabel || '<i class="fas fa-cloud-arrow-up"></i> Publicar série';
+            submitButton.innerHTML = previousLabel || '<i class="fas fa-floppy-disk"></i> Salvar série';
         }
     }
 }

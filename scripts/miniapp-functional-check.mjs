@@ -390,6 +390,8 @@ async function installRoutes(page, options = {}) {
               title: 'Serie Direta',
               description: 'Pronta no player interno.',
               category: 'Drama',
+              status: 'published',
+              content_delivery_type: 'web',
               price: 0,
               created_at: '2026-06-29T12:00:00Z',
               cover_url: svgCover('Direta', '#1A2744'),
@@ -434,6 +436,8 @@ async function installRoutes(page, options = {}) {
               title: 'Serie Migrar File_ID',
               description: 'Ainda precisa ir para o player interno.',
               category: 'Drama',
+              status: 'draft',
+              content_delivery_type: 'telegram',
               price: 0,
               created_at: '2026-06-29T11:00:00Z',
               cover_url: svgCover('Migrar', '#113322'),
@@ -843,6 +847,11 @@ async function main() {
     const ownerState = await page.evaluate(() => ({
       visible: document.querySelector('#ownerOverlay')?.classList.contains('active'),
       text: document.querySelector('#ownerDashboard')?.textContent?.replace(/\s+/g, ' ').trim(),
+      statusField: document.querySelector('#ownerSeriesForm [name="status"]')?.value || '',
+      deliveryField: document.querySelector('#ownerSeriesForm [name="content_delivery_type"]')?.value || '',
+      seoField: Boolean(document.querySelector('#ownerSeriesForm [name="seo_title"]')),
+      editorialButtons: document.querySelectorAll('[data-owner-editorial-action]').length,
+      statusPills: document.querySelectorAll('.owner-pill-status').length,
     }));
 
     await page.locator('[data-owner-migrate-priority]').click();
@@ -920,7 +929,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260711-01')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260711-02')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -956,6 +965,7 @@ async function main() {
     if (!paidCardAfterPayment.action.includes('Receber no Telegram')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
     if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
     if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral')) || !ownerState.text.includes('Conversão e abandono')) failures.push('owner area failed');
+    if (!ownerState.seoField || !ownerState.statusField || !ownerState.deliveryField || ownerState.editorialButtons < 2 || ownerState.statusPills < 2) failures.push(`owner CMS lifecycle failed: ${JSON.stringify(ownerState)}`);
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Prontas2') && !migratedOwnerState.text.includes('Em fila0'))) failures.push('owner migration failed');
     if (!ownerOrderRetried || ownerRetryState.retryButton || !ownerRetryState.text.includes('Nenhuma entrega precisa de intervenção')) failures.push('owner delivery retry failed');
     if (webRouteState.runtime !== 'web' || !webRouteState.telegramButtonVisible || webRouteState.modalTitle !== 'Direto Funcional' || !webRouteState.title.includes('Direto Funcional') || !webRouteState.canonical.endsWith('/series/direto-funcional') || webRouteState.structuredType !== 'Movie') failures.push('public series route failed');

@@ -37,14 +37,27 @@ function replaceMeta(html, attribute, key, value) {
 }
 
 function isFreeSeries(serie) {
-  return serie?.is_free === true || Number(serie?.price || 0) <= 0;
+  const cents = Number(serie?.price_cents || 0);
+  return serie?.is_free === true || (cents <= 0 && Number(serie?.price || 0) <= 0);
+}
+
+function safeHttpsUrl(value, fallback) {
+  try {
+    const parsed = new URL(String(value || ''));
+    return parsed.protocol === 'https:' ? parsed.toString() : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function buildSeriesHtml(template, serie, slug) {
   const pageUrl = `${SITE_URL}/series/${slug}`;
-  const title = `${serie.title || 'Série'} — Série Curta Completa`;
-  const description = String(serie.short_description || serie.description || `Conheça ${serie.title || 'esta série curta completa'}.`).slice(0, 160);
-  const image = String(serie.cover_url || `${SITE_URL}/assets/logo-welcome.png`);
+  const title = String(serie.seo_title || `${serie.title || 'Série'} — Série Curta Completa`).slice(0, 70);
+  const description = String(serie.seo_description || serie.short_description || serie.description || `Conheça ${serie.title || 'esta série curta completa'}.`).slice(0, 180);
+  const canonical = safeHttpsUrl(serie.canonical_url, pageUrl);
+  const image = safeHttpsUrl(serie.og_image_url, String(serie.cover_url || `${SITE_URL}/assets/logo-welcome.png`));
+  const socialTitle = String(serie.og_title || title);
+  const socialDescription = String(serie.og_description || description);
   const genres = String(serie.category || '').split(/[,/|;]/).map((entry) => entry.trim()).filter(Boolean);
   const duration = Number(serie.duration_minutes || 0);
   const schema = {
@@ -56,27 +69,28 @@ function buildSeriesHtml(template, serie, slug) {
     genre: genres.length ? genres : undefined,
     inLanguage: String(serie.language || 'pt-BR'),
     duration: duration > 0 ? `PT${Math.round(duration)}M` : undefined,
-    url: pageUrl,
+    url: canonical,
     offers: isFreeSeries(serie) ? undefined : {
       '@type': 'Offer',
-      price: Number(serie.price || 0).toFixed(2),
-      priceCurrency: 'BRL',
+      price: (Number(serie.price_cents || 0) > 0 ? Number(serie.price_cents) / 100 : Number(serie.price || 0)).toFixed(2),
+      priceCurrency: String(serie.currency || 'BRL'),
       availability: 'https://schema.org/InStock',
-      url: pageUrl,
+      url: canonical,
     },
   };
 
   let html = template.replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtml(title)}</title>`);
   html = replaceMeta(html, 'name', 'description', description);
   html = replaceMeta(html, 'property', 'og:type', 'video.movie');
-  html = replaceMeta(html, 'property', 'og:title', title);
-  html = replaceMeta(html, 'property', 'og:description', description);
-  html = replaceMeta(html, 'property', 'og:url', pageUrl);
+  html = replaceMeta(html, 'property', 'og:title', socialTitle);
+  html = replaceMeta(html, 'property', 'og:description', socialDescription);
+  html = replaceMeta(html, 'property', 'og:url', canonical);
   html = replaceMeta(html, 'property', 'og:image', image);
-  html = replaceMeta(html, 'name', 'twitter:title', title);
-  html = replaceMeta(html, 'name', 'twitter:description', description);
+  html = replaceMeta(html, 'name', 'twitter:title', socialTitle);
+  html = replaceMeta(html, 'name', 'twitter:description', socialDescription);
   html = replaceMeta(html, 'name', 'twitter:image', image);
-  html = html.replace(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeHtml(pageUrl)}">`);
+  html = replaceMeta(html, 'name', 'robots', serie.seo_noindex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large');
+  html = html.replace(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeHtml(canonical)}">`);
   html = html.replace(/<script id="seriesStructuredData" type="application\/ld\+json">[\s\S]*?<\/script>/i, `<script id="seriesStructuredData" type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`);
   return html;
 }
@@ -105,7 +119,7 @@ const urls = new Set([
 
 for (const serie of catalog) {
   const slug = String(serie?.slug || '').trim() || slugify(serie?.title || serie?.id);
-  if (slug) urls.add(`${SITE_URL}/series/${slug}`);
+  if (slug && serie?.seo_noindex !== true) urls.add(`${SITE_URL}/series/${slug}`);
   if (slug) {
     const pageDirectory = path.join(seriesPagesDirectory, slug);
     await fs.mkdir(pageDirectory, { recursive: true });

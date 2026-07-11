@@ -6,6 +6,13 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 
 ### Adicionado
 
+- Ciclo editorial no CMS com rascunho, publicação, ocultação e arquivamento.
+- Ações administrativas protegidas para duplicar e alterar a situação de séries.
+- SEO administrável por série, com canonical, Open Graph e `noindex`.
+- Histórico e resolução pública de slugs alterados.
+- Forma de entrega editorial por Telegram, web ou modo híbrido.
+- Sincronização segura entre `price` e `price_cents`.
+
 - Auditoria de arquitetura e plano incremental para operacao web e Telegram.
 - Contexto hibrido para navegador comum e Telegram Mini App.
 - Rotas publicas para series, categorias, busca, favoritos, ajuda, termos, privacidade e blog.
@@ -18,6 +25,10 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 - Eventos de analytics para busca, favoritos, abertura de serie gratuita e handoff ao Telegram.
 
 ### Corrigido
+
+- Série oculta podia continuar ativa quando `is_active` estivesse verdadeiro.
+- Rascunhos não são mais anunciados automaticamente no canal.
+- Validação de slug duplicado agora ocorre antes do upload de mídia.
 
 - Condicao de corrida no smoke test ao aguardar a confirmacao simulada do pagamento.
 - Bloqueio indevido do catalogo quando o app era aberto fora do Telegram.
@@ -33,6 +44,10 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 - Grade de cards e tipografia foram ajustadas para melhorar leitura e responsividade.
 
 ### Seguranca
+
+- Publicação exige validação server-side de título, descrição, capa, vídeo e preço.
+- Ações editoriais exigem `initData`, conta proprietária e senha validados no backend.
+- Tabela de redirecionamentos permanece privada com RLS e privilégios públicos revogados.
 
 - O catalogo publico nao retorna File_ID, caminhos de Storage ou URLs permanentes de video.
 - A leitura direta de `public.series` pela Data API foi removida; o catalogo passa pela Edge Function sanitizada.
