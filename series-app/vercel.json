@@ -1,20 +1,21 @@
 {
   "version": 2,
-  "headers": [
-    {
-      "source": "/assets/(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
-    },
-    {
-      "source": "/(app.min.js|styles.css)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" }]
-    },
-    {
-      "source": "/(sitemap.xml|robots.txt)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" }]
-    }
-  ],
   "routes": [
+    {
+      "src": "/assets/(.*)",
+      "headers": { "Cache-Control": "public, max-age=31536000, immutable" },
+      "continue": true
+    },
+    {
+      "src": "/(app.min.js|styles.css)",
+      "headers": { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" },
+      "continue": true
+    },
+    {
+      "src": "/(sitemap.xml|robots.txt)",
+      "headers": { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" },
+      "continue": true
+    },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
