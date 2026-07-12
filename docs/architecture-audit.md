@@ -89,3 +89,19 @@ Implementado em 11/07/2026:
 - fallback para abertura no Telegram em navegadores comuns.
 
 Trade-off: nesta etapa, a identidade da cliente continua sendo o Telegram ID validado. Não foi adicionada autenticação web separada, evitando custo, duplicação de contas e risco de divergência entre compras web e Telegram.
+
+# Sprint 4 - Carrinho e checkout comercial
+
+Implementado em 12/07/2026:
+
+- carrinho persistente associado ao Telegram ID validado;
+- restauração e mesclagem segura com o carrinho local;
+- cupons percentuais e fixos validados no backend;
+- limites por período, usuário, quantidade total, valor mínimo e série elegível;
+- subtotal, desconto e total calculados a partir do catálogo real;
+- reserva atômica do cupom antes da criação do pagamento;
+- confirmação ou reversão do resgate conforme webhook do Mercado Pago;
+- tabelas privadas com RLS, políticas de negação e permissão RPC exclusiva para `service_role`;
+- cobertura funcional do cupom, Pix, entrega no Telegram e modos Mini App/web.
+
+Trade-off: a infraestrutura de cupons está pronta e segura, mas a tela administrativa para criar e editar campanhas ainda não foi adicionada. Até essa etapa, cupons devem ser cadastrados diretamente no Supabase por uma pessoa administradora. Isso evita antecipar um CMS de promoções antes de estabilizar o modelo de pedidos.

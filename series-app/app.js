@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260711-03';
+const BUILD_VERSION = '20260712-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -92,6 +92,8 @@ function buildTelegramSeriesLink(serie) {
 
 let allSeries = [];
 let cart = [];
+let activeCoupon = null;
+let cartSyncTimer = null;
 let currentSearchTerm = '';
 let currentCategory = 'all';
 let searchDebounceTimer = null;
@@ -449,6 +451,12 @@ const DOM = {
     cartDrawer: document.getElementById('cartDrawer'),
     cartItems: document.getElementById('cartItems'),
     cartTotal: document.getElementById('cartTotal'),
+    cartSubtotal: document.getElementById('cartSubtotal'),
+    cartDiscount: document.getElementById('cartDiscount'),
+    cartDiscountRow: document.getElementById('cartDiscountRow'),
+    cartCouponInput: document.getElementById('cartCouponInput'),
+    cartCouponBtn: document.getElementById('cartCouponBtn'),
+    cartCouponStatus: document.getElementById('cartCouponStatus'),
     checkoutBtn: document.getElementById('checkoutBtn'),
     paymentMethods: Array.from(document.querySelectorAll('[data-payment-method]')),
     buyerEmailField: document.getElementById('buyerEmailField'),
@@ -1920,6 +1928,22 @@ async function requestPaymentCreate(payload) {
 
 async function requestPaymentStatus(payload) {
     return await requestJson(`${API_URL}?action=payment-status`, payload, 15000);
+}
+
+async function requestCouponValidation(couponCode) {
+    return await requestJson(`${API_URL}?action=coupon-validate`, {
+        init_data: tg?.initData || '',
+        coupon_code: couponCode,
+        items: sanitizeCheckoutItems(cart),
+    }, 15000);
+}
+
+async function requestCartSync(operation, payload = {}) {
+    return await requestJson(`${API_URL}?action=cart-sync`, {
+        init_data: tg?.initData || '',
+        operation,
+        ...payload,
+    }, 15000);
 }
 
 async function requestSeriesDelivery(payload) {
@@ -4143,6 +4167,7 @@ async function init() {
         allSeries = Array.isArray(data) ? data : [];
         trackAnalyticsEvent('catalog_loaded', { metadata: { item_count: allSeries.length } });
         hydrateFavoriteSeriesFromCatalog(allSeries);
+        await loadServerCart();
         debugLog(`[INIT] ${allSeries.length} éries carregadas`);
 
         renderNetflixRow(allSeries);
@@ -4217,6 +4242,22 @@ function setupEventListeners() {
     });
     DOM.cartBtn?.addEventListener('click', () => toggleCart(true));
     DOM.checkoutBtn?.addEventListener('click', checkout);
+    DOM.cartCouponBtn?.addEventListener('click', () => void applyCartCoupon());
+    DOM.cartCouponInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            void applyCartCoupon();
+        }
+    });
+    DOM.cartCouponInput?.addEventListener('input', (event) => {
+        const nextCode = String(event.currentTarget?.value || '').trim().toUpperCase();
+        if (activeCoupon?.code && nextCode !== activeCoupon.code) {
+            activeCoupon = null;
+            setCartCouponStatus('Aplique novamente para validar o desconto.', 'info');
+            updateCartUI();
+            scheduleServerCartSave();
+        }
+    });
     DOM.cartOverlay?.addEventListener('click', (e) => {
         if (e.target.id === 'cartOverlay') toggleCart(false);
     });
@@ -5029,6 +5070,94 @@ function closeModal() {
 }
 
 // =================== CARRINHO ====================
+function setCartCouponStatus(message = '', type = '') {
+    if (!DOM.cartCouponStatus) return;
+    DOM.cartCouponStatus.textContent = message;
+    DOM.cartCouponStatus.className = `cart-coupon-status ${type}`.trim();
+}
+
+function scheduleServerCartSave() {
+    if (!appContext.isTelegram || !tg?.initData) return;
+    clearTimeout(cartSyncTimer);
+    cartSyncTimer = setTimeout(() => {
+        requestCartSync('save', {
+            item_ids: cart.map((item) => String(item.id || '')).filter(Boolean),
+            coupon_code: activeCoupon?.code || '',
+        }).catch((error) => debugLog('[CART] Falha ao sincronizar carrinho:', error?.message || error));
+    }, 250);
+}
+
+async function loadServerCart() {
+    if (!appContext.isTelegram || !tg?.initData) return;
+    try {
+        const payload = await requestCartSync('load');
+        const serverIds = Array.isArray(payload?.cart?.item_ids) ? payload.cart.item_ids.map(normalizeId) : [];
+        const mergedIds = new Set([...cart.map((item) => normalizeId(item.id)), ...serverIds]);
+        cart = allSeries.filter((serie) => mergedIds.has(normalizeId(serie.id)) && !isFree(serie) && !hasSeriesAccess(serie));
+        const couponCode = String(payload?.cart?.coupon_code || '').trim();
+        if (DOM.cartCouponInput instanceof HTMLInputElement && couponCode) DOM.cartCouponInput.value = couponCode;
+        saveCart();
+        if (couponCode && cart.length) {
+            await applyCartCoupon();
+        } else {
+            updateCartUI();
+            scheduleServerCartSave();
+        }
+    } catch (error) {
+        debugLog('[CART] Carrinho remoto indisponível:', error?.message || error);
+    }
+}
+
+async function applyCartCoupon() {
+    if (!appContext.isTelegram) {
+        showToast('Abra o Telegram para validar cupons.', 'info');
+        return;
+    }
+    if (!cart.length) {
+        setCartCouponStatus('Adicione uma série antes de aplicar o cupom.', 'error');
+        return;
+    }
+    const code = String(DOM.cartCouponInput?.value || '').trim().toUpperCase();
+    if (!code) {
+        activeCoupon = null;
+        setCartCouponStatus('', '');
+        updateCartUI();
+        scheduleServerCartSave();
+        return;
+    }
+
+    const previousLabel = DOM.cartCouponBtn?.textContent || 'Aplicar';
+    try {
+        if (DOM.cartCouponBtn instanceof HTMLButtonElement) {
+            DOM.cartCouponBtn.disabled = true;
+            DOM.cartCouponBtn.textContent = 'Validando...';
+        }
+        const payload = await requestCouponValidation(code);
+        activeCoupon = payload?.coupon || null;
+        if (!activeCoupon?.code) throw new Error('Cupom inválido');
+        if (DOM.cartCouponInput instanceof HTMLInputElement) DOM.cartCouponInput.value = activeCoupon.code;
+        setCartCouponStatus(`${activeCoupon.code} aplicado: ${formatPrice(activeCoupon.discountAmount)} de desconto.`, 'success');
+        trackAnalyticsEvent('coupon_applied', { metadata: { code_length: activeCoupon.code.length, discount_amount: activeCoupon.discountAmount } });
+        updateCartUI();
+        scheduleServerCartSave();
+    } catch (error) {
+        activeCoupon = null;
+        setCartCouponStatus(error.message || 'Não foi possível aplicar o cupom.', 'error');
+        updateCartUI();
+        scheduleServerCartSave();
+    } finally {
+        if (DOM.cartCouponBtn instanceof HTMLButtonElement) {
+            DOM.cartCouponBtn.disabled = false;
+            DOM.cartCouponBtn.textContent = previousLabel;
+        }
+    }
+}
+
+function clearAppliedCoupon(message = '') {
+    activeCoupon = null;
+    setCartCouponStatus(message, message ? 'info' : '');
+}
+
 function toggleCart(open) {
     if (!DOM.cartDrawer || !DOM.cartOverlay) {
         console.error('[CART] Elementos DOM do carrinho não encontrados');
@@ -5062,6 +5191,8 @@ function updateCartUI() {
         if (DOM.cartTotal) {
             DOM.cartTotal.textContent = 'R$ 0,00';
         }
+        if (DOM.cartSubtotal) DOM.cartSubtotal.textContent = 'R$ 0,00';
+        if (DOM.cartDiscountRow) DOM.cartDiscountRow.hidden = true;
     } else {
         let total = 0;
         container.innerHTML = '';
@@ -5098,8 +5229,13 @@ function updateCartUI() {
         });
 
         if (DOM.cartTotal) {
-            DOM.cartTotal.textContent = formatPrice(total);
+            const discount = Number(activeCoupon?.discountAmount || 0);
+            const finalTotal = Math.max(0, total - discount);
+            DOM.cartTotal.textContent = formatPrice(finalTotal);
         }
+        if (DOM.cartSubtotal) DOM.cartSubtotal.textContent = formatPrice(total);
+        if (DOM.cartDiscount) DOM.cartDiscount.textContent = `- ${formatPrice(activeCoupon?.discountAmount || 0)}`;
+        if (DOM.cartDiscountRow) DOM.cartDiscountRow.hidden = !activeCoupon?.discountAmount;
     }
 
     if (DOM.checkoutBtn) {
@@ -5116,6 +5252,7 @@ function addToCart(serie) {
         showToast('Já está no carrinho!', 'error');
         return;
     }
+    clearAppliedCoupon('Carrinho alterado. Aplique o cupom novamente.');
     cart.push(serie);
     trackAnalyticsEvent('add_to_cart', {
         series_id: serie.id,
@@ -5125,11 +5262,13 @@ function addToCart(serie) {
         showToast('Item adicionado, mas não será salvo entre sessões', 'error');
     }
     updateCartUI();
+    scheduleServerCartSave();
     toggleCart(true);
     showToast('Adicionado ao carrinho!', 'success');
 }
 
 function removeFromCart(id) {
+    clearAppliedCoupon('Carrinho alterado. Aplique o cupom novamente.');
     cart = cart.filter(item => !sameId(item.id, id));
     trackAnalyticsEvent('remove_from_cart', {
         series_id: id,
@@ -5137,6 +5276,7 @@ function removeFromCart(id) {
     });
     saveCart();
     updateCartUI();
+    scheduleServerCartSave();
 }
 
 function checkout() {
@@ -5175,7 +5315,7 @@ function checkout() {
         buyer_email: buyerEmail || '',
         buyer_name: tg?.initDataUnsafe?.user?.first_name || '',
         items: checkoutItems,
-        total: getCartTotal(),
+        coupon_code: activeCoupon?.code || '',
     }).then((data) => {
         const order = data?.order || null;
         if (!order) {
@@ -5191,7 +5331,11 @@ function checkout() {
             refreshPaymentStatus(String(order.order_id || ''), false);
         }
         cart = [];
+        activeCoupon = null;
+        if (DOM.cartCouponInput instanceof HTMLInputElement) DOM.cartCouponInput.value = '';
+        setCartCouponStatus('', '');
         saveCart('CHECKOUT');
+        scheduleServerCartSave();
         updateCartUI();
         showToast('Tudo certo. Agora é só pagar.', 'success');
 

@@ -33,7 +33,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="/styles.css?v=20260711-03">
+    <link rel="stylesheet" href="/styles.css?v=20260712-01">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
@@ -80,7 +80,7 @@
             </div>
 
             <div class="loading-player" id="playerLoading">
-                <img class="player-loading-logo" src="/assets/logo-welcome.png?v=20260711-03" alt="Séries Express">
+                <img class="player-loading-logo" src="/assets/logo-welcome.png?v=20260712-01" alt="Séries Express">
                 <div class="spinner"></div>
                 <div class="player-loading-title" id="playerLoadingTitle">Preparando reprodução</div>
                 <div class="player-loading-subtitle" id="playerLoadingSubtitle">Carregando vídeo dentro do Mini App...</div>
@@ -151,6 +151,24 @@
         </div>
         <div class="cart-body" id="cartItems"></div>
         <div class="cart-footer">
+            <div class="cart-coupon">
+                <label class="payment-field" for="cartCouponInput">
+                    <span>Cupom de desconto</span>
+                    <div class="cart-coupon-row">
+                        <input type="text" id="cartCouponInput" placeholder="Digite o código" maxlength="32" autocomplete="off">
+                        <button type="button" class="btn btn-secondary" id="cartCouponBtn">Aplicar</button>
+                    </div>
+                </label>
+                <div class="cart-coupon-status" id="cartCouponStatus" aria-live="polite"></div>
+            </div>
+            <div class="cart-total cart-subtotal" id="cartSubtotalRow">
+                <span>Subtotal:</span>
+                <span id="cartSubtotal">R$ 0,00</span>
+            </div>
+            <div class="cart-total cart-discount" id="cartDiscountRow" hidden>
+                <span>Desconto:</span>
+                <span id="cartDiscount">- R$ 0,00</span>
+            </div>
             <div class="cart-total">
                 <span>Total:</span>
                 <span id="cartTotal">R$ 0,00</span>
@@ -418,7 +436,7 @@
     <script defer src="/_vercel/speed-insights/script.js"></script>
 
     <!-- Script Principal -->
-    <script defer src="/app.min.js?v=20260711-03"></script>
+    <script defer src="/app.min.js?v=20260712-01"></script>
 </body>
 </html>
 

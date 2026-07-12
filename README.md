@@ -231,11 +231,15 @@ O mini app envia o carrinho para a Edge Function `bot-unificado`, que:
 3. devolve o link ou o QR Code para a interface
 4. acompanha o status até a confirmação automática
 
+O carrinho autenticado também é sincronizado em `shopping_carts`, permitindo retomar os itens em outra sessão do Telegram. Cupons são validados exclusivamente no backend: o servidor relê os itens e preços do catálogo, calcula subtotal, desconto e total, e reserva o uso de forma atômica antes de chamar o Mercado Pago. O navegador nunca decide o valor final.
+
+As regras de cupons suportam desconto percentual ou fixo, período de validade, valor mínimo, limite global, limite por usuário e séries elegíveis. Resgates aprovados são confirmados pelo webhook; pagamentos rejeitados, cancelados, expirados ou com falha liberam a reserva.
+
 Mesmo se o webhook atrasar, o mini app volta a consultar o pedido e sincroniza o status com o Mercado Pago antes de mostrar o resultado final.
 
 Para o Pix, o fluxo pede e-mail do comprador, porque o Mercado Pago exige isso para gerar o pagamento.
 
-As regras da integração ficam na migration `supabase/migrations/20260627224636_mercado_pago_checkout.sql`.
+As regras da integração ficam nas migrations `supabase/migrations/20260627224636_mercado_pago_checkout.sql`, `supabase/migrations/20260711235508_add_carts_and_coupons.sql` e `supabase/migrations/20260712162156_add_private_cart_policies.sql`.
 
 ## Canal público e anti-bot
 

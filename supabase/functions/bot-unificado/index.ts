@@ -26,6 +26,9 @@ const MERCADO_PAGO_PIX_KEY = Deno.env.get("MERCADO_PAGO_PIX_KEY") ?? "";
 const MERCADO_PAGO_PIX_COPY = Deno.env.get("MERCADO_PAGO_PIX_COPY") ?? "";
 const MERCADO_PAGO_PIX_QR_CODE_BASE64 = Deno.env.get("MERCADO_PAGO_PIX_QR_CODE_BASE64") ?? "";
 const PAYMENT_ORDERS_TABLE = Deno.env.get("PAYMENT_ORDERS_TABLE") ?? "payment_orders";
+const SHOPPING_CARTS_TABLE = Deno.env.get("SHOPPING_CARTS_TABLE") ?? "shopping_carts";
+const COUPONS_TABLE = Deno.env.get("COUPONS_TABLE") ?? "coupons";
+const COUPON_REDEMPTIONS_TABLE = Deno.env.get("COUPON_REDEMPTIONS_TABLE") ?? "coupon_redemptions";
 const APP_EVENTS_TABLE = Deno.env.get("APP_EVENTS_TABLE") ?? "app_events";
 const OWNER_TELEGRAM_USER_ID = Deno.env.get("OWNER_TELEGRAM_USER_ID") ?? "";
 const OWNER_AREA_PASSWORD = Deno.env.get("OWNER_AREA_PASSWORD") ?? "";
@@ -1018,6 +1021,9 @@ async function createPaymentOrderRecord(entry: {
   chatId: string;
   paymentMethod: CheckoutMethod;
   amount: number;
+  subtotal?: number;
+  discountAmount?: number;
+  couponCode?: string | null;
   items: Array<{ id: string; title: string; quantity: number; price: number; cover_url: string | null }>;
   buyerEmail?: string | null;
   buyerName?: string | null;
@@ -1040,6 +1046,9 @@ async function createPaymentOrderRecord(entry: {
         checkout_mode: entry.paymentMethod,
         currency: "BRL",
         amount: Number(entry.amount.toFixed(2)),
+        subtotal: Number((entry.subtotal ?? entry.amount).toFixed(2)),
+        discount_amount: Number((entry.discountAmount ?? 0).toFixed(2)),
+        coupon_code: entry.couponCode ?? null,
         items: entry.items,
         buyer_email: entry.buyerEmail ?? null,
         buyer_name: entry.buyerName ?? null,
@@ -1814,6 +1823,12 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
     ? await updatePaymentOrderRecord(orderId, nextPatch) as Record<string, unknown>
     : order;
 
+  if (orderId && currentStatus === "approved") {
+    await updateCouponRedemption(orderId, "applied");
+  } else if (orderId && ["rejected", "cancelled", "canceled", "expired"].includes(currentStatus)) {
+    await updateCouponRedemption(orderId, "reversed");
+  }
+
   let finalOrder = updatedOrder;
   if (currentStatus === "approved") {
     const deliveryStatus = String(updatedOrder.delivery_status ?? "pending").trim().toLowerCase();
@@ -1856,6 +1871,181 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
   return finalOrder;
 }
 
+function normalizeCouponCode(value: unknown) {
+  return String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
+}
+
+async function validateCouponForCheckout(
+  userId: string,
+  couponInput: unknown,
+  items: Array<{ id: string; title: string; quantity: number; price: number; cover_url: string | null }>,
+) {
+  const subtotal = calculateCheckoutTotal(items);
+  const code = normalizeCouponCode(couponInput);
+  if (!code) return { code: "", subtotal, discountAmount: 0, total: subtotal, description: "" };
+
+  const rows = await supabaseFetch(`${COUPONS_TABLE}?select=*&code=eq.${encodeURIComponent(code)}&limit=1`);
+  const coupon = Array.isArray(rows) && rows.length ? rows[0] as Record<string, unknown> : null;
+  if (!coupon || coupon.active !== true) throw new Error("Cupom invalido ou inativo");
+
+  const now = Date.now();
+  const startsAt = Date.parse(String(coupon.starts_at ?? "")) || 0;
+  const endsAt = Date.parse(String(coupon.ends_at ?? "")) || 0;
+  if (startsAt && now < startsAt) throw new Error("Este cupom ainda nao esta disponivel");
+  if (endsAt && now >= endsAt) throw new Error("Este cupom expirou");
+
+  const minimumAmount = Number(coupon.minimum_amount ?? 0) || 0;
+  if (subtotal < minimumAmount) {
+    throw new Error(`Este cupom exige um subtotal minimo de ${formatCurrencyBRL(minimumAmount)}`);
+  }
+
+  const eligibleIds = new Set(
+    Array.isArray(coupon.eligible_series_ids)
+      ? coupon.eligible_series_ids.map((id) => String(id)).filter(Boolean)
+      : [],
+  );
+  const eligibleSubtotal = items
+    .filter((item) => !eligibleIds.size || eligibleIds.has(String(item.id)))
+    .reduce((sum, item) => sum + item.price * item.quantity, 0);
+  if (eligibleSubtotal <= 0) throw new Error("Este cupom nao se aplica aos itens do carrinho");
+
+  const reservations = await supabaseFetch(
+    `${COUPON_REDEMPTIONS_TABLE}?select=user_id,status,created_at&coupon_code=eq.${encodeURIComponent(code)}&status=in.(reserved,applied)&limit=5000`,
+  ).catch(() => []);
+  const validReservations = (Array.isArray(reservations) ? reservations as Record<string, unknown>[] : [])
+    .filter((entry) => entry.status === "applied" || (Date.parse(String(entry.created_at ?? "")) || 0) > now - 30 * 60 * 1000);
+  const usageLimit = Number(coupon.usage_limit ?? 0) || 0;
+  const perUserLimit = Number(coupon.per_user_limit ?? 1) || 1;
+  if (usageLimit > 0 && validReservations.length >= usageLimit) throw new Error("Este cupom atingiu o limite de usos");
+  if (validReservations.filter((entry) => String(entry.user_id ?? "") === userId).length >= perUserLimit) {
+    throw new Error("Este cupom ja foi utilizado por esta conta");
+  }
+
+  const value = Number(coupon.discount_value ?? 0) || 0;
+  const discountType = String(coupon.discount_type ?? "");
+  const rawDiscount = discountType === "percentage" ? eligibleSubtotal * (value / 100) : value;
+  const discountAmount = Number(Math.min(eligibleSubtotal, Math.max(0, rawDiscount)).toFixed(2));
+  const total = Number((subtotal - discountAmount).toFixed(2));
+  if (discountAmount <= 0) throw new Error("Este cupom nao gerou desconto");
+  if (total < 1) throw new Error("O total com desconto precisa ser de pelo menos R$ 1,00");
+
+  return {
+    code,
+    subtotal,
+    discountAmount,
+    total,
+    description: String(coupon.description ?? "").trim(),
+  };
+}
+
+async function ensureCheckoutItemsNotOwned(
+  userId: string,
+  items: Array<{ id: string }>,
+) {
+  const accessibleIds = isOwnerUserId(userId)
+    ? new Set(items.map((item) => String(item.id)))
+    : await getAccessibleSeriesIds(userId);
+  const ownedItems = items.filter((item) => accessibleIds.has(String(item.id)));
+  if (ownedItems.length) {
+    throw new Error(ownedItems.length === items.length
+      ? "Voce ja possui acesso aos itens selecionados."
+      : "Remova do carrinho as series que ja estao na sua biblioteca.");
+  }
+}
+
+async function handleCouponValidate(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  let userId = "";
+  try {
+    userId = (await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""))).userId;
+  } catch (error) {
+    return json(req, { error: error instanceof Error ? error.message : "Dados do Telegram invalidos" }, 401);
+  }
+  try {
+    const items = await resolveCanonicalCheckoutItems(body.items);
+    if (!items.length) return json(req, { error: "Carrinho vazio" }, 400);
+    await ensureCheckoutItemsNotOwned(userId, items);
+    const result = await validateCouponForCheckout(userId, body.coupon_code, items);
+    return json(req, { ok: true, coupon: result });
+  } catch (error) {
+    return json(req, { error: error instanceof Error ? error.message : "Cupom invalido" }, 400);
+  }
+}
+
+async function handleCartSync(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  let userId = "";
+  try {
+    userId = (await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""))).userId;
+  } catch (error) {
+    return json(req, { error: error instanceof Error ? error.message : "Dados do Telegram invalidos" }, 401);
+  }
+
+  const operation = String(body.operation ?? "load").trim().toLowerCase();
+  if (operation === "load") {
+    const rows = await supabaseFetch(`${SHOPPING_CARTS_TABLE}?select=item_ids,coupon_code,updated_at&user_id=eq.${encodeURIComponent(userId)}&limit=1`);
+    const row = Array.isArray(rows) && rows.length ? rows[0] as Record<string, unknown> : null;
+    const accessibleIds = isOwnerUserId(userId)
+      ? new Set((Array.isArray(row?.item_ids) ? row.item_ids : []).map(String))
+      : await getAccessibleSeriesIds(userId);
+    return json(req, {
+      ok: true,
+      cart: {
+        item_ids: Array.isArray(row?.item_ids) ? row.item_ids.map(String).filter((id) => !accessibleIds.has(id)) : [],
+        coupon_code: String(row?.coupon_code ?? ""),
+        updated_at: row?.updated_at ?? null,
+      },
+    });
+  }
+  if (operation !== "save") return json(req, { error: "Operacao de carrinho invalida" }, 400);
+
+  const requestedIds = Array.from(new Set(
+    (Array.isArray(body.item_ids) ? body.item_ids : []).map((id) => String(id ?? "").trim()).filter(Boolean),
+  )).slice(0, 50);
+  const accessibleIds = isOwnerUserId(userId)
+    ? new Set(requestedIds)
+    : await getAccessibleSeriesIds(userId);
+  const validIds: string[] = [];
+  for (const id of requestedIds) {
+    const row = await getSeriesById(id);
+    if (row && isSeriesActive(row) && !isSeriesFree(row) && !accessibleIds.has(id)) validIds.push(id);
+  }
+  const couponCode = normalizeCouponCode(body.coupon_code) || null;
+  const now = new Date().toISOString();
+  const saved = await supabaseRestRequest(`${SHOPPING_CARTS_TABLE}?on_conflict=user_id`, {
+    method: "POST",
+    headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates,return=representation" },
+    body: stringifyJson([{ user_id: userId, item_ids: validIds, coupon_code: couponCode, updated_at: now }]),
+  });
+  const row = Array.isArray(saved) ? saved[0] : saved;
+  return json(req, { ok: true, cart: row });
+}
+
+async function createCouponRedemption(entry: { code: string; userId: string; orderId: string; discountAmount: number }) {
+  if (!entry.code || entry.discountAmount <= 0) return null;
+  return await supabaseRestRequest("rpc/reserve_coupon_redemption", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: stringifyJson({
+      p_coupon_code: entry.code,
+      p_user_id: entry.userId,
+      p_order_id: entry.orderId,
+      p_discount_amount: entry.discountAmount,
+    }),
+  });
+}
+
+async function updateCouponRedemption(orderId: string, status: "applied" | "reversed") {
+  const timestampField = status === "applied" ? "applied_at" : "reversed_at";
+  await supabaseRestRequest(`${COUPON_REDEMPTIONS_TABLE}?order_id=eq.${encodeURIComponent(orderId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", prefer: "return=minimal" },
+    body: stringifyJson({ status, [timestampField]: new Date().toISOString() }),
+  }).catch(() => null);
+}
+
 async function handlePaymentCreate(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
@@ -1875,6 +2065,7 @@ async function handlePaymentCreate(req: Request) {
   let items;
   try {
     items = await resolveCanonicalCheckoutItems(body.items);
+    await ensureCheckoutItemsNotOwned(userId, items);
   } catch (error) {
     return json(req, { error: error instanceof Error ? error.message : "Itens invalidos" }, 400);
   }
@@ -1883,7 +2074,13 @@ async function handlePaymentCreate(req: Request) {
   const paymentMethod = normalizeCheckoutMethod(body.payment_method ?? body.method ?? body.checkout_method);
   const buyerEmail = String(body.buyer_email ?? body.email ?? "").trim();
   const buyerName = String(body.buyer_name ?? body.name ?? "").trim();
-  const amount = calculateCheckoutTotal(items);
+  let pricing;
+  try {
+    pricing = await validateCouponForCheckout(userId, body.coupon_code, items);
+  } catch (error) {
+    return json(req, { error: error instanceof Error ? error.message : "Cupom invalido" }, 400);
+  }
+  const amount = pricing.total;
   const description = buildCheckoutDescription(items);
   const orderId = crypto.randomUUID();
   const chatId = userId;
@@ -1898,12 +2095,24 @@ async function handlePaymentCreate(req: Request) {
     chatId,
     paymentMethod,
     amount,
+    subtotal: pricing.subtotal,
+    discountAmount: pricing.discountAmount,
+    couponCode: pricing.code || null,
     items,
     buyerEmail: buyerEmail || null,
     buyerName: buyerName || null,
     description,
     status: "created",
   });
+
+  if (pricing.code && pricing.discountAmount > 0) {
+    try {
+      await createCouponRedemption({ code: pricing.code, userId, orderId, discountAmount: pricing.discountAmount });
+    } catch {
+      await updatePaymentOrderRecord(orderId, { status: "failed", error_message: "Falha ao reservar cupom" }).catch(() => null);
+      return json(req, { error: "Nao foi possivel reservar este cupom. Tente novamente." }, 409);
+    }
+  }
 
   await recordAppEvent({
     eventName: "payment_created",
@@ -1959,7 +2168,9 @@ async function handlePaymentCreate(req: Request) {
       userId,
       amount,
       description,
-      items,
+      items: pricing.discountAmount > 0
+        ? [{ title: description, quantity: 1, price: amount }]
+        : items,
       buyerEmail: buyerEmail || null,
       buyerName: buyerName || null,
     });
@@ -1991,6 +2202,7 @@ async function handlePaymentCreate(req: Request) {
       error_message: message,
       last_event_at: new Date().toISOString(),
     }).catch(() => null);
+    if (pricing.code) await updateCouponRedemption(orderId, "reversed");
     return json(req, { error: message }, 500);
   }
 }
@@ -4888,6 +5100,9 @@ function serializeCustomerOrder(row: Record<string, unknown>) {
     status: String(row.status ?? "unknown"),
     payment_method: String(row.payment_method ?? "unknown"),
     amount: Number(row.amount ?? 0) || 0,
+    subtotal: Number(row.subtotal ?? row.amount ?? 0) || 0,
+    discount_amount: Number(row.discount_amount ?? 0) || 0,
+    coupon_code: String(row.coupon_code ?? ""),
     created_at: row.created_at ?? null,
     confirmed_at: row.confirmed_at ?? null,
     delivery_status: String(row.delivery_status ?? "pending"),
@@ -4902,7 +5117,7 @@ function serializeCustomerOrder(row: Record<string, unknown>) {
 
 async function getCustomerPaymentRows(userId: string) {
   const data = await supabaseFetch(
-    `${PAYMENT_ORDERS_TABLE}?select=order_id,status,payment_method,amount,items,created_at,confirmed_at,delivery_status,delivery_completed_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=200`,
+    `${PAYMENT_ORDERS_TABLE}?select=order_id,status,payment_method,amount,subtotal,discount_amount,coupon_code,items,created_at,confirmed_at,delivery_status,delivery_completed_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=200`,
   );
   return Array.isArray(data) ? data as Record<string, unknown>[] : [];
 }
@@ -6306,6 +6521,14 @@ Deno.serve(async (req) => {
 
     if (action === "checkout-create") {
       return await handlePaymentCreate(req);
+    }
+
+    if (action === "coupon-validate" && req.method === "POST") {
+      return await handleCouponValidate(req);
+    }
+
+    if (action === "cart-sync" && req.method === "POST") {
+      return await handleCartSync(req);
     }
 
     if (action === "payment-status") {

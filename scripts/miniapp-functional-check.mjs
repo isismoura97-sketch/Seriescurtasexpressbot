@@ -115,6 +115,8 @@ const fixtureSeries = [
 let paidGranted = false;
 let ownerMigrationApplied = false;
 let ownerOrderRetried = false;
+let cartServerState = { item_ids: [], coupon_code: '' };
+let checkoutRequestPayload = null;
 const deliveryLog = [];
 const progressLog = [];
 
@@ -274,6 +276,7 @@ async function installRoutes(page, options = {}) {
     }
 
     if (action === 'checkout-create') {
+      checkoutRequestPayload = route.request().postDataJSON?.() || {};
       await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
@@ -281,6 +284,10 @@ async function installRoutes(page, options = {}) {
             order_id: 'order-test',
             status: 'pending',
             payment_method: 'pix_qr',
+            subtotal: 5.9,
+            discount_amount: 0.59,
+            coupon_code: 'TESTE10',
+            amount: 5.31,
             pix_qr_code: '000201TESTEPIX',
             pix_qr_code_base64: '',
             checkout_url: 'https://mp.test/checkout',
@@ -302,7 +309,10 @@ async function installRoutes(page, options = {}) {
             delivery_status: 'completed',
             payment_method: 'pix_qr',
             pix_qr_code: '000201TESTEPIX',
-            amount: 5.9,
+            subtotal: 5.9,
+            discount_amount: 0.59,
+            coupon_code: 'TESTE10',
+            amount: 5.31,
             items: [{ id: 'paid-series', title: 'Serie Paga', price: 5.9, quantity: 1 }],
           },
         }),
@@ -350,6 +360,38 @@ async function installRoutes(page, options = {}) {
             user_id: TEST_OWNER_ID,
             series_id: String(payload.series_id || ''),
             last_event: String(payload.event_type || 'progress'),
+          },
+        }),
+      });
+      return;
+    }
+
+    if (action === 'cart-sync') {
+      const payload = route.request().postDataJSON?.() || {};
+      if (payload.operation === 'save') {
+        cartServerState = {
+          item_ids: Array.isArray(payload.item_ids) ? payload.item_ids : [],
+          coupon_code: String(payload.coupon_code || ''),
+        };
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, cart: cartServerState }),
+      });
+      return;
+    }
+
+    if (action === 'coupon-validate') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          coupon: {
+            code: 'TESTE10',
+            description: 'Cupom funcional de teste',
+            subtotal: 5.9,
+            discountAmount: 0.59,
+            total: 5.31,
           },
         }),
       });
@@ -830,6 +872,16 @@ async function main() {
     if (!cartAlreadyOpen) {
       await page.locator('#cartBtn').click();
     }
+    await page.fill('#cartCouponInput', 'teste10');
+    await page.locator('#cartCouponBtn').click();
+    await page.waitForFunction(() => document.querySelector('#cartCouponStatus')?.textContent?.includes('TESTE10'));
+    const couponState = await page.evaluate(() => ({
+      status: document.querySelector('#cartCouponStatus')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+      subtotal: document.querySelector('#cartSubtotal')?.textContent?.trim() || '',
+      discount: document.querySelector('#cartDiscount')?.textContent?.trim() || '',
+      total: document.querySelector('#cartTotal')?.textContent?.trim() || '',
+      discountVisible: document.querySelector('#cartDiscountRow')?.hidden === false,
+    }));
     await page.fill('#buyerEmailInput', 'teste@example.com');
     await page.locator('#checkoutBtn').click();
     await page.waitForFunction(() => {
@@ -991,7 +1043,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260711-03')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260712-01')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1023,6 +1075,11 @@ async function main() {
     if (!initial.coverFallbacks[0].includes('assets/covers/marido-pobre-bilionario.webp')) failures.push('marido cover fallback failed');
     if (!initial.coverFallbacks[1].includes('assets/covers/o-quaterback-perdido-retorna.webp')) failures.push('quarterback cover fallback failed');
     if (!paidBeforePayment.modalActive || paidBeforePayment.playerActive || !paidBeforePayment.modalAction) failures.push('paid series pre-payment gating failed');
+    const normalizedCouponState = Object.fromEntries(
+      Object.entries(couponState).map(([key, value]) => [key, typeof value === 'string' ? value.replace(/\s/g, ' ') : value]),
+    );
+    if (!normalizedCouponState.status.includes('TESTE10') || normalizedCouponState.subtotal !== 'R$ 5,90' || !normalizedCouponState.discount.includes('R$ 0,59') || normalizedCouponState.total !== 'R$ 5,31' || !normalizedCouponState.discountVisible) failures.push(`coupon UI failed: ${JSON.stringify(couponState)}`);
+    if (checkoutRequestPayload?.coupon_code !== 'TESTE10' || 'total' in (checkoutRequestPayload || {})) failures.push(`checkout coupon payload failed: ${JSON.stringify(checkoutRequestPayload)}`);
     if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
     if (!paidCardAfterPayment.action.includes('Receber no Telegram')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
     if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
@@ -1062,6 +1119,8 @@ async function main() {
         episodePlayback,
         missingModal,
         paidBeforePayment,
+        couponState,
+        checkoutRequestPayload,
         checkoutState,
         paidCardAfterPayment,
         paidAfterPayment,

@@ -6,6 +6,11 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 
 ### Adicionado
 
+- Carrinho persistente por Telegram ID, sincronizado pelo backend.
+- Cupons percentuais ou fixos com validade, elegibilidade e limites de uso.
+- Reserva atômica de cupom vinculada ao pedido e ao ciclo real do pagamento.
+- Subtotal, desconto e cupom registrados no histórico de pedidos.
+
 - Área da cliente com visão geral, biblioteca, compras e histórico.
 - Endpoint privado consolidado para dados da conta autenticada pelo Telegram.
 - Navegação responsiva da conta e fallback seguro fora do Telegram.
@@ -31,6 +36,8 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 
 ### Corrigido
 
+- Checkout e carrinho remoto agora removem séries que já possuem acesso aprovado, evitando compra duplicada.
+
 - Série oculta podia continuar ativa quando `is_active` estivesse verdadeiro.
 - Rascunhos não são mais anunciados automaticamente no canal.
 - Validação de slug duplicado agora ocorre antes do upload de mídia.
@@ -41,6 +48,9 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 
 ### Alterado
 
+- Checkout passou a aceitar somente itens e cupom do frontend; o total final é recalculado no servidor.
+- Carrinho ganhou resumo de subtotal, desconto e total com layout responsivo.
+
 - Header com busca e botao de acesso ao Telegram no navegador.
 - Cards pagos usam "Ver detalhes" e deixam o preco para a pagina de decisao.
 - Hero usa CTAs objetivos e metadados reais da serie.
@@ -49,6 +59,9 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 - Grade de cards e tipografia foram ajustadas para melhorar leitura e responsividade.
 
 ### Seguranca
+
+- Tabelas de carrinho e resgate de cupons permanecem privadas, com RLS, políticas de negação e privilégios públicos revogados.
+- Função de reserva de cupom pode ser executada apenas por `service_role` e usa bloqueio transacional contra excesso de usos simultâneos.
 
 - Dados da cliente são filtrados pelo Telegram ID extraído do `initData` validado.
 - A área da cliente não retorna File_ID, URL protegida ou detalhes internos do Mercado Pago.
