@@ -10,6 +10,8 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 - Cupons percentuais ou fixos com validade, elegibilidade e limites de uso.
 - Reserva atômica de cupom vinculada ao pedido e ao ciclo real do pagamento.
 - Subtotal, desconto e cupom registrados no histórico de pedidos.
+- Gestão visual de cupons no painel da proprietária, com criação, edição, ativação e encerramento.
+- Métricas agregadas de campanhas sem exposição de dados dos clientes.
 
 - Área da cliente com visão geral, biblioteca, compras e histórico.
 - Endpoint privado consolidado para dados da conta autenticada pelo Telegram.
@@ -62,6 +64,7 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 
 - Tabelas de carrinho e resgate de cupons permanecem privadas, com RLS, políticas de negação e privilégios públicos revogados.
 - Função de reserva de cupom pode ser executada apenas por `service_role` e usa bloqueio transacional contra excesso de usos simultâneos.
+- Ações administrativas de cupons exigem Telegram ID proprietário, `initData` válido e senha conferida no backend.
 
 - Dados da cliente são filtrados pelo Telegram ID extraído do `initData` validado.
 - A área da cliente não retorna File_ID, URL protegida ou detalhes internos do Mercado Pago.

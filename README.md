@@ -214,6 +214,12 @@ Também estão disponíveis:
 - histórico de slugs para redirecionar endereços antigos;
 - preço em centavos sincronizado com o campo legado `price`.
 
+### Cupons e campanhas
+
+A área da proprietária possui gestão visual de cupons. É possível criar, editar, ativar e encerrar campanhas, configurar desconto percentual ou fixo, compra mínima, período, limite total, limite por cliente e séries pagas elegíveis. As métricas exibem campanhas ativas, usos pagos e desconto concedido sem expor Telegram IDs de clientes.
+
+Todas as ações exigem o mesmo `initData`, Telegram ID proprietário e senha validados no backend. O painel não acessa `public.coupons` diretamente.
+
 As migrations correspondentes são `supabase/migrations/20260711175558_add_series_editorial_lifecycle.sql` e `supabase/migrations/20260711232037_add_series_access_type.sql`.
 
 ## Pagamentos

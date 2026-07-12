@@ -104,4 +104,6 @@ Implementado em 12/07/2026:
 - tabelas privadas com RLS, políticas de negação e permissão RPC exclusiva para `service_role`;
 - cobertura funcional do cupom, Pix, entrega no Telegram e modos Mini App/web.
 
-Trade-off: a infraestrutura de cupons está pronta e segura, mas a tela administrativa para criar e editar campanhas ainda não foi adicionada. Até essa etapa, cupons devem ser cadastrados diretamente no Supabase por uma pessoa administradora. Isso evita antecipar um CMS de promoções antes de estabilizar o modelo de pedidos.
+Evolução concluída em 12/07/2026: o painel protegido agora permite criar, editar, ativar e encerrar campanhas. A interface configura desconto, período, limites e séries elegíveis, enquanto o backend continua sendo a única camada autorizada a gravar nas tabelas privadas.
+
+Trade-off: cupons são encerrados por desativação, e não excluídos. Essa decisão preserva o histórico financeiro e evita quebrar a relação entre pedido, desconto e campanha.

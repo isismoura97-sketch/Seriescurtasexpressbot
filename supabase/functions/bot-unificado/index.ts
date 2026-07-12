@@ -5488,12 +5488,81 @@ async function getOwnerAnalytics() {
   }
 }
 
+function serializeOwnerCoupon(
+  row: Record<string, unknown>,
+  redemptions: Record<string, unknown>[],
+) {
+  const code = String(row.code ?? "").trim();
+  const now = Date.now();
+  const couponRedemptions = redemptions.filter((entry) => String(entry.coupon_code ?? "") === code);
+  const applied = couponRedemptions.filter((entry) => String(entry.status ?? "") === "applied");
+  const reserved = couponRedemptions.filter((entry) => (
+    String(entry.status ?? "") === "reserved"
+    && (Date.parse(String(entry.created_at ?? "")) || 0) > now - 30 * 60 * 1000
+  ));
+  const startsAt = row.starts_at ? String(row.starts_at) : null;
+  const endsAt = row.ends_at ? String(row.ends_at) : null;
+  const active = row.active === true;
+  const status = !active
+    ? "inactive"
+    : startsAt && (Date.parse(startsAt) || 0) > now
+      ? "scheduled"
+      : endsAt && (Date.parse(endsAt) || 0) <= now
+        ? "expired"
+        : "active";
+
+  return {
+    code,
+    description: String(row.description ?? ""),
+    discount_type: String(row.discount_type ?? "percentage"),
+    discount_value: Number(row.discount_value ?? 0) || 0,
+    minimum_amount: Number(row.minimum_amount ?? 0) || 0,
+    starts_at: startsAt,
+    ends_at: endsAt,
+    usage_limit: Number(row.usage_limit ?? 0) || null,
+    per_user_limit: Number(row.per_user_limit ?? 1) || 1,
+    eligible_series_ids: Array.isArray(row.eligible_series_ids) ? row.eligible_series_ids.map(String) : [],
+    active,
+    status,
+    applied_uses: applied.length,
+    reserved_uses: reserved.length,
+    usage_total: applied.length + reserved.length,
+    discount_total: Number(applied.reduce((sum, entry) => sum + (Number(entry.discount_amount ?? 0) || 0), 0).toFixed(2)),
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+  };
+}
+
+async function getOwnerCouponDashboard() {
+  try {
+    const [couponData, redemptionData] = await Promise.all([
+      supabaseFetch(`${COUPONS_TABLE}?select=code,description,discount_type,discount_value,minimum_amount,starts_at,ends_at,usage_limit,per_user_limit,eligible_series_ids,active,created_at,updated_at&order=created_at.desc&limit=500`),
+      supabaseFetch(`${COUPON_REDEMPTIONS_TABLE}?select=coupon_code,discount_amount,status,created_at&order=created_at.desc&limit=10000`),
+    ]);
+    const couponRows = Array.isArray(couponData) ? couponData as Record<string, unknown>[] : [];
+    const redemptionRows = Array.isArray(redemptionData) ? redemptionData as Record<string, unknown>[] : [];
+    const items = couponRows.map((row) => serializeOwnerCoupon(row, redemptionRows));
+    return {
+      total: items.length,
+      active_total: items.filter((item) => item.status === "active").length,
+      scheduled_total: items.filter((item) => item.status === "scheduled").length,
+      applied_uses: items.reduce((sum, item) => sum + item.applied_uses, 0),
+      discount_total: Number(items.reduce((sum, item) => sum + item.discount_total, 0).toFixed(2)),
+      items,
+    };
+  } catch (error) {
+    console.warn("[COUPONS] Falha ao carregar painel:", error instanceof Error ? error.message : String(error));
+    return { total: 0, active_total: 0, scheduled_total: 0, applied_uses: 0, discount_total: 0, items: [] };
+  }
+}
+
 async function buildOwnerDashboardPayload(userId: string) {
-  const [series, episodes, payments, analytics] = await Promise.all([
+  const [series, episodes, payments, analytics, coupons] = await Promise.all([
     getSeriesList("", true) as Promise<Record<string, unknown>[]>,
     getEpisodesList().catch(() => [] as Record<string, unknown>[]),
     getOwnerPaymentRows(),
     getOwnerAnalytics(),
+    getOwnerCouponDashboard(),
   ]);
 
   const sortedSeries = sortByCreatedAtDesc(series);
@@ -5537,6 +5606,7 @@ async function buildOwnerDashboardPayload(userId: string) {
       recent_orders: serializedOrders.slice(0, 30),
     },
     analytics,
+    coupons,
     series_items: sortedSeries.map((row) => serializeOwnerSeries(row)),
     recent_series: sortedSeries.slice(0, 8).map((row) => serializeOwnerSeries(row)),
   };
@@ -5581,6 +5651,148 @@ async function handleOwnerDashboard(req: Request) {
 
   const payload = await buildOwnerDashboardPayload(access.userId);
   return json(req, payload);
+}
+
+function normalizeOwnerCouponDate(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const timestamp = Date.parse(raw);
+  if (!Number.isFinite(timestamp)) throw new Error("Informe uma data valida para o cupom");
+  return new Date(timestamp).toISOString();
+}
+
+function normalizeOwnerCouponLimit(value: unknown, maximum: number) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > maximum) {
+    throw new Error(`Informe um limite inteiro entre 1 e ${maximum}`);
+  }
+  return parsed;
+}
+
+async function buildOwnerCouponPayload(body: Record<string, unknown>) {
+  const code = normalizeCouponCode(body.code);
+  if (code.length < 3) throw new Error("O codigo precisa ter entre 3 e 32 caracteres");
+
+  const description = String(body.description ?? "").trim().slice(0, 240) || null;
+  const discountType = String(body.discount_type ?? "").trim().toLowerCase();
+  if (!new Set(["percentage", "fixed"]).has(discountType)) throw new Error("Escolha o tipo de desconto");
+
+  const discountValue = Number(body.discount_value ?? 0);
+  if (!Number.isFinite(discountValue) || discountValue <= 0 || discountValue > 10000) {
+    throw new Error("Informe um valor de desconto valido");
+  }
+  if (discountType === "percentage" && (!Number.isInteger(discountValue) || discountValue > 100)) {
+    throw new Error("O desconto percentual precisa ser inteiro entre 1 e 100");
+  }
+
+  const minimumAmount = Number(body.minimum_amount ?? 0);
+  if (!Number.isFinite(minimumAmount) || minimumAmount < 0 || minimumAmount > 100000) {
+    throw new Error("Informe um valor minimo valido");
+  }
+
+  const startsAt = normalizeOwnerCouponDate(body.starts_at);
+  const endsAt = normalizeOwnerCouponDate(body.ends_at);
+  if (startsAt && endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) {
+    throw new Error("O encerramento precisa acontecer depois do inicio");
+  }
+
+  const usageLimit = normalizeOwnerCouponLimit(body.usage_limit, 1000000);
+  const perUserLimit = normalizeOwnerCouponLimit(body.per_user_limit ?? 1, 100) ?? 1;
+  const eligibleIds = Array.from(new Set(
+    (Array.isArray(body.eligible_series_ids) ? body.eligible_series_ids : [])
+      .map((id) => String(id ?? "").trim())
+      .filter(Boolean),
+  )).slice(0, 50);
+  for (const id of eligibleIds) {
+    const row = await getSeriesById(id);
+    if (!row || isSeriesFree(row)) throw new Error("Selecione apenas series pagas existentes");
+  }
+
+  const normalizedValue = Number(discountValue.toFixed(2));
+  return {
+    code,
+    description,
+    discount_type: discountType,
+    discount_value: normalizedValue,
+    minimum_amount: Number(minimumAmount.toFixed(2)),
+    starts_at: startsAt,
+    ends_at: endsAt,
+    usage_limit: usageLimit,
+    per_user_limit: perUserLimit,
+    eligible_series_ids: eligibleIds,
+    active: body.active == null ? true : isTruthyInput(body.active),
+    updated_at: new Date().toISOString(),
+    discount_percent: discountType === "percentage" ? normalizedValue : null,
+    discount_fixed: discountType === "fixed" ? normalizedValue : null,
+    valid_until: endsAt,
+    max_uses: usageLimit,
+  };
+}
+
+async function handleOwnerCouponSave(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
+
+  try {
+    const payload = await buildOwnerCouponPayload(body);
+    const originalCode = normalizeCouponCode(body.original_code);
+    const lookupCode = originalCode || payload.code;
+    const currentRows = await supabaseFetch(`${COUPONS_TABLE}?select=code&code=eq.${encodeURIComponent(lookupCode)}&limit=1`);
+    const current = Array.isArray(currentRows) && currentRows.length > 0;
+
+    if (originalCode && !current) return json(req, { error: "Cupom nao encontrado" }, 404);
+    if (!originalCode && current) return json(req, { error: "Ja existe um cupom com este codigo" }, 409);
+    if (originalCode && originalCode !== payload.code) {
+      const conflict = await supabaseFetch(`${COUPONS_TABLE}?select=code&code=eq.${encodeURIComponent(payload.code)}&limit=1`);
+      if (Array.isArray(conflict) && conflict.length) return json(req, { error: "Ja existe um cupom com este codigo" }, 409);
+    }
+
+    const saved = current
+      ? await supabaseRestRequest(`${COUPONS_TABLE}?code=eq.${encodeURIComponent(lookupCode)}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json", prefer: "return=representation" },
+          body: stringifyJson(payload),
+        })
+      : await supabaseRestRequest(COUPONS_TABLE, {
+          method: "POST",
+          headers: { "content-type": "application/json", prefer: "return=representation" },
+          body: stringifyJson([{ ...payload, created_at: new Date().toISOString() }]),
+        });
+    const coupon = Array.isArray(saved) ? saved[0] : saved;
+    return json(req, { ok: true, coupon, dashboard: await buildOwnerDashboardPayload(access.userId) });
+  } catch (error) {
+    return json(req, { error: error instanceof Error ? error.message : "Nao foi possivel salvar o cupom" }, 400);
+  }
+}
+
+async function handleOwnerCouponAction(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
+
+  const code = normalizeCouponCode(body.code);
+  const operation = String(body.operation ?? "").trim().toLowerCase();
+  if (!code || !["activate", "deactivate"].includes(operation)) {
+    return json(req, { error: "Acao de cupom invalida" }, 400);
+  }
+  const rows = await supabaseFetch(`${COUPONS_TABLE}?select=code,ends_at&code=eq.${encodeURIComponent(code)}&limit=1`);
+  const coupon = Array.isArray(rows) && rows.length ? rows[0] as Record<string, unknown> : null;
+  if (!coupon) return json(req, { error: "Cupom nao encontrado" }, 404);
+  if (operation === "activate" && coupon.ends_at && (Date.parse(String(coupon.ends_at)) || 0) <= Date.now()) {
+    return json(req, { error: "Edite a data final antes de reativar este cupom" }, 409);
+  }
+
+  await supabaseRestRequest(`${COUPONS_TABLE}?code=eq.${encodeURIComponent(code)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", prefer: "return=minimal" },
+    body: stringifyJson({ active: operation === "activate", updated_at: new Date().toISOString() }),
+  });
+  return json(req, { ok: true, dashboard: await buildOwnerDashboardPayload(access.userId) });
 }
 
 async function verifyApprovedOrderForOwnerRetry(order: Record<string, unknown>) {
@@ -6537,6 +6749,14 @@ Deno.serve(async (req) => {
 
     if (action === "owner-dashboard") {
       return await handleOwnerDashboard(req);
+    }
+
+    if (action === "owner-coupon-save" && req.method === "POST") {
+      return await handleOwnerCouponSave(req);
+    }
+
+    if (action === "owner-coupon-action" && req.method === "POST") {
+      return await handleOwnerCouponAction(req);
     }
 
     if (action === "owner-order-retry" && req.method === "POST") {

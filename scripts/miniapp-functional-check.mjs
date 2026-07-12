@@ -117,6 +117,8 @@ let ownerMigrationApplied = false;
 let ownerOrderRetried = false;
 let cartServerState = { item_ids: [], coupon_code: '' };
 let checkoutRequestPayload = null;
+let ownerCouponSavePayload = null;
+let ownerCouponActionPayload = null;
 const deliveryLog = [];
 const progressLog = [];
 
@@ -552,6 +554,19 @@ async function installRoutes(page, options = {}) {
             abandonment_rate: 25,
             funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, delivery_completed: 1, cart_abandoned: 1 },
           },
+          coupons: {
+            total: 1,
+            active_total: 1,
+            scheduled_total: 0,
+            applied_uses: 2,
+            discount_total: 1.18,
+            items: [{
+              code: 'CLIENTE10', description: 'Campanha de clientes', discount_type: 'percentage', discount_value: 10,
+              minimum_amount: 5.9, starts_at: null, ends_at: null, usage_limit: 100, per_user_limit: 1,
+              eligible_series_ids: [], active: true, status: 'active', applied_uses: 2, reserved_uses: 0,
+              usage_total: 2, discount_total: 1.18, created_at: '2026-07-12T12:00:00Z', updated_at: '2026-07-12T12:00:00Z',
+            }],
+          },
           series_items: seriesItems,
           recent_series: seriesItems,
         }),
@@ -593,6 +608,18 @@ async function installRoutes(page, options = {}) {
           },
         }),
       });
+      return;
+    }
+
+    if (action === 'owner-coupon-save') {
+      ownerCouponSavePayload = route.request().postDataJSON?.() || {};
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, coupon: ownerCouponSavePayload }) });
+      return;
+    }
+
+    if (action === 'owner-coupon-action') {
+      ownerCouponActionPayload = route.request().postDataJSON?.() || {};
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) });
       return;
     }
 
@@ -959,7 +986,21 @@ async function main() {
       seoField: Boolean(document.querySelector('#ownerSeriesForm [name="seo_title"]')),
       editorialButtons: document.querySelectorAll('[data-owner-editorial-action]').length,
       statusPills: document.querySelectorAll('.owner-pill-status').length,
+      couponForm: Boolean(document.querySelector('#ownerCouponForm')),
+      couponCards: document.querySelectorAll('.owner-coupon-card').length,
+      couponText: document.querySelector('.owner-coupon-section')?.textContent?.replace(/\s+/g, ' ').trim() || '',
     }));
+
+    await page.fill('#ownerCouponForm [name="code"]', 'novo15');
+    await page.selectOption('#ownerCouponForm [name="discount_type"]', 'percentage');
+    await page.fill('#ownerCouponForm [name="discount_value"]', '15');
+    await page.fill('#ownerCouponForm [name="minimum_amount"]', '5.90');
+    await page.fill('#ownerCouponForm [name="usage_limit"]', '50');
+    await page.locator('#ownerCouponForm button[type="submit"]').click();
+    await waitForNodeCondition(() => ownerCouponSavePayload !== null);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('[data-owner-coupon-action="deactivate"]').click();
+    await waitForNodeCondition(() => ownerCouponActionPayload !== null);
 
     await page.locator('[data-owner-migrate-priority]').click();
     await page.waitForTimeout(1200);
@@ -1043,7 +1084,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260712-01')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260712-02')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1089,6 +1130,9 @@ async function main() {
     if (customerHistoryState.path !== '/historico' || customerHistoryState.cards !== 1 || customerHistoryState.progressWidth !== '42%') failures.push(`customer history failed: ${JSON.stringify(customerHistoryState)}`);
     if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral')) || !ownerState.text.includes('Conversão e abandono')) failures.push('owner area failed');
     if (!ownerState.seoField || !ownerState.statusField || !ownerState.deliveryField || ownerState.editorialButtons < 2 || ownerState.statusPills < 2) failures.push(`owner CMS lifecycle failed: ${JSON.stringify(ownerState)}`);
+    if (!ownerState.couponForm || ownerState.couponCards !== 1 || !ownerState.couponText.includes('CLIENTE10')) failures.push(`owner coupon UI failed: ${JSON.stringify(ownerState)}`);
+    if (ownerCouponSavePayload?.code !== 'NOVO15' || ownerCouponSavePayload?.discount_type !== 'percentage' || Number(ownerCouponSavePayload?.discount_value) !== 15 || Number(ownerCouponSavePayload?.usage_limit) !== 50) failures.push(`owner coupon save failed: ${JSON.stringify(ownerCouponSavePayload)}`);
+    if (ownerCouponActionPayload?.code !== 'CLIENTE10' || ownerCouponActionPayload?.operation !== 'deactivate') failures.push(`owner coupon action failed: ${JSON.stringify(ownerCouponActionPayload)}`);
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Prontas2') && !migratedOwnerState.text.includes('Em fila0'))) failures.push('owner migration failed');
     if (!ownerOrderRetried || ownerRetryState.retryButton || !ownerRetryState.text.includes('Nenhuma entrega precisa de intervenção')) failures.push('owner delivery retry failed');
     if (webRouteState.runtime !== 'web' || !webRouteState.telegramButtonVisible || webRouteState.modalTitle !== 'Direto Funcional' || !webRouteState.title.includes('Direto Funcional') || !webRouteState.canonical.endsWith('/series/direto-funcional') || webRouteState.structuredType !== 'Movie') failures.push('public series route failed');
@@ -1129,6 +1173,8 @@ async function main() {
         customerOrdersState,
         customerHistoryState,
         ownerState,
+        ownerCouponSavePayload,
+        ownerCouponActionPayload,
         migratedOwnerState,
         ownerRetryState,
         webRouteState,

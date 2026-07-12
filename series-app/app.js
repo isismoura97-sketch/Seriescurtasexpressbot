@@ -7,7 +7,7 @@
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260712-01';
+const BUILD_VERSION = '20260712-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -128,6 +128,7 @@ let ownerCoverPreviewObjectUrl = '';
 let ownerDashboardSnapshot = null;
 let ownerSeriesSearchTerm = '';
 let ownerSeriesFilterMode = 'all';
+let ownerCouponEditCode = '';
 let ownerSessionAuthorized = false;
 let supportRequestPending = false;
 let customerAreaSnapshot = null;
@@ -2210,6 +2211,23 @@ async function requestOwnerOrderRetry(orderId) {
     }, 2 * 60 * 1000);
 }
 
+async function requestOwnerCouponSave(payload) {
+    return await requestJson(`${API_URL}?action=owner-coupon-save`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        ...payload,
+    }, 30000);
+}
+
+async function requestOwnerCouponAction(code, operation) {
+    return await requestJson(`${API_URL}?action=owner-coupon-action`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        code,
+        operation,
+    }, 30000);
+}
+
 function isOwnerUser() {
     return ownerSessionAuthorized;
 }
@@ -2734,6 +2752,36 @@ function wireOwnerDashboardControls() {
     retryOrderButtons.forEach((button) => {
         if (!(button instanceof HTMLButtonElement)) return;
         button.onclick = () => retryOwnerOrderDelivery(button.dataset.ownerOrderRetry || '', button);
+    });
+
+    const couponForm = document.getElementById('ownerCouponForm');
+    if (couponForm instanceof HTMLFormElement) {
+        couponForm.onsubmit = submitOwnerCoupon;
+        const discountType = couponForm.elements.namedItem('discount_type');
+        const discountValue = couponForm.elements.namedItem('discount_value');
+        const syncDiscountField = () => {
+            if (!(discountType instanceof HTMLSelectElement) || !(discountValue instanceof HTMLInputElement)) return;
+            const percentage = discountType.value === 'percentage';
+            discountValue.max = percentage ? '100' : '10000';
+            discountValue.step = percentage ? '1' : '0.01';
+            discountValue.placeholder = percentage ? '10' : '5,90';
+        };
+        discountType?.addEventListener('change', syncDiscountField);
+        syncDiscountField();
+    }
+    document.querySelectorAll('[data-owner-coupon-reset]').forEach((button) => {
+        if (button instanceof HTMLButtonElement) button.onclick = resetOwnerCouponEditor;
+    });
+    document.querySelectorAll('[data-owner-coupon-edit]').forEach((button) => {
+        if (button instanceof HTMLButtonElement) button.onclick = () => editOwnerCoupon(button.dataset.ownerCouponEdit || '');
+    });
+    document.querySelectorAll('[data-owner-coupon-action]').forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.onclick = () => runOwnerCouponAction(
+            button.dataset.ownerCouponCode || '',
+            button.dataset.ownerCouponAction || '',
+            button,
+        );
     });
 
     const searchInput = document.getElementById('ownerSeriesSearchInput');
@@ -3304,6 +3352,240 @@ function renderOwnerEditorialActions(serie) {
     `;
 }
 
+function getOwnerCouponStatusMeta(status) {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'active') return { label: 'Ativa', tone: 'success', icon: 'fa-circle-check' };
+    if (normalized === 'scheduled') return { label: 'Agendada', tone: 'info', icon: 'fa-calendar-check' };
+    if (normalized === 'expired') return { label: 'Expirada', tone: 'warning', icon: 'fa-hourglass-end' };
+    return { label: 'Encerrada', tone: 'muted', icon: 'fa-circle-pause' };
+}
+
+function formatOwnerCouponDateInput(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+}
+
+function formatOwnerCouponDiscount(coupon) {
+    const value = Number(coupon?.discount_value || 0);
+    return coupon?.discount_type === 'percentage' ? `${value}%` : formatOwnerCurrency(value);
+}
+
+function renderOwnerCouponSection(couponData, paidSeries) {
+    const coupons = Array.isArray(couponData?.items) ? couponData.items : [];
+    const editingCoupon = coupons.find((coupon) => coupon.code === ownerCouponEditCode) || null;
+    const selectedSeries = new Set(Array.isArray(editingCoupon?.eligible_series_ids) ? editingCoupon.eligible_series_ids.map(String) : []);
+    const seriesOptions = paidSeries.map((serie) => `
+        <label class="owner-coupon-series-option">
+            <input type="checkbox" name="eligible_series_ids" value="${escapeAttr(String(serie.id || ''))}" ${selectedSeries.has(String(serie.id || '')) ? 'checked' : ''}>
+            <span>${escapeHtml(serie.title || 'Série')}</span>
+        </label>
+    `).join('') || '<p class="owner-coupon-empty-copy">Nenhuma série paga cadastrada. Sem seleção, o cupom será válido para todas as séries pagas futuras.</p>';
+
+    const couponCards = coupons.map((coupon) => {
+        const status = getOwnerCouponStatusMeta(coupon.status);
+        const scope = Array.isArray(coupon.eligible_series_ids) && coupon.eligible_series_ids.length
+            ? `${coupon.eligible_series_ids.length} série(s)`
+            : 'Todas as séries pagas';
+        const useLimit = coupon.usage_limit ? `${coupon.usage_total || 0}/${coupon.usage_limit}` : `${coupon.usage_total || 0} usos`;
+        const period = coupon.starts_at || coupon.ends_at
+            ? `${coupon.starts_at ? formatOwnerDate(coupon.starts_at) : 'Agora'} até ${coupon.ends_at ? formatOwnerDate(coupon.ends_at) : 'Sem prazo'}`
+            : 'Sem período definido';
+        return `
+            <article class="owner-coupon-card" data-owner-coupon-code="${escapeAttr(coupon.code || '')}">
+                <div class="owner-coupon-card-head">
+                    <div>
+                        <span class="owner-order-kicker">Cupom</span>
+                        <strong>${escapeHtml(coupon.code || '')}</strong>
+                    </div>
+                    <span class="owner-order-badge owner-order-badge-${escapeAttr(status.tone)}"><i class="fas ${escapeAttr(status.icon)}"></i> ${escapeHtml(status.label)}</span>
+                </div>
+                <div class="owner-coupon-value">${escapeHtml(formatOwnerCouponDiscount(coupon))} de desconto</div>
+                ${coupon.description ? `<p>${escapeHtml(coupon.description)}</p>` : ''}
+                <div class="owner-coupon-meta">
+                    <span><i class="fas fa-bullseye"></i> ${escapeHtml(scope)}</span>
+                    <span><i class="fas fa-users"></i> ${escapeHtml(useLimit)}</span>
+                    <span><i class="fas fa-receipt"></i> Mínimo ${escapeHtml(formatOwnerCurrency(coupon.minimum_amount))}</span>
+                    <span><i class="fas fa-calendar"></i> ${escapeHtml(period)}</span>
+                </div>
+                <div class="owner-coupon-card-actions">
+                    <button type="button" class="btn btn-secondary" data-owner-coupon-edit="${escapeAttr(coupon.code || '')}"><i class="fas fa-pen"></i> Editar</button>
+                    <button type="button" class="btn ${coupon.active ? 'btn-danger' : 'btn-primary'}" data-owner-coupon-action="${coupon.active ? 'deactivate' : 'activate'}" data-owner-coupon-code="${escapeAttr(coupon.code || '')}">
+                        <i class="fas ${coupon.active ? 'fa-circle-pause' : 'fa-circle-play'}"></i> ${coupon.active ? 'Encerrar' : 'Ativar'}
+                    </button>
+                </div>
+            </article>
+        `;
+    }).join('') || `
+        <div class="owner-order-empty-state owner-coupon-empty">
+            <i class="fas fa-ticket"></i>
+            <strong>Nenhum cupom cadastrado</strong>
+            <span>Crie a primeira campanha usando o formulário.</span>
+        </div>
+    `;
+
+    return `
+        <section class="owner-section owner-coupon-section">
+            <div class="owner-section-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-ticket"></i> Cupons e campanhas</span>
+                    <h3>Descontos com regras claras</h3>
+                    <p>Crie campanhas, limite usos e escolha séries. O checkout sempre recalcula o desconto no backend.</p>
+                </div>
+                <div class="owner-coupon-summary">
+                    <span><strong>${escapeHtml(String(couponData?.active_total ?? 0))}</strong> ativas</span>
+                    <span><strong>${escapeHtml(String(couponData?.applied_uses ?? 0))}</strong> usos pagos</span>
+                </div>
+            </div>
+            <div class="owner-coupon-layout">
+                <form class="owner-coupon-form" id="ownerCouponForm">
+                    <input type="hidden" name="original_code" value="${escapeAttr(editingCoupon?.code || '')}">
+                    <div class="owner-form-head owner-coupon-form-head">
+                        <div>
+                            <span class="owner-eyebrow">${editingCoupon ? 'Editando campanha' : 'Nova campanha'}</span>
+                            <h3>${editingCoupon ? escapeHtml(editingCoupon.code) : 'Criar cupom'}</h3>
+                        </div>
+                        ${editingCoupon ? '<button type="button" class="btn btn-secondary" data-owner-coupon-reset>Cancelar edição</button>' : ''}
+                    </div>
+                    <div class="owner-upload-grid">
+                        <label class="payment-field">
+                            <span>Código</span>
+                            <input type="text" name="code" minlength="3" maxlength="32" pattern="[A-Za-z0-9_\\-]{3,32}" value="${escapeAttr(editingCoupon?.code || '')}" placeholder="EXEMPLO10" required>
+                        </label>
+                        <label class="payment-field">
+                            <span>Tipo de desconto</span>
+                            <select name="discount_type">
+                                <option value="percentage" ${editingCoupon?.discount_type !== 'fixed' ? 'selected' : ''}>Percentual</option>
+                                <option value="fixed" ${editingCoupon?.discount_type === 'fixed' ? 'selected' : ''}>Valor fixo</option>
+                            </select>
+                        </label>
+                        <label class="payment-field">
+                            <span>Valor do desconto</span>
+                            <input type="number" name="discount_value" min="1" max="10000" step="1" value="${escapeAttr(String(editingCoupon?.discount_value || ''))}" placeholder="10" required>
+                        </label>
+                        <label class="payment-field">
+                            <span>Compra mínima</span>
+                            <input type="number" name="minimum_amount" min="0" max="100000" step="0.01" value="${escapeAttr(String(editingCoupon?.minimum_amount || 0))}">
+                        </label>
+                        <label class="payment-field">
+                            <span>Início opcional</span>
+                            <input type="datetime-local" name="starts_at" value="${escapeAttr(formatOwnerCouponDateInput(editingCoupon?.starts_at))}">
+                        </label>
+                        <label class="payment-field">
+                            <span>Encerramento opcional</span>
+                            <input type="datetime-local" name="ends_at" value="${escapeAttr(formatOwnerCouponDateInput(editingCoupon?.ends_at))}">
+                        </label>
+                        <label class="payment-field">
+                            <span>Limite total opcional</span>
+                            <input type="number" name="usage_limit" min="1" max="1000000" step="1" value="${escapeAttr(String(editingCoupon?.usage_limit || ''))}">
+                        </label>
+                        <label class="payment-field">
+                            <span>Limite por cliente</span>
+                            <input type="number" name="per_user_limit" min="1" max="100" step="1" value="${escapeAttr(String(editingCoupon?.per_user_limit || 1))}" required>
+                        </label>
+                        <label class="payment-field owner-upload-span-2">
+                            <span>Descrição interna</span>
+                            <textarea name="description" rows="2" maxlength="240" placeholder="Objetivo desta campanha">${escapeHtml(editingCoupon?.description || '')}</textarea>
+                        </label>
+                    </div>
+                    <fieldset class="owner-coupon-series-fieldset">
+                        <legend>Séries elegíveis</legend>
+                        <p>Sem seleção, o cupom vale para todas as séries pagas.</p>
+                        <div class="owner-coupon-series-options">${seriesOptions}</div>
+                    </fieldset>
+                    <label class="owner-upload-toggle"><input type="checkbox" name="active" ${editingCoupon?.active === false ? '' : 'checked'}><span>Campanha ativa</span></label>
+                    <div class="owner-coupon-form-actions">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk"></i> ${editingCoupon ? 'Salvar alterações' : 'Criar cupom'}</button>
+                        <div class="owner-status" id="ownerCouponStatus" aria-live="polite"></div>
+                    </div>
+                </form>
+                <div class="owner-coupon-list">${couponCards}</div>
+            </div>
+        </section>
+    `;
+}
+
+function resetOwnerCouponEditor() {
+    ownerCouponEditCode = '';
+    if (ownerDashboardSnapshot) renderOwnerDashboard(ownerDashboardSnapshot);
+}
+
+function editOwnerCoupon(code) {
+    ownerCouponEditCode = String(code || '');
+    if (ownerDashboardSnapshot) {
+        renderOwnerDashboard(ownerDashboardSnapshot);
+        document.getElementById('ownerCouponForm')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function ownerCouponLocalDateToIso(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+}
+
+async function submitOwnerCoupon(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement) || !form.reportValidity()) return;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const data = new FormData(form);
+    const payload = {
+        original_code: data.get('original_code') || '',
+        code: String(data.get('code') || '').trim().toUpperCase(),
+        description: data.get('description') || '',
+        discount_type: data.get('discount_type') || 'percentage',
+        discount_value: data.get('discount_value') || '',
+        minimum_amount: data.get('minimum_amount') || 0,
+        starts_at: ownerCouponLocalDateToIso(data.get('starts_at')),
+        ends_at: ownerCouponLocalDateToIso(data.get('ends_at')),
+        usage_limit: data.get('usage_limit') || '',
+        per_user_limit: data.get('per_user_limit') || 1,
+        eligible_series_ids: data.getAll('eligible_series_ids').map(String),
+        active: data.has('active'),
+    };
+
+    try {
+        if (submitButton instanceof HTMLButtonElement) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+        }
+        const result = await requestOwnerCouponSave(payload);
+        ownerCouponEditCode = '';
+        if (result?.dashboard) renderOwnerDashboard(result.dashboard);
+        setOwnerStatus(`Cupom ${payload.code} salvo com sucesso.`, 'success');
+        showToast('Campanha salva com sucesso.', 'success');
+    } catch (error) {
+        const status = document.getElementById('ownerCouponStatus');
+        if (status) {
+            status.textContent = error?.message || 'Não foi possível salvar o cupom.';
+            status.className = 'owner-status error';
+        }
+    } finally {
+        if (submitButton instanceof HTMLButtonElement && submitButton.isConnected) {
+            submitButton.disabled = false;
+        }
+    }
+}
+
+async function runOwnerCouponAction(code, operation, button) {
+    const actionLabel = operation === 'activate' ? 'ativar' : 'encerrar';
+    if (!window.confirm(`Deseja ${actionLabel} o cupom ${code}?`)) return;
+    try {
+        if (button instanceof HTMLButtonElement) button.disabled = true;
+        const result = await requestOwnerCouponAction(code, operation);
+        if (ownerCouponEditCode === code && operation === 'deactivate') ownerCouponEditCode = '';
+        if (result?.dashboard) renderOwnerDashboard(result.dashboard);
+        showToast(`Cupom ${operation === 'activate' ? 'ativado' : 'encerrado'}.`, 'success');
+    } catch (error) {
+        showToast(error?.message || 'Não foi possível atualizar o cupom.', 'error');
+        if (button instanceof HTMLButtonElement) button.disabled = false;
+    }
+}
+
 function renderOwnerDashboard(data) {
     if (!DOM.ownerDashboard) return;
 
@@ -3311,6 +3593,7 @@ function renderOwnerDashboard(data) {
     const catalog = data?.catalog || {};
     const payments = data?.payments || {};
     const analytics = data?.analytics || {};
+    const coupons = data?.coupons || {};
     const funnel = analytics.funnel || {};
     const seriesItems = Array.isArray(data?.series_items) ? data.series_items : [];
     const recentSeries = Array.isArray(data?.recent_series) ? data.recent_series : [];
@@ -3563,6 +3846,7 @@ function renderOwnerDashboard(data) {
             </div>
             <div class="owner-orders-grid">${deliveryQueueRows}</div>
         </section>
+        ${renderOwnerCouponSection(coupons, ownerSeriesCatalog.filter((serie) => !isFree(serie)))}
         <div class="owner-workspace-grid">
             <section class="owner-section owner-section-featured owner-editor-section">
                 <div class="owner-form-head">
