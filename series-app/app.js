@@ -5,9 +5,13 @@
 
 'use strict';
 
+window.si = window.si || function () {
+    (window.siq = window.siq || []).push(arguments);
+};
+
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260712-02';
+const BUILD_VERSION = '20260712-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -1509,6 +1513,11 @@ function isAwaitingPayment(order) {
     return ['created', 'pending', 'pending_payment', 'in_process', 'pending_review'].includes(status);
 }
 
+function isTerminalPaymentFailure(order) {
+    const status = String(order?.status || '').toLowerCase();
+    return ['rejected', 'cancelled', 'canceled', 'expired', 'failed', 'payment_review'].includes(status);
+}
+
 function isDeliveryPending(order) {
     if (!order || String(order.status || '').toLowerCase() !== 'approved') return false;
     return String(order.delivery_status || 'pending').toLowerCase() !== 'completed';
@@ -1670,12 +1679,17 @@ function renderPaymentSummary(order) {
     const status = String(order.status || 'created');
     const deliveryStatus = String(order.delivery_status || 'pending').toLowerCase();
     const deliveryPending = status === 'approved' && deliveryStatus !== 'completed';
+    const terminalFailure = isTerminalPaymentFailure(order);
     const shortOrderId = String(order.order_id || '').slice(0, 8);
     const statusLabel = status === 'approved'
         ? deliveryPending ? 'Pagamento aprovado • enviando' : 'Liberado no Telegram'
         : status === 'pending_payment' || status === 'created'
             ? 'Falta pouco'
-            : status;
+            : status === 'payment_review'
+                ? 'Pagamento em análise'
+                : terminalFailure
+                    ? 'Pagamento não concluído'
+                    : status;
 
     DOM.paymentSummaryPanel.hidden = false;
     DOM.paymentSummaryStatus.innerHTML = `
@@ -1740,6 +1754,16 @@ function renderPaymentSummary(order) {
     if (status === 'approved') {
         openButton.innerHTML = '<i class="fab fa-telegram"></i> Abrir bot';
         openButton.addEventListener('click', () => openTelegramBotLink(TELEGRAM_BOT_LINK));
+    } else if (status === 'payment_review') {
+        openButton.innerHTML = '<i class="fas fa-headset"></i> Falar com suporte';
+        openButton.addEventListener('click', openSupportForm);
+    } else if (terminalFailure) {
+        openButton.innerHTML = '<i class="fas fa-rotate-right"></i> Tentar nova compra';
+        openButton.addEventListener('click', () => {
+            clearActivePaymentOrder();
+            renderPaymentSummary(null);
+            updateCartUI();
+        });
     } else if (method === 'pix_qr') {
         openButton.innerHTML = '<i class="fas fa-copy"></i> Copiar código Pix';
         openButton.addEventListener('click', async () => {
@@ -1793,7 +1817,7 @@ function renderPaymentSummary(order) {
         DOM.paymentSummaryActions.appendChild(ticketButton);
     }
 
-    setCheckoutLoading(status !== 'approved' || deliveryPending);
+    setCheckoutLoading(isAwaitingPayment(order) || deliveryPending);
 }
 
 async function copyToClipboard(text) {
@@ -2748,6 +2772,14 @@ function restoreOwnerSeriesEditorState() {
 }
 
 function wireOwnerDashboardControls() {
+    document.querySelectorAll('.owner-series-thumb').forEach((image) => {
+        if (!(image instanceof HTMLImageElement)) return;
+        image.onerror = () => {
+            image.onerror = null;
+            image.src = PLACEHOLDER_IMAGE;
+        };
+    });
+
     const retryOrderButtons = document.querySelectorAll('[data-owner-order-retry]');
     retryOrderButtons.forEach((button) => {
         if (!(button instanceof HTMLButtonElement)) return;
@@ -3657,7 +3689,7 @@ function renderOwnerDashboard(data) {
             return `
                 <article class="owner-series-row owner-series-row-priority">
                     <div class="owner-series-thumb-wrap">
-                        <img class="owner-series-thumb" src="${escapeHtml(coverUrl)}" alt="${escapeHtml(serie.title || 'Capa da série')}" loading="lazy" onerror="${escapeHtml(`this.src=${JSON.stringify(PLACEHOLDER_IMAGE)}`)}">
+                        <img class="owner-series-thumb" src="${escapeAttr(coverUrl)}" alt="${escapeAttr(serie.title || 'Capa da série')}" loading="lazy">
                     </div>
                     <div class="owner-series-row-main">
                         <strong>${escapeHtml(serie.title || 'Sem título')}</strong>
@@ -3702,7 +3734,7 @@ function renderOwnerDashboard(data) {
             return `
                 <article class="owner-series-row">
                     <div class="owner-series-thumb-wrap">
-                        <img class="owner-series-thumb" src="${escapeHtml(coverUrl)}" alt="${escapeHtml(serie.title || 'Capa da série')}" loading="lazy" onerror="${escapeHtml(`this.src=${JSON.stringify(PLACEHOLDER_IMAGE)}`)}">
+                        <img class="owner-series-thumb" src="${escapeAttr(coverUrl)}" alt="${escapeAttr(serie.title || 'Capa da série')}" loading="lazy">
                     </div>
                     <div class="owner-series-row-main">
                         <strong>${escapeHtml(serie.title || 'Sem título')}</strong>
@@ -4329,11 +4361,16 @@ async function refreshPaymentStatus(orderId, shouldToast = true) {
                     showToast('Pagamento aprovado. A entrega está sendo processada no Telegram.', 'success');
                 }
             }
-        } else if (status === 'rejected' || status === 'cancelled' || status === 'canceled' || status === 'expired') {
+        } else if (isTerminalPaymentFailure(order)) {
             stopPaymentStatusPolling();
             renderPaymentSummary(order);
             if (shouldToast) {
-                showToast('Pagamento não concluído. Você pode tentar novamente.', 'error');
+                showToast(
+                    status === 'payment_review'
+                        ? 'O pagamento precisa de conferência. Fale com o suporte.'
+                        : 'Pagamento não concluído. Você pode tentar novamente.',
+                    'error'
+                );
             }
         } else if (!paymentStatusTimer) {
             startPaymentStatusPolling(String(order.order_id || orderId || ''));
@@ -4525,6 +4562,7 @@ function setupEventListeners() {
         if (e.target.id === 'ownerOverlay') closeOwnerArea();
     });
     DOM.cartBtn?.addEventListener('click', () => toggleCart(true));
+    document.getElementById('cartCloseBtn')?.addEventListener('click', () => toggleCart(false));
     DOM.checkoutBtn?.addEventListener('click', checkout);
     DOM.cartCouponBtn?.addEventListener('click', () => void applyCartCoupon());
     DOM.cartCouponInput?.addEventListener('keydown', (event) => {
@@ -4589,6 +4627,7 @@ function setupEventListeners() {
     document.querySelectorAll('.player-back, .player-close').forEach(btn => {
         btn.addEventListener('click', closePlayer);
     });
+    document.getElementById('playerErrorCloseBtn')?.addEventListener('click', closePlayer);
 
     document.querySelector('.modal-close')?.addEventListener('click', closeModal);
     DOM.modalOverlay?.addEventListener('click', (e) => {

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 const API_URL = process.env.SERIES_API_URL || 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api?action=series';
 const SITE_URL = (process.env.SERIES_SITE_URL || 'https://seriescurtasexpressbot.vercel.app').replace(/\/+$/, '');
@@ -34,6 +35,16 @@ function replaceMeta(html, attribute, key, value) {
   const escapedValue = escapeHtml(value);
   const pattern = new RegExp(`<meta\\s+${attribute}="${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"\\s+content="[^"]*"\\s*\/?>`, 'i');
   return html.replace(pattern, `<meta ${attribute}="${key}" content="${escapedValue}">`);
+}
+
+function applyStructuredDataCsp(html) {
+  const match = html.match(/<script id="seriesStructuredData" type="application\/ld\+json">([\s\S]*?)<\/script>/i);
+  if (!match) throw new Error('Structured data block not found');
+  const hash = createHash('sha256').update(match[1], 'utf8').digest('base64');
+  return html.replace(
+    /script-src 'self' https:\/\/telegram\.org(?: 'sha256-[A-Za-z0-9+/=]+')*;/,
+    `script-src 'self' https://telegram.org 'sha256-${hash}';`,
+  );
 }
 
 function isFreeSeries(serie) {
@@ -92,14 +103,15 @@ function buildSeriesHtml(template, serie, slug) {
   html = replaceMeta(html, 'name', 'robots', serie.seo_noindex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large');
   html = html.replace(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeHtml(canonical)}">`);
   html = html.replace(/<script id="seriesStructuredData" type="application\/ld\+json">[\s\S]*?<\/script>/i, `<script id="seriesStructuredData" type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`);
-  return html;
+  return applyStructuredDataCsp(html);
 }
 
 const response = await fetch(API_URL, { headers: { accept: 'application/json' } });
 if (!response.ok) throw new Error(`Catalog request failed (${response.status})`);
 const catalog = await response.json();
 if (!Array.isArray(catalog)) throw new Error('Catalog response is not an array');
-const indexTemplate = await fs.readFile(indexTemplatePath, 'utf8');
+const indexTemplate = applyStructuredDataCsp(await fs.readFile(indexTemplatePath, 'utf8'));
+await fs.writeFile(indexTemplatePath, indexTemplate, 'utf8');
 await fs.rm(seriesPagesDirectory, { recursive: true, force: true });
 await fs.mkdir(seriesPagesDirectory, { recursive: true });
 

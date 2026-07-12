@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-12 - Revisão de estabilidade e segurança
+
+- corrigida a liberação indevida de pagamentos apenas autorizados e ainda não capturados;
+- adicionada conciliação de valor, moeda, captura e referência antes da entrega;
+- adicionada idempotência obrigatória na criação do Pix;
+- protegidas as rotas operacionais de consulta e reparo do webhook do Telegram;
+- corrigido polling infinito e checkout travado em pagamentos rejeitados ou sob revisão;
+- corrigida a ordem de exclusão para não apagar mídia antes da confirmação no banco;
+- removidos handlers JavaScript inline e endurecida a CSP;
+- adicionados testes Deno de conciliação e cobertura de cupom direcionado a série paga;
+- adicionados índices para chaves estrangeiras apontadas pelo advisor do Supabase.
+
 Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 
 ## Em desenvolvimento

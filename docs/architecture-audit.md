@@ -28,13 +28,11 @@ O Series Curtas Express e uma aplicacao estatica hospedada na Vercel. A interfac
 
 ## Dividas tecnicas
 
-- A aplicacao bloqueia todo o catalogo quando nao existe usuario Telegram.
-- Nao ha modelo unico para contexto Telegram/navegador.
-- URLs publicas ainda nao representam busca, categoria e serie.
-- Metadados SEO sao estaticos e nao acompanham a serie aberta.
-- A busca considera apenas parte dos dados disponiveis.
-- A Edge Function concentra Telegram, pagamento, catalogo, administracao e moderacao.
-- Parte dos campos editoriais desejados ainda nao existe no banco.
+- A Edge Function ainda concentra Telegram, pagamento, catalogo, administracao e moderacao.
+- A autenticacao web independente ainda nao existe; operacoes privadas continuam vinculadas ao Telegram.
+- Parte das tabelas legadas permanece no banco embora nao participe dos fluxos comerciais atuais.
+- O frontend estatico ainda exige regeneracao das paginas de serie quando metadados SEO mudam.
+- A cobertura automatizada do backend prioriza conciliacao de pagamento; outros handlers ainda dependem do smoke integrado.
 
 ## Riscos e limites
 

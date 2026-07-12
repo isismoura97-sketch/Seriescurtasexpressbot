@@ -17,7 +17,7 @@ const TELEGRAM_BOT_USERNAME = (
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
 const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "SÃ©ries Curtas Express <onboarding@resend.dev>";
-const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260711-01";
+const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260712-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
 const MERCADO_PAGO_ACCESS_TOKEN = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN") ?? "";
@@ -1364,6 +1364,7 @@ async function createMercadoPagoPixPayment(order: {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "x-idempotency-key": order.orderId,
       },
       body: stringifyJson({
         transaction_amount: Number(order.amount.toFixed(2)),
@@ -1631,10 +1632,37 @@ async function sendPaymentConfirmationMessage(
 function normalizeWebhookStatus(value: unknown) {
   const status = String(value ?? "").trim().toLowerCase();
   if (!status) return "pending";
-  if (status === "authorized") return "approved";
+  // Authorized payments still need capture and must never release content.
+  if (status === "authorized") return "pending";
   if (status === "in_process") return "pending";
   if (status === "in_mediation") return "pending";
   return status;
+}
+
+function validateApprovedPaymentForOrder(order: Record<string, unknown>, payment: Record<string, unknown>) {
+  const orderId = String(order.order_id ?? "").trim();
+  const storedPaymentId = String(order.mercado_pago_payment_id ?? "").trim();
+  const paymentId = String(payment.id ?? "").trim();
+  const externalReference = String(payment.external_reference ?? "").trim();
+  const metadata = payment.metadata as Record<string, unknown> | undefined;
+  const metadataOrderId = String(metadata?.order_id ?? "").trim();
+  const references = [externalReference, metadataOrderId].filter(Boolean);
+
+  if (!orderId) return "Pedido sem identificador interno";
+  if (references.length && !references.includes(orderId)) return "Pagamento vinculado a outro pedido";
+  if (!references.length && (!storedPaymentId || !paymentId || storedPaymentId !== paymentId)) {
+    return "Pagamento sem referencia confiavel ao pedido";
+  }
+
+  const expectedCents = Math.round((Number(order.amount ?? 0) || 0) * 100);
+  const paidAmount = Number(payment.transaction_amount);
+  const paidCents = Number.isFinite(paidAmount) ? Math.round(paidAmount * 100) : -1;
+  if (expectedCents <= 0 || paidCents !== expectedCents) return "Valor pago diverge do valor do pedido";
+
+  const currency = String(payment.currency_id ?? "").trim().toUpperCase();
+  if (currency !== "BRL") return "Moeda do pagamento invalida";
+  if (payment.captured === false) return "Pagamento ainda nao foi capturado";
+  return "";
 }
 
 function getHeaderValue(req: Request, names: string[]) {
@@ -1788,6 +1816,25 @@ async function claimOrderDelivery(order: Record<string, unknown>) {
 async function applyMercadoPagoPaymentState(order: Record<string, unknown>, payment: Record<string, unknown>, webhookPayload: unknown) {
   const previousStatus = String(order.status ?? "");
   const currentStatus = normalizeWebhookStatus(payment.status);
+  const orderId = String(order.order_id ?? "").trim();
+  if (currentStatus === "approved") {
+    const reconciliationError = validateApprovedPaymentForOrder(order, payment);
+    if (reconciliationError) {
+      const reviewOrder = orderId
+        ? await updatePaymentOrderRecord(orderId, {
+          status: "payment_review",
+          mercado_pago_payment_id: String(payment.id ?? order.mercado_pago_payment_id ?? ""),
+          webhook_payload: webhookPayload,
+          last_event_at: new Date().toISOString(),
+          error_message: reconciliationError,
+        }) as Record<string, unknown>
+        : order;
+      if (orderId) await updateCouponRedemption(orderId, "reversed");
+      console.error("[PAYMENT] Pagamento aprovado bloqueado na conciliacao:", reconciliationError, orderId);
+      return reviewOrder;
+    }
+  }
+
   const nextPatch: Record<string, unknown> = {
     mercado_pago_payment_id: String(payment.id ?? order.mercado_pago_payment_id ?? ""),
     webhook_payload: webhookPayload,
@@ -1818,7 +1865,6 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
     nextPatch.canceled_at = new Date().toISOString();
   }
 
-  const orderId = String(order.order_id ?? "").trim();
   const updatedOrder = orderId
     ? await updatePaymentOrderRecord(orderId, nextPatch) as Record<string, unknown>
     : order;
@@ -2305,7 +2351,7 @@ async function handleMercadoPagoWebhook(req: Request, url: URL) {
     }
 
     order = await applyMercadoPagoPaymentState(order as Record<string, unknown>, payment, payload);
-    const currentStatus = normalizeWebhookStatus(payment.status);
+    const currentStatus = String(order.status ?? normalizeWebhookStatus(payment.status));
 
     return json(req, {
       ok: true,
@@ -3934,10 +3980,24 @@ async function handleTelegramWebhook(req: Request) {
   return json(req, { ok: true, action: "captcha_sent" });
 }
 
+function validateTelegramOperationalRequest(req: Request) {
+  if (!TELEGRAM_WEBHOOK_SECRET) {
+    return json(req, { ok: false, error: "TELEGRAM_WEBHOOK_SECRET nao configurado" }, 503);
+  }
+  const secretToken = req.headers.get("x-telegram-bot-api-secret-token") || "";
+  if (!constantTimeEqual(secretToken, TELEGRAM_WEBHOOK_SECRET)) {
+    return json(req, { ok: false, error: "Acesso operacional negado" }, 403);
+  }
+  return null;
+}
+
 async function handleTelegramWebhookInfo(req: Request) {
   if (!TELEGRAM_BOT_TOKEN) {
     return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN nao configurado" }, 500);
   }
+
+  const accessError = validateTelegramOperationalRequest(req);
+  if (accessError) return accessError;
 
   const info = await getTelegramWebhookInfo() as Record<string, unknown>;
   return json(req, {
@@ -3954,6 +4014,9 @@ async function handleTelegramWebhookRepair(req: Request) {
   if (!TELEGRAM_WEBHOOK_SECRET) {
     return json(req, { ok: false, error: "TELEGRAM_WEBHOOK_SECRET nao configurado" }, 500);
   }
+
+  const accessError = validateTelegramOperationalRequest(req);
+  if (accessError) return accessError;
 
   const webhookUrl = SUPABASE_URL
     ? new URL(`/functions/v1/${FUNCTION_NAME}/api`, SUPABASE_URL)
@@ -6373,8 +6436,6 @@ async function handleOwnerSeriesDelete(req: Request) {
     return json(req, { error: "Serie nao encontrada" }, 404);
   }
 
-  await deleteSeriesMediaAssets(existingRow as Record<string, unknown>);
-
   await supabaseRestRequest(
     buildSeriesRowFilter(seriesId),
     {
@@ -6385,6 +6446,8 @@ async function handleOwnerSeriesDelete(req: Request) {
       },
     },
   );
+
+  await deleteSeriesMediaAssets(existingRow as Record<string, unknown>);
 
   const dashboard = await buildOwnerDashboardPayload(access.userId);
   return json(req, {
@@ -6663,7 +6726,9 @@ async function handleSupportSubmitV2(req: Request) {
   });
 }
 
-Deno.serve(async (req) => {
+export { normalizeWebhookStatus, validateApprovedPaymentForOrder };
+
+if (import.meta.main) Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(req) });
   }
@@ -6731,7 +6796,7 @@ Deno.serve(async (req) => {
       return await proxyTelegramFile(req, fileId, title);
     }
 
-    if (action === "checkout-create") {
+    if (action === "checkout-create" && req.method === "POST") {
       return await handlePaymentCreate(req);
     }
 
@@ -6743,11 +6808,11 @@ Deno.serve(async (req) => {
       return await handleCartSync(req);
     }
 
-    if (action === "payment-status") {
+    if (action === "payment-status" && req.method === "POST") {
       return await handlePaymentStatus(req);
     }
 
-    if (action === "owner-dashboard") {
+    if (action === "owner-dashboard" && req.method === "POST") {
       return await handleOwnerDashboard(req);
     }
 
@@ -6786,23 +6851,23 @@ Deno.serve(async (req) => {
       return await handleOwnerSeriesAction(req);
     }
 
-    if (action === "mercado-pago-webhook") {
+    if (action === "mercado-pago-webhook" && req.method === "POST") {
       return await handleMercadoPagoWebhook(req, url);
     }
 
-    if (action === "telegram-webhook-info") {
+    if (action === "telegram-webhook-info" && req.method === "GET") {
       return await handleTelegramWebhookInfo(req);
     }
 
-    if (action === "telegram-webhook-repair") {
+    if (action === "telegram-webhook-repair" && req.method === "POST") {
       return await handleTelegramWebhookRepair(req);
     }
 
-    if (action === "telegram-webhook") {
+    if (action === "telegram-webhook" && req.method === "POST") {
       return await handleTelegramWebhook(req);
     }
 
-    if (action === "captcha-verify") {
+    if (action === "captcha-verify" && req.method === "POST") {
       return await handleCaptchaVerify(req);
     }
 

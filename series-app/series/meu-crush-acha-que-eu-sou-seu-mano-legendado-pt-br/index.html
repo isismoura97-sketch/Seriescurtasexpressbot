@@ -33,12 +33,12 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="/styles.css?v=20260712-02">
+    <link rel="stylesheet" href="/styles.css?v=20260712-03">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy" 
           content="default-src 'self' https:; 
-                   script-src 'self' https://telegram.org 'unsafe-inline'; 
+                   script-src 'self' https://telegram.org 'sha256-iPu1o+ztB+MQlxl5VDO9VC43jxFXJtXA1VDZ8/DE6s4=';
                    style-src 'self' https://fonts.googleapis.com https://cdn.jsdelivr.net 'unsafe-inline'; 
                    font-src https://fonts.gstatic.com https://cdn.jsdelivr.net data:; 
                    connect-src 'self' https://uyyeascxvnrkjtlygdoe.supabase.co https://*.supabase.co; 
@@ -80,7 +80,7 @@
             </div>
 
             <div class="loading-player" id="playerLoading">
-                <img class="player-loading-logo" src="/assets/logo-welcome.png?v=20260712-02" alt="Séries Express">
+                <img class="player-loading-logo" src="/assets/logo-welcome.png?v=20260712-03" alt="Séries Express">
                 <div class="spinner"></div>
                 <div class="player-loading-title" id="playerLoadingTitle">Preparando reprodução</div>
                 <div class="player-loading-subtitle" id="playerLoadingSubtitle">Carregando vídeo dentro do Mini App...</div>
@@ -96,10 +96,10 @@
                         <p id="playerErrorDesc">Tente novamente dentro do Mini App.</p>
                     </div>
                     <div class="player-error-actions">
-                        <button class="btn btn-primary" id="playerErrorAction" onclick="retryPlayer()">
+                        <button class="btn btn-primary" id="playerErrorAction">
                             <i class="fas fa-redo"></i> Tentar Novamente
                         </button>
-                        <button class="btn btn-secondary" onclick="closePlayer()">
+                        <button class="btn btn-secondary" id="playerErrorCloseBtn">
                             <i class="fas fa-times"></i> Fechar
                         </button>
                     </div>
@@ -145,7 +145,7 @@
     <aside class="cart-drawer" id="cartDrawer" role="dialog" aria-modal="true" aria-labelledby="cartTitle">
         <div class="cart-header">
             <h3 id="cartTitle"><i class="fas fa-shopping-cart"></i> Seu Carrinho</h3>
-            <button class="icon-btn" onclick="toggleCart(false)" aria-label="Fechar carrinho">
+            <button class="icon-btn" id="cartCloseBtn" aria-label="Fechar carrinho">
                 <i class="fas fa-times"></i>
             </button>
         </div>
@@ -429,14 +429,11 @@
         <p>© <span id="currentYear"></span> Séries Curtas Express.</p>
     </footer>
 
-    <!-- Vercel Speed Insights -->
-    <script>
-      window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
-    </script>
-    <script defer src="/_vercel/speed-insights/script.js"></script>
-
     <!-- Script Principal -->
-    <script defer src="/app.min.js?v=20260712-02"></script>
+    <script defer src="/app.min.js?v=20260712-03"></script>
+
+    <!-- Vercel Speed Insights -->
+    <script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>
 

@@ -111,6 +111,17 @@ Secrets necessários no Supabase:
 
 Depois de configurar os secrets, faça o deploy da function `bot-unificado`.
 
+### Garantias de pagamento
+
+- pagamentos Pix usam `X-Idempotency-Key` derivada do pedido;
+- apenas o status `approved` pode liberar conteúdo;
+- pagamentos apenas autorizados continuam pendentes até a captura;
+- valor, moeda, captura e referência são conciliados no backend antes da entrega;
+- divergências ficam em `payment_review`, sem liberar a série;
+- webhook, consulta de status e entrega continuam idempotentes.
+
+As rotas operacionais `telegram-webhook-info` e `telegram-webhook-repair` exigem o header `x-telegram-bot-api-secret-token` com o valor de `TELEGRAM_WEBHOOK_SECRET`.
+
 ## Bot + Mini App
 
 Fluxo integrado atual:

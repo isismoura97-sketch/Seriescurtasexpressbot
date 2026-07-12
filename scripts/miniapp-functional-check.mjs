@@ -442,8 +442,8 @@ async function installRoutes(page, options = {}) {
             series_with_episode_files: 1,
           }
         : {
-            series_total: 2,
-            playable_series: 1,
+            series_total: 3,
+            playable_series: 2,
             internal_playback_series: 1,
             migration_needed: 1,
             missing_playback: 0,
@@ -514,6 +514,22 @@ async function installRoutes(page, options = {}) {
               has_video_url: false,
               has_video_file_id: false,
               video_file_id: 'TG_MIGRATE',
+            },
+            {
+              id: 'paid-owner-series',
+              title: 'Serie Paga Elegivel',
+              description: 'Serie paga usada para validar campanhas direcionadas.',
+              category: 'Romance',
+              status: 'published',
+              content_delivery_type: 'telegram',
+              price: 5.9,
+              created_at: '2026-07-01T12:00:00Z',
+              cover_url: svgCover('Paga', '#552211'),
+              has_cover: true,
+              has_trailer: false,
+              has_video_url: false,
+              has_video_file_id: true,
+              video_file_id: 'TG_PAID_OWNER',
             },
           ];
       await route.fulfill({
@@ -996,6 +1012,7 @@ async function main() {
     await page.fill('#ownerCouponForm [name="discount_value"]', '15');
     await page.fill('#ownerCouponForm [name="minimum_amount"]', '5.90');
     await page.fill('#ownerCouponForm [name="usage_limit"]', '50');
+    await page.check('#ownerCouponForm [name="eligible_series_ids"][value="paid-owner-series"]');
     await page.locator('#ownerCouponForm button[type="submit"]').click();
     await waitForNodeCondition(() => ownerCouponSavePayload !== null);
     page.once('dialog', (dialog) => dialog.accept());
@@ -1084,7 +1101,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260712-02')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260712-03')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1131,7 +1148,7 @@ async function main() {
     if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral')) || !ownerState.text.includes('Conversão e abandono')) failures.push('owner area failed');
     if (!ownerState.seoField || !ownerState.statusField || !ownerState.deliveryField || ownerState.editorialButtons < 2 || ownerState.statusPills < 2) failures.push(`owner CMS lifecycle failed: ${JSON.stringify(ownerState)}`);
     if (!ownerState.couponForm || ownerState.couponCards !== 1 || !ownerState.couponText.includes('CLIENTE10')) failures.push(`owner coupon UI failed: ${JSON.stringify(ownerState)}`);
-    if (ownerCouponSavePayload?.code !== 'NOVO15' || ownerCouponSavePayload?.discount_type !== 'percentage' || Number(ownerCouponSavePayload?.discount_value) !== 15 || Number(ownerCouponSavePayload?.usage_limit) !== 50) failures.push(`owner coupon save failed: ${JSON.stringify(ownerCouponSavePayload)}`);
+    if (ownerCouponSavePayload?.code !== 'NOVO15' || ownerCouponSavePayload?.discount_type !== 'percentage' || Number(ownerCouponSavePayload?.discount_value) !== 15 || Number(ownerCouponSavePayload?.usage_limit) !== 50 || ownerCouponSavePayload?.eligible_series_ids?.[0] !== 'paid-owner-series') failures.push(`owner coupon save failed: ${JSON.stringify(ownerCouponSavePayload)}`);
     if (ownerCouponActionPayload?.code !== 'CLIENTE10' || ownerCouponActionPayload?.operation !== 'deactivate') failures.push(`owner coupon action failed: ${JSON.stringify(ownerCouponActionPayload)}`);
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Prontas2') && !migratedOwnerState.text.includes('Em fila0'))) failures.push('owner migration failed');
     if (!ownerOrderRetried || ownerRetryState.retryButton || !ownerRetryState.text.includes('Nenhuma entrega precisa de intervenção')) failures.push('owner delivery retry failed');
