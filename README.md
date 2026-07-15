@@ -12,6 +12,7 @@ Aplicação web estática para o catálogo "Séries Curtas Express", com integra
 - `series-app/vercel.json` - configuração de SPA para Vercel
 - `docs/architecture-audit.md` - arquitetura, riscos e estratégia incremental
 - `docs/PAYMENTS_AND_ENTITLEMENTS.md` - canais de pagamento, conciliação, acessos e operação
+- `docs/FUNNEL_ANALYTICS.md` - eventos, idempotência e métricas reais do funil
 - `CHANGELOG.md` - histórico de mudanças relevantes
 
 ## Execução local

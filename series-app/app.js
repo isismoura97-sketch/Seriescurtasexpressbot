@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260714-01';
+const BUILD_VERSION = '20260715-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -29,6 +29,7 @@ const BUYER_EMAIL_STORAGE_KEY = 'checkout_buyer_email';
 const ACTIVE_PAYMENT_ORDER_STORAGE_KEY = 'checkout_active_order';
 const FAVORITES_STORAGE_KEY = 'series_favorites';
 const CART_UPDATED_AT_STORAGE_KEY = 'cart_updated_at';
+const CART_ABANDONMENT_REPORTED_AT_STORAGE_KEY = 'cart_abandonment_reported_at';
 const ANALYTICS_SESSION_STORAGE_KEY = 'analytics_session_id';
 const ANALYTICS_ENDPOINT = `${API_URL}?action=analytics-event`;
 const STATIC_PIX_QR_IMAGE_URL = `/assets/pix-qr.png?v=${BUILD_VERSION}`;
@@ -156,6 +157,8 @@ function trackAnalyticsEvent(eventName, details = {}) {
     if (!userId || !tg?.initData || !eventName) return;
     const payload = {
         init_data: tg.initData,
+        event_id: details.event_id || details.eventId || globalThis.crypto?.randomUUID?.()
+            || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         event_name: eventName,
         series_id: details.series_id || details.seriesId || '',
         order_id: details.order_id || details.orderId || '',
@@ -179,12 +182,19 @@ function trackStaleCartAbandonment() {
     } catch (_) {
         return;
     }
-    if (!updatedAt || Date.now() - updatedAt < 30 * 60 * 1000) return;
+    let reportedAt = 0;
+    try {
+        reportedAt = Number(localStorage.getItem(CART_ABANDONMENT_REPORTED_AT_STORAGE_KEY) || 0);
+    } catch (_) {
+        return;
+    }
+    if (!updatedAt || reportedAt >= updatedAt || Date.now() - updatedAt < 30 * 60 * 1000) return;
     trackAnalyticsEvent('cart_abandoned', {
+        event_id: `cart-abandoned:${userId}:${updatedAt}`,
         metadata: { item_count: cart.length, reason: 'stale_cart' },
     });
     try {
-        localStorage.setItem(CART_UPDATED_AT_STORAGE_KEY, String(Date.now()));
+        localStorage.setItem(CART_ABANDONMENT_REPORTED_AT_STORAGE_KEY, String(updatedAt));
     } catch (_) {
         // analytics is best effort
     }
@@ -390,6 +400,7 @@ function saveCart(context = 'CART') {
             localStorage.setItem(CART_UPDATED_AT_STORAGE_KEY, String(Date.now()));
         } else {
             localStorage.removeItem(CART_UPDATED_AT_STORAGE_KEY);
+            localStorage.removeItem(CART_ABANDONMENT_REPORTED_AT_STORAGE_KEY);
         }
         return true;
     } catch (e) {
@@ -3660,6 +3671,9 @@ function renderOwnerDashboard(data) {
     const analytics = data?.analytics || {};
     const coupons = data?.coupons || {};
     const funnel = analytics.funnel || {};
+    const conversionRates = analytics.conversion_rates || {};
+    const analyticsChannels = analytics.channels && typeof analytics.channels === 'object' ? analytics.channels : {};
+    const topSeriesMetrics = Array.isArray(analytics.top_series) ? analytics.top_series : [];
     const seriesItems = Array.isArray(data?.series_items) ? data.series_items : [];
     const recentSeries = Array.isArray(data?.recent_series) ? data.recent_series : [];
     const catalogSeries = seriesItems.length ? seriesItems : recentSeries;
@@ -3708,6 +3722,28 @@ function renderOwnerDashboard(data) {
     const recentRows = recentOrders
         .map((order) => renderOwnerOrderCard(order, false))
         .join('') || '<div class="owner-empty-state"><strong>Nenhum pedido recente</strong><span>Os novos pedidos aparecerão aqui automaticamente.</span></div>';
+
+    const channelRows = Object.entries(analyticsChannels).map(([channel, metrics]) => {
+        const label = channel === 'web' ? 'Web' : 'Telegram';
+        return `
+            <div class="owner-analytics-list-row">
+                <span>${escapeHtml(label)}</span>
+                <strong>${escapeHtml(String(metrics?.purchase_completed ?? 0))} compras</strong>
+                <small>${escapeHtml(String(metrics?.checkout_conversion_rate ?? 0))}% do checkout</small>
+            </div>
+        `;
+    }).join('') || '<div class="owner-empty-state"><span>Ainda não há dados suficientes por canal.</span></div>';
+
+    const topSeriesRows = topSeriesMetrics.slice(0, 5).map((metric) => {
+        const serie = catalogSeries.find((item) => sameId(item.id, metric?.series_id));
+        return `
+            <div class="owner-analytics-list-row">
+                <span>${escapeHtml(serie?.title || 'Série do catálogo')}</span>
+                <strong>${escapeHtml(String(metric?.purchases ?? 0))} compras</strong>
+                <small>${escapeHtml(String(metric?.views ?? 0))} visualizações</small>
+            </div>
+        `;
+    }).join('') || '<div class="owner-empty-state"><span>As séries mais acessadas aparecerão aqui.</span></div>';
 
     const prioritySeriesRows = prioritySeries.slice(0, 4)
         .map((serie) => {
@@ -3881,8 +3917,8 @@ function renderOwnerDashboard(data) {
                     <strong>${escapeHtml(String(analytics.unique_users ?? 0))}</strong>
                 </div>
                 <div class="owner-card owner-card-accent">
-                    <span>Abandono do checkout</span>
-                    <strong>${escapeHtml(String(analytics.abandonment_rate ?? 0))}%</strong>
+                    <span>Abandono do carrinho</span>
+                    <strong>${escapeHtml(String(analytics.cart_abandonment_rate ?? analytics.abandonment_rate ?? 0))}%</strong>
                 </div>
             </div>
             <div class="owner-action-strip">
@@ -4204,8 +4240,26 @@ function renderOwnerDashboard(data) {
                 <div class="owner-analytics-step"><span>Adicionou ao carrinho</span><strong>${escapeHtml(String(funnel.add_to_cart ?? 0))}</strong></div>
                 <div class="owner-analytics-step"><span>Iniciou checkout</span><strong>${escapeHtml(String(funnel.checkout_started ?? 0))}</strong></div>
                 <div class="owner-analytics-step"><span>Pagamento aprovado</span><strong>${escapeHtml(String(funnel.payment_approved ?? 0))}</strong></div>
+                <div class="owner-analytics-step"><span>Compra concluída</span><strong>${escapeHtml(String(funnel.purchase_completed ?? funnel.payment_approved ?? 0))}</strong></div>
                 <div class="owner-analytics-step"><span>Entrega concluída</span><strong>${escapeHtml(String(funnel.delivery_completed ?? 0))}</strong></div>
                 <div class="owner-analytics-step owner-analytics-step-warning"><span>Carrinho abandonado</span><strong>${escapeHtml(String(funnel.cart_abandoned ?? 0))}</strong></div>
+            </div>
+            <div class="owner-analytics-rate-grid" aria-label="Taxas de conversão do funil">
+                <div><span>App → série</span><strong>${escapeHtml(String(conversionRates.app_to_series ?? 0))}%</strong></div>
+                <div><span>Série → carrinho</span><strong>${escapeHtml(String(conversionRates.series_to_cart ?? 0))}%</strong></div>
+                <div><span>Carrinho → checkout</span><strong>${escapeHtml(String(conversionRates.cart_to_checkout ?? 0))}%</strong></div>
+                <div><span>Checkout → compra</span><strong>${escapeHtml(String(conversionRates.checkout_to_purchase ?? 0))}%</strong></div>
+                <div><span>Compra → entrega</span><strong>${escapeHtml(String(conversionRates.purchase_to_delivery ?? 0))}%</strong></div>
+            </div>
+            <div class="owner-analytics-breakdown">
+                <article>
+                    <h4>Conversão por canal</h4>
+                    ${channelRows}
+                </article>
+                <article>
+                    <h4>Séries com maior resultado</h4>
+                    ${topSeriesRows}
+                </article>
             </div>
         </section>
     `;

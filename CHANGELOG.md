@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-15 - Analytics confiável do funil
+
+- Eventos passaram a registrar identificador idempotente, origem e canal de venda.
+- Transições terminais de pagamento e entrega não são mais duplicadas por replay de webhook.
+- Abandono de carrinho passou a ser contado uma vez por versão do carrinho e deixa de ser ativo quando há compra posterior.
+- Painel da proprietária ganhou taxas entre etapas, conversão por canal e desempenho real por série.
+- Agregação do funil foi isolada em função testável e coberta por testes Deno.
+
 ## 2026-07-12 - Revisão de estabilidade e segurança
 
 - corrigida a liberação indevida de pagamentos apenas autorizados e ainda não capturados;

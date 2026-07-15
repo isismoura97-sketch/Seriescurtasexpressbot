@@ -571,8 +571,12 @@ async function installRoutes(page, options = {}) {
             period_days: 30,
             events_total: 12,
             unique_users: 3,
+            cart_abandonment_rate: 25,
             abandonment_rate: 25,
-            funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, delivery_completed: 1, cart_abandoned: 1 },
+            funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, purchase_completed: 1, delivery_completed: 1, cart_abandoned: 1 },
+            conversion_rates: { app_to_series: 100, series_to_cart: 66.7, cart_to_checkout: 100, checkout_to_purchase: 50, purchase_to_delivery: 100 },
+            channels: { telegram: { events: 12, unique_users: 3, checkout_started: 2, purchase_completed: 1, checkout_conversion_rate: 50 } },
+            top_series: [{ series_id: 'paid-series', views: 3, cart_additions: 2, purchases: 1 }],
           },
           coupons: {
             total: 1,
@@ -620,8 +624,11 @@ async function installRoutes(page, options = {}) {
               }],
             },
             analytics: {
-              period_days: 30, events_total: 12, unique_users: 3, abandonment_rate: 25,
-              funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, delivery_completed: 1, cart_abandoned: 1 },
+              period_days: 30, events_total: 12, unique_users: 3, cart_abandonment_rate: 25, abandonment_rate: 25,
+              funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, purchase_completed: 1, delivery_completed: 1, cart_abandoned: 1 },
+              conversion_rates: { app_to_series: 100, series_to_cart: 66.7, cart_to_checkout: 100, checkout_to_purchase: 50, purchase_to_delivery: 100 },
+              channels: { telegram: { events: 12, unique_users: 3, checkout_started: 2, purchase_completed: 1, checkout_conversion_rate: 50 } },
+              top_series: [{ series_id: 'paid-series', views: 3, cart_additions: 2, purchases: 1 }],
             },
             series_items: [],
             recent_series: [],
@@ -696,8 +703,12 @@ async function installRoutes(page, options = {}) {
               period_days: 30,
               events_total: 12,
               unique_users: 3,
+              cart_abandonment_rate: 25,
               abandonment_rate: 25,
-              funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, delivery_completed: 1, cart_abandoned: 1 },
+              funnel: { app_opened: 3, series_viewed: 3, add_to_cart: 2, checkout_started: 2, payment_approved: 1, purchase_completed: 1, delivery_completed: 1, cart_abandoned: 1 },
+              conversion_rates: { app_to_series: 100, series_to_cart: 66.7, cart_to_checkout: 100, checkout_to_purchase: 50, purchase_to_delivery: 100 },
+              channels: { telegram: { events: 12, unique_users: 3, checkout_started: 2, purchase_completed: 1, checkout_conversion_rate: 50 } },
+              top_series: [{ series_id: 'paid-series', views: 3, cart_additions: 2, purchases: 1 }],
             },
             series_items: [
               {
@@ -1105,7 +1116,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.starsActive || !initial.webMethodsHidden) failures.push('Telegram Stars not enforced inside Telegram');
-    if (!initial.appJs.includes('20260714-01')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260715-01')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1149,7 +1160,11 @@ async function main() {
     if (customerLibraryState.path !== '/minha-biblioteca' || customerLibraryState.cards !== 1 || !customerLibraryState.action.includes('Receber no Telegram')) failures.push(`customer library failed: ${JSON.stringify(customerLibraryState)}`);
     if (customerOrdersState.path !== '/minhas-compras' || customerOrdersState.cards !== 1 || customerOrdersState.paid !== 'Pago') failures.push(`customer orders failed: ${JSON.stringify(customerOrdersState)}`);
     if (customerHistoryState.path !== '/historico' || customerHistoryState.cards !== 1 || customerHistoryState.progressWidth !== '42%') failures.push(`customer history failed: ${JSON.stringify(customerHistoryState)}`);
-    if (!ownerState.visible || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral')) || !ownerState.text.includes('Conversão e abandono')) failures.push('owner area failed');
+    if (!ownerState.visible
+      || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral'))
+      || !ownerState.text.includes('Conversão e abandono')
+      || !ownerState.text.includes('Checkout → compra')
+      || !ownerState.text.includes('Conversão por canal')) failures.push('owner area failed');
     if (!ownerState.seoField || !ownerState.statusField || !ownerState.deliveryField || ownerState.editorialButtons < 2 || ownerState.statusPills < 2) failures.push(`owner CMS lifecycle failed: ${JSON.stringify(ownerState)}`);
     if (!ownerState.couponForm || ownerState.couponCards !== 1 || !ownerState.couponText.includes('CLIENTE10')) failures.push(`owner coupon UI failed: ${JSON.stringify(ownerState)}`);
     if (ownerCouponSavePayload?.code !== 'NOVO15' || ownerCouponSavePayload?.discount_type !== 'percentage' || Number(ownerCouponSavePayload?.discount_value) !== 15 || Number(ownerCouponSavePayload?.usage_limit) !== 50 || ownerCouponSavePayload?.eligible_series_ids?.[0] !== 'paid-owner-series') failures.push(`owner coupon save failed: ${JSON.stringify(ownerCouponSavePayload)}`);

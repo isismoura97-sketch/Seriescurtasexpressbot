@@ -1,4 +1,5 @@
 import {
+  buildOwnerAnalyticsSnapshot,
   normalizeWebhookStatus,
   validateApprovedPaymentForOrder,
   validateTelegramStarsPaymentForOrder,
@@ -117,4 +118,41 @@ Deno.test("pagamento em Stars bloqueia usuario, moeda, valor e pedido divergente
     "Fatura vinculada a outro pedido",
     "pedido divergente",
   );
+});
+
+Deno.test("funil calcula conversao, abandono ativo e resultado por serie", () => {
+  const events = [
+    { event_name: "app_opened", user_id: "u1", sales_channel: "telegram" },
+    { event_name: "series_viewed", user_id: "u1", series_id: "s1", sales_channel: "telegram" },
+    { event_name: "add_to_cart", user_id: "u1", series_id: "s1", sales_channel: "telegram" },
+    { event_name: "checkout_started", user_id: "u1", sales_channel: "telegram" },
+    { event_name: "purchase_completed", user_id: "u1", order_id: "o1", sales_channel: "telegram" },
+    { event_name: "delivery_completed", user_id: "u1", order_id: "o1", sales_channel: "telegram" },
+    { event_name: "app_opened", user_id: "u2", sales_channel: "telegram" },
+    { event_name: "series_viewed", user_id: "u2", series_id: "s1", sales_channel: "telegram" },
+    { event_name: "add_to_cart", user_id: "u2", series_id: "s1", sales_channel: "telegram" },
+    { event_name: "cart_abandoned", user_id: "u2", sales_channel: "telegram" },
+  ];
+  const snapshot = buildOwnerAnalyticsSnapshot(events, [{ order_id: "o1", series_id: "s1" }], 30);
+
+  assertEquals(snapshot.funnel.purchase_completed, 1, "compras concluidas");
+  assertEquals(snapshot.funnel.cart_abandoned, 1, "abandono ainda ativo");
+  assertEquals(snapshot.conversion_rates.cart_to_checkout, 50, "conversao do carrinho");
+  assertEquals(snapshot.conversion_rates.checkout_to_purchase, 100, "conversao do checkout");
+  assertEquals(snapshot.cart_abandonment_rate, 50, "taxa de abandono");
+  assertEquals(snapshot.channels.telegram.purchase_completed, 1, "compra por canal");
+  assertEquals(snapshot.top_series[0]?.purchases, 1, "compra atribuida a serie");
+  assertEquals(snapshot.top_series[0]?.views, 2, "visualizacoes atribuidas a serie");
+});
+
+Deno.test("compra posterior remove usuario do abandono ativo", () => {
+  const snapshot = buildOwnerAnalyticsSnapshot([
+    { event_name: "add_to_cart", user_id: "u1", series_id: "s1", sales_channel: "telegram" },
+    { event_name: "cart_abandoned", user_id: "u1", sales_channel: "telegram" },
+    { event_name: "checkout_started", user_id: "u1", sales_channel: "telegram" },
+    { event_name: "purchase_completed", user_id: "u1", order_id: "o1", sales_channel: "telegram" },
+  ]);
+
+  assertEquals(snapshot.funnel.cart_abandoned, 0, "abandono resolvido");
+  assertEquals(snapshot.cart_abandonment_rate, 0, "taxa corrigida apos compra");
 });

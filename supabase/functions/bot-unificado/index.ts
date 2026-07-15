@@ -1308,12 +1308,24 @@ function normalizeAnalyticsMetadata(value: unknown) {
   return output;
 }
 
+function normalizeAnalyticsEventId(value: unknown) {
+  const eventId = String(value ?? "").trim().slice(0, 160);
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/.test(eventId) ? eventId : null;
+}
+
+function normalizeAnalyticsChannel(value: unknown) {
+  return String(value ?? "").trim().toLowerCase() === "web" ? "web" : "telegram";
+}
+
 async function recordAppEvent(entry: {
   eventName: string;
   userId: string;
   seriesId?: string | null;
   orderId?: string | null;
   sessionId?: string | null;
+  eventId?: string | null;
+  eventSource?: "client" | "backend";
+  salesChannel?: "telegram" | "web";
   metadata?: Record<string, unknown>;
 }) {
   const eventName = String(entry.eventName ?? "").trim().toLowerCase();
@@ -1325,10 +1337,13 @@ async function recordAppEvent(entry: {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        prefer: "return=minimal",
+        prefer: "resolution=ignore-duplicates,return=minimal",
       },
       body: stringifyJson([{
+        event_id: normalizeAnalyticsEventId(entry.eventId),
         event_name: eventName,
+        event_source: entry.eventSource === "client" ? "client" : "backend",
+        sales_channel: normalizeAnalyticsChannel(entry.salesChannel),
         user_id: userId,
         series_id: entry.seriesId ? String(entry.seriesId).slice(0, 160) : null,
         order_id: entry.orderId ? String(entry.orderId).slice(0, 160) : null,
@@ -1365,6 +1380,9 @@ async function handleAnalyticsEvent(req: Request) {
     seriesId: String(body.series_id ?? body.serie_id ?? "").trim() || null,
     orderId: String(body.order_id ?? body.orderId ?? "").trim() || null,
     sessionId: String(body.session_id ?? body.sessionId ?? "").trim() || null,
+    eventId: normalizeAnalyticsEventId(body.event_id ?? body.eventId) || crypto.randomUUID(),
+    eventSource: "client",
+    salesChannel: "telegram",
     metadata: normalizeAnalyticsMetadata(body.metadata),
   });
 
@@ -2075,6 +2093,7 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
       eventName: "purchase_failed",
       userId: String(updatedOrder.user_id ?? ""),
       orderId,
+      salesChannel: normalizeAnalyticsChannel(updatedOrder.sales_channel),
       metadata: { payment_provider: "mercado_pago", payment_status: currentStatus },
     });
   }
@@ -2085,6 +2104,7 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
       eventName: currentStatus === "refunded" ? "purchase_refunded" : "purchase_chargeback",
       userId: String(updatedOrder.user_id ?? ""),
       orderId,
+      salesChannel: normalizeAnalyticsChannel(updatedOrder.sales_channel),
       metadata: { payment_provider: "mercado_pago" },
     });
   }
@@ -2107,6 +2127,7 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
         eventName: "payment_approved",
         userId: String(updatedOrder.user_id ?? ""),
         orderId,
+        salesChannel: normalizeAnalyticsChannel(updatedOrder.sales_channel),
         metadata: {
           payment_method: normalizeCheckoutMethod(updatedOrder.payment_method),
           delivery_status: String(deliverySummary?.deliveryStatus ?? updatedOrder.delivery_status ?? "pending"),
@@ -2116,6 +2137,7 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
         eventName: "purchase_completed",
         userId: String(updatedOrder.user_id ?? ""),
         orderId,
+        salesChannel: normalizeAnalyticsChannel(updatedOrder.sales_channel),
         metadata: {
           payment_provider: "mercado_pago",
           amount: Number(updatedOrder.amount ?? 0) || 0,
@@ -5484,6 +5506,7 @@ async function deliverApprovedOrderSeries(order: Record<string, unknown>) {
       eventName: "delivery_completed",
       userId: String(order.user_id ?? ""),
       orderId,
+      salesChannel: normalizeAnalyticsChannel(order.sales_channel),
       metadata: { item_count: uniqueItems.length },
     });
   }
@@ -6102,61 +6125,142 @@ function serializeOwnerSeries(row: Record<string, unknown>) {
   };
 }
 
-async function getOwnerAnalytics() {
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  try {
-    const data = await supabaseFetch(
-      `${APP_EVENTS_TABLE}?select=event_name,user_id,series_id,order_id,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`,
-    );
-    const rows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
-    const eventCounts: Record<string, number> = {};
-    const usersByEvent: Record<string, Set<string>> = {};
-    const uniqueUsers = new Set<string>();
+function analyticsPercentage(numerator: number, denominator: number) {
+  if (!denominator || numerator <= 0) return 0;
+  return Number((Math.min(1, numerator / denominator) * 100).toFixed(1));
+}
 
-    for (const row of rows) {
-      const eventName = String(row.event_name ?? "").trim();
-      const eventUser = String(row.user_id ?? "").trim();
-      if (!eventName) continue;
-      eventCounts[eventName] = (eventCounts[eventName] ?? 0) + 1;
-      usersByEvent[eventName] ??= new Set<string>();
-      if (eventUser) {
-        usersByEvent[eventName].add(eventUser);
-        uniqueUsers.add(eventUser);
-      }
+function buildOwnerAnalyticsSnapshot(
+  rows: Record<string, unknown>[],
+  orderItems: Record<string, unknown>[] = [],
+  periodDays = 30,
+) {
+  const eventCounts: Record<string, number> = {};
+  const usersByEvent: Record<string, Set<string>> = {};
+  const uniqueUsers = new Set<string>();
+  const channelData: Record<string, { events: number; users: Set<string>; checkout: Set<string>; purchases: Set<string> }> = {};
+  const seriesMetrics = new Map<string, { series_id: string; views: number; cart_additions: number; purchases: number }>();
+  const completedOrderIds = new Set<string>();
+
+  for (const row of rows) {
+    const eventName = String(row.event_name ?? "").trim().toLowerCase();
+    const eventUser = String(row.user_id ?? "").trim();
+    const seriesId = String(row.series_id ?? "").trim();
+    const orderId = String(row.order_id ?? "").trim();
+    const channel = normalizeAnalyticsChannel(row.sales_channel);
+    if (!eventName) continue;
+
+    eventCounts[eventName] = (eventCounts[eventName] ?? 0) + 1;
+    usersByEvent[eventName] ??= new Set<string>();
+    channelData[channel] ??= { events: 0, users: new Set<string>(), checkout: new Set<string>(), purchases: new Set<string>() };
+    channelData[channel].events += 1;
+
+    if (eventUser) {
+      usersByEvent[eventName].add(eventUser);
+      uniqueUsers.add(eventUser);
+      channelData[channel].users.add(eventUser);
+      if (eventName === "checkout_started" || eventName === "checkout_created") channelData[channel].checkout.add(eventUser);
+      if (eventName === "purchase_completed") channelData[channel].purchases.add(eventUser);
     }
+    if (eventName === "purchase_completed" && orderId) completedOrderIds.add(orderId);
 
-    const uniqueCount = (eventName: string) => usersByEvent[eventName]?.size ?? 0;
-    const checkoutStarted = uniqueCount("checkout_started");
-    const cartAbandoned = uniqueCount("cart_abandoned");
+    if (seriesId && (eventName === "series_viewed" || eventName === "add_to_cart")) {
+      const metric = seriesMetrics.get(seriesId) ?? { series_id: seriesId, views: 0, cart_additions: 0, purchases: 0 };
+      if (eventName === "series_viewed") metric.views += 1;
+      if (eventName === "add_to_cart") metric.cart_additions += 1;
+      seriesMetrics.set(seriesId, metric);
+    }
+  }
 
-    return {
-      period_days: 30,
-      events_total: rows.length,
-      unique_users: uniqueUsers.size,
-      event_counts: eventCounts,
-      funnel: {
-        app_opened: uniqueCount("app_opened"),
-        series_viewed: uniqueCount("series_viewed"),
-        add_to_cart: uniqueCount("add_to_cart"),
-        checkout_started: checkoutStarted,
-        payment_created: uniqueCount("payment_created"),
-        payment_approved: uniqueCount("payment_approved"),
-        delivery_completed: uniqueCount("delivery_completed"),
-        cart_abandoned: cartAbandoned,
-      },
-      abandonment_rate: checkoutStarted > 0
-        ? Number(((cartAbandoned / checkoutStarted) * 100).toFixed(1))
-        : 0,
-    };
+  for (const item of orderItems) {
+    const orderId = String(item.order_id ?? "").trim();
+    const seriesId = String(item.series_id ?? "").trim();
+    if (!seriesId || !completedOrderIds.has(orderId)) continue;
+    const metric = seriesMetrics.get(seriesId) ?? { series_id: seriesId, views: 0, cart_additions: 0, purchases: 0 };
+    metric.purchases += 1;
+    seriesMetrics.set(seriesId, metric);
+  }
+
+  const uniqueCount = (eventName: string) => usersByEvent[eventName]?.size ?? 0;
+  const appOpened = uniqueCount("app_opened");
+  const seriesViewed = uniqueCount("series_viewed");
+  const addedToCart = uniqueCount("add_to_cart");
+  const checkoutStarted = uniqueCount("checkout_started");
+  const purchasesCompleted = uniqueCount("purchase_completed");
+  const abandonedUsers = new Set(usersByEvent.cart_abandoned ?? []);
+  for (const purchaser of usersByEvent.purchase_completed ?? []) abandonedUsers.delete(purchaser);
+
+  const channels = Object.fromEntries(Object.entries(channelData).map(([channel, data]) => [channel, {
+    events: data.events,
+    unique_users: data.users.size,
+    checkout_started: data.checkout.size,
+    purchase_completed: data.purchases.size,
+    checkout_conversion_rate: analyticsPercentage(data.purchases.size, data.checkout.size),
+  }]));
+
+  return {
+    period_days: periodDays,
+    events_total: rows.length,
+    unique_users: uniqueUsers.size,
+    event_counts: eventCounts,
+    funnel: {
+      app_opened: appOpened,
+      series_viewed: seriesViewed,
+      add_to_cart: addedToCart,
+      checkout_started: checkoutStarted,
+      payment_created: uniqueCount("payment_created"),
+      payment_approved: uniqueCount("payment_approved"),
+      purchase_completed: purchasesCompleted,
+      purchase_failed: uniqueCount("purchase_failed"),
+      purchase_refunded: uniqueCount("purchase_refunded"),
+      purchase_chargeback: uniqueCount("purchase_chargeback"),
+      delivery_completed: uniqueCount("delivery_completed"),
+      cart_abandoned: abandonedUsers.size,
+    },
+    conversion_rates: {
+      app_to_series: analyticsPercentage(seriesViewed, appOpened),
+      series_to_cart: analyticsPercentage(addedToCart, seriesViewed),
+      cart_to_checkout: analyticsPercentage(checkoutStarted, addedToCart),
+      checkout_to_purchase: analyticsPercentage(purchasesCompleted, checkoutStarted),
+      purchase_to_delivery: analyticsPercentage(uniqueCount("delivery_completed"), purchasesCompleted),
+    },
+    cart_abandonment_rate: analyticsPercentage(abandonedUsers.size, addedToCart),
+    abandonment_rate: analyticsPercentage(abandonedUsers.size, addedToCart),
+    channels,
+    top_series: Array.from(seriesMetrics.values())
+      .sort((left, right) => right.purchases - left.purchases || right.views - left.views || right.cart_additions - left.cart_additions)
+      .slice(0, 10),
+  };
+}
+
+async function getOwnerAnalytics() {
+  const periodDays = 30;
+  const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    const [eventsData, itemsData] = await Promise.all([
+      supabaseFetch(
+        `${APP_EVENTS_TABLE}?select=event_name,user_id,series_id,order_id,event_source,sales_channel,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=10000`,
+      ),
+      supabaseFetch(
+        `${PAYMENT_ORDER_ITEMS_TABLE}?select=order_id,series_id,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`,
+      ),
+    ]);
+    const rows = Array.isArray(eventsData) ? eventsData as Record<string, unknown>[] : [];
+    const orderItems = Array.isArray(itemsData) ? itemsData as Record<string, unknown>[] : [];
+    return buildOwnerAnalyticsSnapshot(rows, orderItems, periodDays);
   } catch (error) {
     console.warn("[ANALYTICS] Falha ao carregar metricas do proprietario:", error instanceof Error ? error.message : String(error));
     return {
-      period_days: 30,
+      period_days: periodDays,
       events_total: 0,
       unique_users: 0,
       event_counts: {},
       funnel: {},
+      conversion_rates: {},
+      cart_abandonment_rate: 0,
       abandonment_rate: 0,
+      channels: {},
+      top_series: [],
     };
   }
 }
@@ -7348,6 +7452,7 @@ async function handleSupportSubmitV2(req: Request) {
 }
 
 export {
+  buildOwnerAnalyticsSnapshot,
   normalizeWebhookStatus,
   validateApprovedPaymentForOrder,
   validateTelegramStarsPaymentForOrder,
