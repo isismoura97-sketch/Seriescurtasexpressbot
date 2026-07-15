@@ -32,6 +32,13 @@ const SHOPPING_CARTS_TABLE = Deno.env.get("SHOPPING_CARTS_TABLE") ?? "shopping_c
 const COUPONS_TABLE = Deno.env.get("COUPONS_TABLE") ?? "coupons";
 const COUPON_REDEMPTIONS_TABLE = Deno.env.get("COUPON_REDEMPTIONS_TABLE") ?? "coupon_redemptions";
 const APP_EVENTS_TABLE = Deno.env.get("APP_EVENTS_TABLE") ?? "app_events";
+const USER_NOTIFICATION_PREFERENCES_TABLE = Deno.env.get("USER_NOTIFICATION_PREFERENCES_TABLE") ?? "user_notification_preferences";
+const CHECKOUT_RECOVERIES_TABLE = Deno.env.get("CHECKOUT_RECOVERIES_TABLE") ?? "checkout_recoveries";
+const CHECKOUT_RECOVERY_ENABLED = (Deno.env.get("CHECKOUT_RECOVERY_ENABLED") ?? "true").toLowerCase() !== "false";
+const CHECKOUT_RECOVERY_DELAY_MINUTES = Math.min(10080, Math.max(15, Number(Deno.env.get("CHECKOUT_RECOVERY_DELAY_MINUTES") ?? "60") || 60));
+const CHECKOUT_RECOVERY_MAX_AGE_HOURS = Math.min(720, Math.max(1, Number(Deno.env.get("CHECKOUT_RECOVERY_MAX_AGE_HOURS") ?? "24") || 24));
+const CHECKOUT_RECOVERY_USER_COOLDOWN_HOURS = Math.min(2160, Math.max(1, Number(Deno.env.get("CHECKOUT_RECOVERY_USER_COOLDOWN_HOURS") ?? "168") || 168));
+const CHECKOUT_RECOVERY_BATCH_SIZE = Math.min(100, Math.max(1, Number(Deno.env.get("CHECKOUT_RECOVERY_BATCH_SIZE") ?? "25") || 25));
 const TELEGRAM_STARS_DEFAULT_PRICE = Math.max(1, Math.round(Number(Deno.env.get("TELEGRAM_STARS_DEFAULT_PRICE") ?? "50") || 50));
 const OWNER_TELEGRAM_USER_ID = Deno.env.get("OWNER_TELEGRAM_USER_ID") ?? "";
 const OWNER_AREA_PASSWORD = Deno.env.get("OWNER_AREA_PASSWORD") ?? "";
@@ -136,6 +143,8 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "remove_from_cart",
   "checkout_started",
   "checkout_created",
+  "checkout_abandoned",
+  "checkout_recovered",
   "checkout_reused",
   "payment_created",
   "payment_approved",
@@ -155,7 +164,7 @@ function corsHeaders(req: Request) {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "authorization,apikey,content-type,x-client-info,range,x-webapp-init-data,x-request-id,x-owner-password,x-owner-field-name,x-owner-file-name,x-owner-series-id",
+    "access-control-allow-headers": "authorization,apikey,content-type,x-client-info,range,x-webapp-init-data,x-request-id,x-owner-password,x-owner-field-name,x-owner-file-name,x-owner-series-id,x-checkout-recovery-secret",
     "access-control-allow-credentials": "true",
     "access-control-max-age": "86400",
     "vary": "Origin",
@@ -1057,6 +1066,7 @@ async function createPaymentOrderRecord(entry: {
   providerCurrency?: "BRL" | "XTR";
   providerAmount?: number | null;
 }) {
+  const createdAt = new Date();
   const rows = await supabaseRestRequest(PAYMENT_ORDERS_TABLE, {
     method: "POST",
     headers: {
@@ -1085,6 +1095,9 @@ async function createPaymentOrderRecord(entry: {
         buyer_name: entry.buyerName ?? null,
         description: entry.description,
         external_reference: entry.orderId,
+        checkout_last_seen_at: createdAt.toISOString(),
+        recovery_eligible_at: new Date(createdAt.getTime() + CHECKOUT_RECOVERY_DELAY_MINUTES * 60 * 1000).toISOString(),
+        checkout_expires_at: new Date(createdAt.getTime() + CHECKOUT_RECOVERY_MAX_AGE_HOURS * 60 * 60 * 1000).toISOString(),
       },
     ]),
   });
@@ -1106,6 +1119,13 @@ async function createPaymentOrderRecord(entry: {
     throw error;
   }
   return order;
+}
+
+function buildCheckoutRecoveryLaunchUrl(orderId: string) {
+  const url = new URL(SERIES_WEBAPP_URL);
+  url.searchParams.set("payment_order_id", orderId);
+  url.searchParams.set("checkout_recovery", "1");
+  return url.toString();
 }
 
 async function createPaymentOrderItemRecords(
@@ -1551,6 +1571,7 @@ async function createMercadoPagoPixPayment(order: {
           ? transactionData.qr_code_base64
           : MERCADO_PAGO_PIX_QR_CODE_BASE64,
       ticketUrl: typeof transactionData?.ticket_url === "string" ? transactionData.ticket_url : "",
+      expiresAt: typeof response.date_of_expiration === "string" ? response.date_of_expiration : "",
       response,
       fallback: false,
     };
@@ -1563,6 +1584,7 @@ async function createMercadoPagoPixPayment(order: {
         qrCode: MERCADO_PAGO_PIX_COPY || MERCADO_PAGO_PIX_KEY,
         qrCodeBase64: MERCADO_PAGO_PIX_QR_CODE_BASE64,
         ticketUrl: "",
+        expiresAt: "",
         response: {
           fallback: true,
           error: message,
@@ -2524,6 +2546,8 @@ async function handlePaymentCreate(req: Request) {
         pix_qr_code: pix.qrCode || null,
         pix_qr_code_base64: pix.qrCodeBase64 || null,
         ticket_url: pix.ticketUrl || null,
+        qr_code_expires_at: pix.expiresAt || null,
+        checkout_expires_at: pix.expiresAt || order.checkout_expires_at,
         webhook_payload: pix.response,
         last_event_at: new Date().toISOString(),
       }) as Record<string, unknown>;
@@ -2595,6 +2619,190 @@ async function handlePaymentCreate(req: Request) {
   }
 }
 
+function getCheckoutRecoverySkipReason(
+  order: Record<string, unknown> | null,
+  preferences: NotificationPreferences,
+  now = new Date(),
+) {
+  if (!CHECKOUT_RECOVERY_ENABLED) return "feature_disabled";
+  if (!order) return "order_not_found";
+  const status = String(order.status ?? "").trim().toLowerCase();
+  if (!["created", "pending", "pending_payment", "in_process", "pending_review"].includes(status)) {
+    return "order_not_pending";
+  }
+  if (order.confirmed_at || order.paid_at) return "order_already_paid";
+  if (order.canceled_at || order.rejected_at) return "order_closed";
+  const expiresAt = Date.parse(String(order.checkout_expires_at ?? order.qr_code_expires_at ?? ""));
+  if (Number.isFinite(expiresAt) && expiresAt <= now.getTime()) return "checkout_expired";
+  if (!preferences.bot_started_at) return "bot_not_started";
+  if (!preferences.checkout_abandoned_enabled || !preferences.recovery_consented_at) return "recovery_not_authorized";
+  if (preferences.notification_channel !== "telegram") return "telegram_channel_disabled";
+
+  const method = normalizeCheckoutMethod(order.payment_method);
+  if (method === "pix_qr" && !order.pix_qr_code && !order.ticket_url) return "checkout_data_missing";
+  if ((method === "mercado_pago_link" || method === "telegram_checkout") && !order.checkout_url) {
+    return "checkout_data_missing";
+  }
+  return "";
+}
+
+async function userHasAnyOrderEntitlement(userId: string, order: Record<string, unknown>) {
+  const itemIds = getOrderItemIds(order).filter((value) => /^[0-9a-f-]{36}$/i.test(value));
+  if (!itemIds.length) return true;
+  const inFilter = `(${itemIds.join(",")})`;
+  const rows = await supabaseFetch(
+    `${ENTITLEMENTS_TABLE}?select=series_id&user_id=eq.${encodeURIComponent(userId)}&status=eq.active&series_id=in.${encodeURIComponent(inFilter)}&limit=1`,
+  );
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function updateCheckoutRecovery(orderId: string, patch: Record<string, unknown>) {
+  return await supabaseRestRequest(`${CHECKOUT_RECOVERIES_TABLE}?order_id=eq.${encodeURIComponent(orderId)}`, {
+    method: "PATCH",
+    headers: {
+      "content-type": "application/json",
+      prefer: "return=representation",
+    },
+    body: stringifyJson({ updated_at: new Date().toISOString(), ...patch }),
+  });
+}
+
+async function validateCheckoutRecoveryRequest(req: Request) {
+  const secret = String(req.headers.get("x-checkout-recovery-secret") ?? "").trim();
+  if (!secret || secret.length > 256) return false;
+  try {
+    const valid = await supabaseRestRequest("rpc/validate_checkout_recovery_secret", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: stringifyJson({ p_secret: secret }),
+    });
+    return valid === true;
+  } catch {
+    return false;
+  }
+}
+
+async function claimCheckoutRecoveryCandidates() {
+  const rows = await supabaseRestRequest("rpc/claim_checkout_recovery_candidates", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: stringifyJson({
+      p_limit: CHECKOUT_RECOVERY_BATCH_SIZE,
+      p_delay_minutes: CHECKOUT_RECOVERY_DELAY_MINUTES,
+      p_max_age_hours: CHECKOUT_RECOVERY_MAX_AGE_HOURS,
+      p_user_cooldown_hours: CHECKOUT_RECOVERY_USER_COOLDOWN_HOURS,
+    }),
+  });
+  return Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
+}
+
+async function handleCheckoutRecoveryRun(req: Request) {
+  if (!(await validateCheckoutRecoveryRequest(req))) {
+    return json(req, { error: "Acesso negado" }, 401);
+  }
+  if (!CHECKOUT_RECOVERY_ENABLED) {
+    return json(req, { ok: true, enabled: false, claimed: 0, sent: 0, skipped: 0, failed: 0 });
+  }
+
+  const candidates = await claimCheckoutRecoveryCandidates();
+  const summary = { claimed: candidates.length, sent: 0, skipped: 0, failed: 0 };
+  for (const candidate of candidates) {
+    const orderId = String(candidate.order_id ?? "").trim();
+    const userId = String(candidate.user_id ?? "").trim();
+    if (!orderId || !userId) continue;
+
+    await recordAppEvent({
+      eventName: "checkout_abandoned",
+      eventId: `checkout-abandoned:${orderId}`,
+      userId,
+      orderId,
+      eventSource: "backend",
+      salesChannel: "telegram",
+      metadata: { source: "recovery_worker" },
+    });
+
+    try {
+      const [freshOrder, preferenceState] = await Promise.all([
+        getPaymentOrderById(orderId),
+        getNotificationPreferences(userId),
+      ]);
+      let skipReason = getCheckoutRecoverySkipReason(freshOrder, preferenceState.preferences);
+      if (!skipReason && await userHasAnyOrderEntitlement(userId, freshOrder as Record<string, unknown>)) {
+        skipReason = "access_already_granted";
+      }
+      if (skipReason) {
+        await updateCheckoutRecovery(orderId, {
+          status: "skipped",
+          skipped_at: new Date().toISOString(),
+          skip_reason: skipReason,
+        });
+        summary.skipped += 1;
+        continue;
+      }
+
+      const attemptedAt = new Date().toISOString();
+      await updateCheckoutRecovery(orderId, { send_attempted_at: attemptedAt });
+      await telegramRequest("sendMessage", {
+        chat_id: String(freshOrder?.chat_id ?? userId),
+        text: "Sua compra não foi concluída. Deseja continuar de onde parou?",
+        protect_content: true,
+        disable_web_page_preview: true,
+        reply_markup: stringifyJson({
+          inline_keyboard: [[{
+            text: "Continuar compra",
+            web_app: { url: buildCheckoutRecoveryLaunchUrl(orderId) },
+          }]],
+        }),
+      });
+
+      const sentAt = new Date().toISOString();
+      await Promise.all([
+        updateCheckoutRecovery(orderId, {
+          status: "sent",
+          sent_at: sentAt,
+          skip_reason: null,
+          last_error: null,
+        }),
+        updatePaymentOrderRecord(orderId, { recovery_sent_at: sentAt }),
+      ]);
+      summary.sent += 1;
+    } catch (error) {
+      const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      await updateCheckoutRecovery(orderId, {
+        status: "failed",
+        last_error: message,
+      }).catch(() => null);
+      summary.failed += 1;
+    }
+  }
+
+  return json(req, { ok: true, enabled: true, ...summary });
+}
+
+async function markCheckoutRecoveryResumed(orderId: string, userId: string) {
+  const rows = await supabaseFetch(
+    `${CHECKOUT_RECOVERIES_TABLE}?select=order_id,status,recovered_at&order_id=eq.${encodeURIComponent(orderId)}&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
+  );
+  const recovery = Array.isArray(rows) && rows.length > 0 ? rows[0] as Record<string, unknown> : null;
+  if (!recovery || String(recovery.status ?? "") !== "sent" || recovery.recovered_at) return false;
+
+  const recoveredAt = new Date().toISOString();
+  await Promise.all([
+    updateCheckoutRecovery(orderId, { status: "recovered", recovered_at: recoveredAt }),
+    updatePaymentOrderRecord(orderId, { recovered_at: recoveredAt }),
+    recordAppEvent({
+      eventName: "checkout_recovered",
+      eventId: `checkout-recovered:${orderId}`,
+      userId,
+      orderId,
+      eventSource: "backend",
+      salesChannel: "telegram",
+      metadata: { source: "telegram_recovery_button" },
+    }),
+  ]);
+  return true;
+}
+
 async function handlePaymentStatus(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
@@ -2623,6 +2831,14 @@ async function handlePaymentStatus(req: Request) {
 
   if (String(order.user_id) !== userId) {
     return json(req, { error: "Acesso negado" }, 403);
+  }
+
+  if (["created", "pending", "pending_payment", "in_process", "pending_review"].includes(String(order.status ?? "").toLowerCase())) {
+    await updatePaymentOrderRecord(orderId, { checkout_last_seen_at: new Date().toISOString() }).catch(() => null);
+  }
+
+  if (String(body.recovery_source ?? "").trim().toLowerCase() === "telegram_bot") {
+    await markCheckoutRecoveryResumed(orderId, userId).catch(() => false);
   }
 
   let refreshedOrder = order;
@@ -3529,6 +3745,9 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
 
   const text = typeof message.text === "string" ? message.text.trim() : "";
   if (text.startsWith("/start")) {
+    await recordBotStarted(senderUserId || String(chatId)).catch((error) => {
+      console.warn("[NOTIFICATIONS] Falha ao registrar inicio do bot:", error instanceof Error ? error.message : String(error));
+    });
     const startPayload = text.replace(/^\/start(?:@\w+)?\s*/i, "").trim();
     if (startPayload.startsWith("play_")) {
       const serieId = startPayload.slice("play_".length).trim();
@@ -5832,11 +6051,12 @@ async function handleCustomerArea(req: Request) {
   }
 
   const userId = validated.userId;
-  const [catalog, orders, progressRows, favoriteRows] = await Promise.all([
+  const [catalog, orders, progressRows, favoriteRows, notificationState] = await Promise.all([
     getSeriesList(userId),
     getCustomerPaymentRows(userId),
     getUserSeriesProgressRows(userId).catch(() => []),
     getUserFavoriteSeriesRows(userId).catch(() => []),
+    getNotificationPreferences(userId).catch(() => ({ row: null, preferences: serializeNotificationPreferences(null) })),
   ]);
 
   const catalogById = new Map(
@@ -5894,6 +6114,7 @@ async function handleCustomerArea(req: Request) {
     orders: serializedOrders,
     favorites,
     history,
+    notification_preferences: notificationState.preferences,
   });
 }
 
@@ -6189,6 +6410,8 @@ function buildOwnerAnalyticsSnapshot(
   const purchasesCompleted = uniqueCount("purchase_completed");
   const abandonedUsers = new Set(usersByEvent.cart_abandoned ?? []);
   for (const purchaser of usersByEvent.purchase_completed ?? []) abandonedUsers.delete(purchaser);
+  const checkoutAbandoned = uniqueCount("checkout_abandoned");
+  const checkoutRecovered = uniqueCount("checkout_recovered");
 
   const channels = Object.fromEntries(Object.entries(channelData).map(([channel, data]) => [channel, {
     events: data.events,
@@ -6216,6 +6439,8 @@ function buildOwnerAnalyticsSnapshot(
       purchase_chargeback: uniqueCount("purchase_chargeback"),
       delivery_completed: uniqueCount("delivery_completed"),
       cart_abandoned: abandonedUsers.size,
+      checkout_abandoned: checkoutAbandoned,
+      checkout_recovered: checkoutRecovered,
     },
     conversion_rates: {
       app_to_series: analyticsPercentage(seriesViewed, appOpened),
@@ -6223,6 +6448,7 @@ function buildOwnerAnalyticsSnapshot(
       cart_to_checkout: analyticsPercentage(checkoutStarted, addedToCart),
       checkout_to_purchase: analyticsPercentage(purchasesCompleted, checkoutStarted),
       purchase_to_delivery: analyticsPercentage(uniqueCount("delivery_completed"), purchasesCompleted),
+      checkout_recovery: analyticsPercentage(checkoutRecovered, checkoutAbandoned),
     },
     cart_abandonment_rate: analyticsPercentage(abandonedUsers.size, addedToCart),
     abandonment_rate: analyticsPercentage(abandonedUsers.size, addedToCart),
@@ -6263,6 +6489,127 @@ async function getOwnerAnalytics() {
       top_series: [],
     };
   }
+}
+
+type NotificationPreferences = {
+  payments_enabled: boolean;
+  purchases_enabled: boolean;
+  releases_enabled: boolean;
+  promotions_enabled: boolean;
+  series_available_enabled: boolean;
+  checkout_abandoned_enabled: boolean;
+  referrals_enabled: boolean;
+  marketing_enabled: boolean;
+  notification_channel: "telegram" | "none";
+  bot_started_at: string | null;
+  marketing_consented_at: string | null;
+  recovery_consented_at: string | null;
+};
+
+function serializeNotificationPreferences(row: Record<string, unknown> | null): NotificationPreferences {
+  return {
+    payments_enabled: row?.payments_enabled !== false,
+    purchases_enabled: row?.purchases_enabled !== false,
+    releases_enabled: row?.releases_enabled === true,
+    promotions_enabled: row?.promotions_enabled === true,
+    series_available_enabled: row?.series_available_enabled === true,
+    checkout_abandoned_enabled: row?.checkout_abandoned_enabled === true,
+    referrals_enabled: row?.referrals_enabled === true,
+    marketing_enabled: row?.marketing_enabled === true,
+    notification_channel: row?.notification_channel === "none" ? "none" : "telegram",
+    bot_started_at: typeof row?.bot_started_at === "string" ? row.bot_started_at : null,
+    marketing_consented_at: typeof row?.marketing_consented_at === "string" ? row.marketing_consented_at : null,
+    recovery_consented_at: typeof row?.recovery_consented_at === "string" ? row.recovery_consented_at : null,
+  };
+}
+
+async function getNotificationPreferences(userId: string) {
+  const rows = await supabaseFetch(
+    `${USER_NOTIFICATION_PREFERENCES_TABLE}?select=*&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
+  );
+  const row = Array.isArray(rows) && rows.length > 0 ? rows[0] as Record<string, unknown> : null;
+  return { row, preferences: serializeNotificationPreferences(row) };
+}
+
+async function recordBotStarted(userId: string) {
+  if (!userId) return null;
+  const existing = await getNotificationPreferences(userId);
+  if (existing.preferences.bot_started_at) return existing.row;
+  const now = new Date().toISOString();
+  return await supabaseRestRequest(`${USER_NOTIFICATION_PREFERENCES_TABLE}?on_conflict=user_id`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      prefer: "resolution=merge-duplicates,return=representation",
+    },
+    body: stringifyJson([{
+      user_id: userId,
+      bot_started_at: now,
+      last_change_source: "telegram_start",
+      updated_at: now,
+    }]),
+  });
+}
+
+function normalizeNotificationPreferenceInput(body: Record<string, unknown>, current: NotificationPreferences) {
+  const readBoolean = (key: keyof NotificationPreferences) =>
+    typeof body[key] === "boolean" ? body[key] as boolean : current[key] as boolean;
+  const marketingEnabled = readBoolean("marketing_enabled");
+  const recoveryEnabled = readBoolean("checkout_abandoned_enabled");
+  const channel = String(body.notification_channel ?? current.notification_channel).trim().toLowerCase() === "none"
+    ? "none"
+    : "telegram";
+  const now = new Date().toISOString();
+
+  return {
+    payments_enabled: readBoolean("payments_enabled"),
+    purchases_enabled: readBoolean("purchases_enabled"),
+    releases_enabled: marketingEnabled && readBoolean("releases_enabled"),
+    promotions_enabled: marketingEnabled && readBoolean("promotions_enabled"),
+    series_available_enabled: marketingEnabled && readBoolean("series_available_enabled"),
+    checkout_abandoned_enabled: recoveryEnabled,
+    referrals_enabled: marketingEnabled && readBoolean("referrals_enabled"),
+    marketing_enabled: marketingEnabled,
+    notification_channel: channel,
+    marketing_consented_at: marketingEnabled ? current.marketing_consented_at ?? now : null,
+    recovery_consented_at: recoveryEnabled ? current.recovery_consented_at ?? now : null,
+    consent_version: "2026-07",
+    last_change_source: "mini_app",
+    updated_at: now,
+  };
+}
+
+async function handleNotificationPreferences(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+
+  let userId = "";
+  try {
+    userId = (await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""))).userId;
+  } catch (error) {
+    return json(req, {
+      error: error instanceof Error ? error.message : "Dados do Telegram invalidos",
+      code: "telegram_auth_required",
+    }, 401);
+  }
+
+  const operation = String(body.operation ?? "get").trim().toLowerCase();
+  const existing = await getNotificationPreferences(userId);
+  if (operation !== "save") {
+    return json(req, { ok: true, preferences: existing.preferences });
+  }
+
+  const patch = normalizeNotificationPreferenceInput(body, existing.preferences);
+  const rows = await supabaseRestRequest(`${USER_NOTIFICATION_PREFERENCES_TABLE}?on_conflict=user_id`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      prefer: "resolution=merge-duplicates,return=representation",
+    },
+    body: stringifyJson([{ user_id: userId, ...patch }]),
+  });
+  const saved = Array.isArray(rows) && rows.length > 0 ? rows[0] as Record<string, unknown> : null;
+  return json(req, { ok: true, preferences: serializeNotificationPreferences(saved) });
 }
 
 function serializeOwnerCoupon(
@@ -7453,6 +7800,7 @@ async function handleSupportSubmitV2(req: Request) {
 
 export {
   buildOwnerAnalyticsSnapshot,
+  getCheckoutRecoverySkipReason,
   normalizeWebhookStatus,
   validateApprovedPaymentForOrder,
   validateTelegramStarsPaymentForOrder,
@@ -7510,6 +7858,10 @@ if (import.meta.main) Deno.serve(async (req) => {
       return await handleCustomerArea(req);
     }
 
+    if (action === "notification-preferences" && req.method === "POST") {
+      return await handleNotificationPreferences(req);
+    }
+
     if (action === "analytics-event" && req.method === "POST") {
       return await handleAnalyticsEvent(req);
     }
@@ -7540,6 +7892,10 @@ if (import.meta.main) Deno.serve(async (req) => {
 
     if (action === "payment-status" && req.method === "POST") {
       return await handlePaymentStatus(req);
+    }
+
+    if (action === "checkout-recovery-run" && req.method === "POST") {
+      return await handleCheckoutRecoveryRun(req);
     }
 
     if (action === "owner-dashboard" && req.method === "POST") {

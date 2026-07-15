@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260715-01';
+const BUILD_VERSION = '20260715-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -22,6 +22,7 @@ const APP_LAUNCH_SERIE_ID = new URLSearchParams(window.location.search).get('pla
     || new URLSearchParams(window.location.search).get('serie_id')
     || '';
 const APP_LAUNCH_PAYMENT_ORDER_ID = new URLSearchParams(window.location.search).get('payment_order_id') || '';
+const APP_LAUNCH_CHECKOUT_RECOVERY = new URLSearchParams(window.location.search).get('checkout_recovery') === '1';
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
 const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 const PAYMENT_METHOD_STORAGE_KEY = 'checkout_payment_method';
@@ -776,6 +777,14 @@ function requestCustomerArea() {
     }, 20000);
 }
 
+function requestNotificationPreferences(operation = 'get', preferences = {}) {
+    return requestJson(`${API_URL}?action=notification-preferences`, {
+        init_data: tg?.initData || '',
+        operation,
+        ...preferences,
+    }, 15000);
+}
+
 function getCustomerOrderStatusMeta(status) {
     const normalized = String(status || '').toLowerCase();
     if (normalized === 'approved') return { label: 'Pago', className: 'approved' };
@@ -835,6 +844,43 @@ function renderCustomerOrder(order) {
     `;
 }
 
+function renderCustomerNotificationPreferences(preferences = {}) {
+    const checked = (key) => preferences?.[key] === true ? ' checked' : '';
+    const marketingEnabled = preferences?.marketing_enabled === true;
+    const channel = preferences?.notification_channel === 'none' ? 'none' : 'telegram';
+    return `
+        <section class="customer-section customer-preferences-section">
+            <div class="customer-section-head"><div><span>Comunicações</span><h2>Preferências de notificação</h2></div><i class="fas fa-bell" aria-hidden="true"></i></div>
+            <form class="customer-preferences-form" data-notification-preferences-form>
+                <label class="customer-preference-row customer-preference-channel">
+                    <span><strong>Canal</strong><small>Escolha onde receber comunicações opcionais.</small></span>
+                    <select name="notification_channel" aria-label="Canal de notificações">
+                        <option value="telegram"${channel === 'telegram' ? ' selected' : ''}>Telegram</option>
+                        <option value="none"${channel === 'none' ? ' selected' : ''}>Nenhum</option>
+                    </select>
+                </label>
+                <label class="customer-preference-row">
+                    <span><strong>Lembrete de compra incompleta</strong><small>No máximo uma mensagem por pedido elegível, respeitando o limite entre lembretes.</small></span>
+                    <input type="checkbox" name="checkout_abandoned_enabled"${checked('checkout_abandoned_enabled')}>
+                </label>
+                <label class="customer-preference-row">
+                    <span><strong>Novidades e comunicações de catálogo</strong><small>Ative para escolher os assuntos que deseja receber.</small></span>
+                    <input type="checkbox" name="marketing_enabled"${checked('marketing_enabled')} data-marketing-master>
+                </label>
+                <div class="customer-preference-options" data-marketing-options${marketingEnabled ? '' : ' hidden'}>
+                    <label><input type="checkbox" name="releases_enabled"${checked('releases_enabled')}> Novas séries</label>
+                    <label><input type="checkbox" name="promotions_enabled"${checked('promotions_enabled')}> Promoções</label>
+                    <label><input type="checkbox" name="series_available_enabled"${checked('series_available_enabled')}> Série disponível</label>
+                    <label><input type="checkbox" name="referrals_enabled"${checked('referrals_enabled')}> Indicações</label>
+                </div>
+                <div class="customer-preference-note"><i class="fas fa-shield-halved"></i><span>Confirmações de pagamento, compra e entrega são mensagens essenciais do serviço.</span></div>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk"></i> Salvar preferências</button>
+                <p class="customer-preference-status" role="status" aria-live="polite"></p>
+            </form>
+        </section>
+    `;
+}
+
 function wireCustomerAreaActions() {
     document.querySelectorAll('[data-customer-series-id]').forEach((button) => {
         if (!(button instanceof HTMLButtonElement)) return;
@@ -853,6 +899,55 @@ function wireCustomerAreaActions() {
             void applyPublicRoute();
         };
     });
+
+    const preferenceForm = DOM.contentPage?.querySelector('[data-notification-preferences-form]');
+    const marketingMaster = preferenceForm?.querySelector('[data-marketing-master]');
+    const marketingOptions = preferenceForm?.querySelector('[data-marketing-options]');
+    if (marketingMaster instanceof HTMLInputElement && marketingOptions instanceof HTMLElement) {
+        marketingMaster.addEventListener('change', () => {
+            marketingOptions.hidden = !marketingMaster.checked;
+        });
+    }
+    if (preferenceForm instanceof HTMLFormElement) {
+        preferenceForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const submitButton = preferenceForm.querySelector('button[type="submit"]');
+            const status = preferenceForm.querySelector('.customer-preference-status');
+            const formData = new FormData(preferenceForm);
+            const payload = {
+                notification_channel: String(formData.get('notification_channel') || 'telegram'),
+                checkout_abandoned_enabled: formData.has('checkout_abandoned_enabled'),
+                marketing_enabled: formData.has('marketing_enabled'),
+                releases_enabled: formData.has('releases_enabled'),
+                promotions_enabled: formData.has('promotions_enabled'),
+                series_available_enabled: formData.has('series_available_enabled'),
+                referrals_enabled: formData.has('referrals_enabled'),
+            };
+            if (submitButton instanceof HTMLButtonElement) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+            }
+            if (status instanceof HTMLElement) status.textContent = '';
+            try {
+                const response = await requestNotificationPreferences('save', payload);
+                customerAreaSnapshot = {
+                    ...(customerAreaSnapshot || {}),
+                    notification_preferences: response.preferences || payload,
+                };
+                customerAreaLoadedAt = Date.now();
+                if (status instanceof HTMLElement) status.textContent = 'Preferências salvas.';
+                showToast('Preferências atualizadas.', 'success');
+            } catch (error) {
+                if (status instanceof HTMLElement) status.textContent = error.message || 'Não foi possível salvar.';
+                showToast(error.message || 'Não foi possível salvar as preferências.', 'error');
+            } finally {
+                if (submitButton instanceof HTMLButtonElement) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = '<i class="fas fa-floppy-disk"></i> Salvar preferências';
+                }
+            }
+        });
+    }
 }
 
 function renderCustomerArea(path, data) {
@@ -862,6 +957,7 @@ function renderCustomerArea(path, data) {
     const library = Array.isArray(data?.library) ? data.library : [];
     const orders = Array.isArray(data?.orders) ? data.orders : [];
     const history = Array.isArray(data?.history) ? data.history : [];
+    const notificationPreferences = data?.notification_preferences || {};
     const firstName = String(account.name || 'Cliente').split(/\s+/)[0];
     let body = '';
 
@@ -887,6 +983,7 @@ function renderCustomerArea(path, data) {
             </section>
             <section class="customer-section"><div class="customer-section-head"><div><span>Acesso rápido</span><h2>Últimas séries da biblioteca</h2></div><a href="/minha-biblioteca">Ver todas</a></div><div class="customer-series-grid">${library.slice(0, 3).map((serie) => renderCustomerSeriesCard(serie)).join('') || '<div class="customer-empty"><p>Suas séries compradas aparecerão aqui automaticamente.</p></div>'}</div></section>
             <section class="customer-section"><div class="customer-section-head"><div><span>Pedidos recentes</span><h2>Minhas compras</h2></div><a href="/minhas-compras">Ver todas</a></div><div class="customer-orders-list">${orders.slice(0, 3).map(renderCustomerOrder).join('') || '<div class="customer-empty"><p>Nenhum pedido registrado ainda.</p></div>'}</div></section>
+            ${renderCustomerNotificationPreferences(notificationPreferences)}
         `;
     }
 
@@ -4243,6 +4340,8 @@ function renderOwnerDashboard(data) {
                 <div class="owner-analytics-step"><span>Compra concluída</span><strong>${escapeHtml(String(funnel.purchase_completed ?? funnel.payment_approved ?? 0))}</strong></div>
                 <div class="owner-analytics-step"><span>Entrega concluída</span><strong>${escapeHtml(String(funnel.delivery_completed ?? 0))}</strong></div>
                 <div class="owner-analytics-step owner-analytics-step-warning"><span>Carrinho abandonado</span><strong>${escapeHtml(String(funnel.cart_abandoned ?? 0))}</strong></div>
+                <div class="owner-analytics-step owner-analytics-step-warning"><span>Checkout abandonado</span><strong>${escapeHtml(String(funnel.checkout_abandoned ?? 0))}</strong></div>
+                <div class="owner-analytics-step"><span>Checkout retomado</span><strong>${escapeHtml(String(funnel.checkout_recovered ?? 0))}</strong></div>
             </div>
             <div class="owner-analytics-rate-grid" aria-label="Taxas de conversão do funil">
                 <div><span>App → série</span><strong>${escapeHtml(String(conversionRates.app_to_series ?? 0))}%</strong></div>
@@ -4250,6 +4349,7 @@ function renderOwnerDashboard(data) {
                 <div><span>Carrinho → checkout</span><strong>${escapeHtml(String(conversionRates.cart_to_checkout ?? 0))}%</strong></div>
                 <div><span>Checkout → compra</span><strong>${escapeHtml(String(conversionRates.checkout_to_purchase ?? 0))}%</strong></div>
                 <div><span>Compra → entrega</span><strong>${escapeHtml(String(conversionRates.purchase_to_delivery ?? 0))}%</strong></div>
+                <div><span>Recuperação de checkout</span><strong>${escapeHtml(String(conversionRates.checkout_recovery ?? 0))}%</strong></div>
             </div>
             <div class="owner-analytics-breakdown">
                 <article>
@@ -4422,7 +4522,10 @@ async function refreshPaymentStatus(orderId, shouldToast = true) {
     try {
         const data = await requestPaymentStatus({
             init_data: tg?.initData || '',
-            order_id: orderId
+            order_id: orderId,
+            recovery_source: APP_LAUNCH_CHECKOUT_RECOVERY && sameId(orderId, APP_LAUNCH_PAYMENT_ORDER_ID)
+                ? 'telegram_bot'
+                : '',
         });
 
         const order = data?.order || null;

@@ -1,5 +1,6 @@
 import {
   buildOwnerAnalyticsSnapshot,
+  getCheckoutRecoverySkipReason,
   normalizeWebhookStatus,
   validateApprovedPaymentForOrder,
   validateTelegramStarsPaymentForOrder,
@@ -132,6 +133,8 @@ Deno.test("funil calcula conversao, abandono ativo e resultado por serie", () =>
     { event_name: "series_viewed", user_id: "u2", series_id: "s1", sales_channel: "telegram" },
     { event_name: "add_to_cart", user_id: "u2", series_id: "s1", sales_channel: "telegram" },
     { event_name: "cart_abandoned", user_id: "u2", sales_channel: "telegram" },
+    { event_name: "checkout_abandoned", user_id: "u2", order_id: "o2", sales_channel: "telegram" },
+    { event_name: "checkout_recovered", user_id: "u2", order_id: "o2", sales_channel: "telegram" },
   ];
   const snapshot = buildOwnerAnalyticsSnapshot(events, [{ order_id: "o1", series_id: "s1" }], 30);
 
@@ -140,6 +143,9 @@ Deno.test("funil calcula conversao, abandono ativo e resultado por serie", () =>
   assertEquals(snapshot.conversion_rates.cart_to_checkout, 50, "conversao do carrinho");
   assertEquals(snapshot.conversion_rates.checkout_to_purchase, 100, "conversao do checkout");
   assertEquals(snapshot.cart_abandonment_rate, 50, "taxa de abandono");
+  assertEquals(snapshot.funnel.checkout_abandoned, 1, "checkout abandonado");
+  assertEquals(snapshot.funnel.checkout_recovered, 1, "checkout retomado");
+  assertEquals(snapshot.conversion_rates.checkout_recovery, 100, "taxa de recuperacao");
   assertEquals(snapshot.channels.telegram.purchase_completed, 1, "compra por canal");
   assertEquals(snapshot.top_series[0]?.purchases, 1, "compra atribuida a serie");
   assertEquals(snapshot.top_series[0]?.views, 2, "visualizacoes atribuidas a serie");
@@ -155,4 +161,45 @@ Deno.test("compra posterior remove usuario do abandono ativo", () => {
 
   assertEquals(snapshot.funnel.cart_abandoned, 0, "abandono resolvido");
   assertEquals(snapshot.cart_abandonment_rate, 0, "taxa corrigida apos compra");
+});
+
+Deno.test("recuperacao aceita apenas checkout pendente com consentimento", () => {
+  const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const preferences = {
+    payments_enabled: true,
+    purchases_enabled: true,
+    releases_enabled: false,
+    promotions_enabled: false,
+    series_available_enabled: false,
+    checkout_abandoned_enabled: true,
+    referrals_enabled: false,
+    marketing_enabled: false,
+    notification_channel: "telegram" as const,
+    bot_started_at: new Date().toISOString(),
+    marketing_consented_at: null,
+    recovery_consented_at: new Date().toISOString(),
+  };
+  const pendingOrder = {
+    status: "pending_payment",
+    payment_method: "telegram_checkout",
+    checkout_url: "https://t.me/$invoice",
+    checkout_expires_at: future,
+  };
+
+  assertEquals(getCheckoutRecoverySkipReason(pendingOrder, preferences), "", "checkout elegivel");
+  assertEquals(
+    getCheckoutRecoverySkipReason({ ...pendingOrder, status: "approved", paid_at: new Date().toISOString() }, preferences),
+    "order_not_pending",
+    "pedido pago bloqueado",
+  );
+  assertEquals(
+    getCheckoutRecoverySkipReason(pendingOrder, { ...preferences, checkout_abandoned_enabled: false }),
+    "recovery_not_authorized",
+    "opt-out respeitado",
+  );
+  assertEquals(
+    getCheckoutRecoverySkipReason({ ...pendingOrder, checkout_expires_at: "2020-01-01T00:00:00.000Z" }, preferences),
+    "checkout_expired",
+    "checkout expirado bloqueado",
+  );
 });

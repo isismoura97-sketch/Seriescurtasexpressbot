@@ -116,6 +116,20 @@ let paidGranted = false;
 let ownerMigrationApplied = false;
 let ownerOrderRetried = false;
 let cartServerState = { item_ids: [], coupon_code: '' };
+let notificationPreferencesState = {
+  payments_enabled: true,
+  purchases_enabled: true,
+  releases_enabled: false,
+  promotions_enabled: false,
+  series_available_enabled: false,
+  checkout_abandoned_enabled: false,
+  referrals_enabled: false,
+  marketing_enabled: false,
+  notification_channel: 'telegram',
+  bot_started_at: '2026-07-11T10:00:00Z',
+  marketing_consented_at: null,
+  recovery_consented_at: null,
+};
 let checkoutRequestPayload = null;
 let ownerCouponSavePayload = null;
 let ownerCouponActionPayload = null;
@@ -428,7 +442,24 @@ async function installRoutes(page, options = {}) {
             completion_percent: 42, last_position_seconds: 420, duration_seconds: 1000,
             completed: false, last_opened_at: '2026-07-11T12:00:00Z', playback_mode: 'direct', available: true,
           }],
+          notification_preferences: notificationPreferencesState,
         }),
+      });
+      return;
+    }
+
+    if (action === 'notification-preferences') {
+      const payload = route.request().postDataJSON() || {};
+      if (payload.operation === 'save') {
+        notificationPreferencesState = {
+          ...notificationPreferencesState,
+          ...payload,
+          recovery_consented_at: payload.checkout_abandoned_enabled ? '2026-07-11T12:10:00Z' : null,
+        };
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, preferences: notificationPreferencesState }),
       });
       return;
     }
@@ -982,7 +1013,12 @@ async function main() {
       summaryCards: document.querySelectorAll('.customer-summary-card').length,
       libraryCards: document.querySelectorAll('.customer-series-card').length,
       accountVisible: document.querySelector('#accountBtn')?.hidden === false,
+      preferenceForm: Boolean(document.querySelector('[data-notification-preferences-form]')),
     }));
+    await page.check('[name="checkout_abandoned_enabled"]');
+    await page.locator('[data-notification-preferences-form] button[type="submit"]').click();
+    await page.waitForFunction(() => document.querySelector('.customer-preference-status')?.textContent?.includes('salvas'));
+    customerOverviewState.recoveryPreferenceSaved = notificationPreferencesState.checkout_abandoned_enabled === true;
     await page.locator('.customer-nav-link[href="/minha-biblioteca"]').click();
     await page.waitForFunction(() => location.pathname === '/minha-biblioteca');
     const customerLibraryState = await page.evaluate(() => ({
@@ -1116,7 +1152,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.starsActive || !initial.webMethodsHidden) failures.push('Telegram Stars not enforced inside Telegram');
-    if (!initial.appJs.includes('20260715-01')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260715-02')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1156,7 +1192,7 @@ async function main() {
     if (checkoutRequestPayload?.payment_method !== 'telegram_checkout') failures.push('Telegram checkout method not submitted');
     if (!paidCardAfterPayment.action.includes('Receber no Telegram')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
     if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
-    if (customerOverviewState.path !== '/minha-conta' || !customerOverviewState.title.includes('Isis') || customerOverviewState.summaryCards !== 4 || customerOverviewState.libraryCards !== 1 || !customerOverviewState.accountVisible) failures.push(`customer overview failed: ${JSON.stringify(customerOverviewState)}`);
+    if (customerOverviewState.path !== '/minha-conta' || !customerOverviewState.title.includes('Isis') || customerOverviewState.summaryCards !== 4 || customerOverviewState.libraryCards !== 1 || !customerOverviewState.accountVisible || !customerOverviewState.preferenceForm || !customerOverviewState.recoveryPreferenceSaved) failures.push(`customer overview failed: ${JSON.stringify(customerOverviewState)}`);
     if (customerLibraryState.path !== '/minha-biblioteca' || customerLibraryState.cards !== 1 || !customerLibraryState.action.includes('Receber no Telegram')) failures.push(`customer library failed: ${JSON.stringify(customerLibraryState)}`);
     if (customerOrdersState.path !== '/minhas-compras' || customerOrdersState.cards !== 1 || customerOrdersState.paid !== 'Pago') failures.push(`customer orders failed: ${JSON.stringify(customerOrdersState)}`);
     if (customerHistoryState.path !== '/historico' || customerHistoryState.cards !== 1 || customerHistoryState.progressWidth !== '42%') failures.push(`customer history failed: ${JSON.stringify(customerHistoryState)}`);

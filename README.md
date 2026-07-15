@@ -241,7 +241,7 @@ O checkout agora suporta três caminhos:
 
 - `Pix` com QR Code, agora como opção padrão do checkout
 - `Mercado Pago` com link de pagamento
-- `Checkout no Telegram`, que mantém a jornada no mini app usando a preferência do Mercado Pago e confirma automaticamente pelo webhook
+- `Checkout no Telegram` com Telegram Stars e confirmação validada pelo backend
 
 O mini app envia o carrinho para a Edge Function `bot-unificado`, que:
 
@@ -259,6 +259,22 @@ Mesmo se o webhook atrasar, o mini app volta a consultar o pedido e sincroniza o
 Para o Pix, o fluxo pede e-mail do comprador, porque o Mercado Pago exige isso para gerar o pagamento.
 
 As regras da integração ficam nas migrations `supabase/migrations/20260627224636_mercado_pago_checkout.sql`, `supabase/migrations/20260711235508_add_carts_and_coupons.sql` e `supabase/migrations/20260712162156_add_private_cart_policies.sql`.
+
+### Recuperação de checkout
+
+A recuperação é opcional e fica desativada para cada cliente até haver consentimento na área **Minha conta**. Um pedido só entra na rotina quando continua pendente, ficou sem atividade pelo intervalo configurado, ainda não expirou, não gerou acesso e o usuário já iniciou o bot.
+
+A migration `supabase/migrations/20260715145142_add_checkout_recovery.sql` cria:
+
+- preferências e auditoria de consentimento;
+- fila idempotente com uma tentativa por pedido;
+- limite entre mensagens do mesmo usuário;
+- eventos `checkout_abandoned` e `checkout_recovered`;
+- agendamento a cada 15 minutos com `pg_cron` e `pg_net`.
+
+O segredo do agendamento não fica no código. Ele é gerado pela migration, salvo no Supabase Vault e comparado por hash pela Edge Function. Os ajustes operacionais ficam em `CHECKOUT_RECOVERY_DELAY_MINUTES`, `CHECKOUT_RECOVERY_MAX_AGE_HOURS`, `CHECKOUT_RECOVERY_USER_COOLDOWN_HOURS` e `CHECKOUT_RECOVERY_BATCH_SIZE`.
+
+O botão **Continuar compra** abre o pedido no Mini App autenticado. A rotina não aprova pagamentos, não concede acesso e não substitui a confirmação por webhook.
 
 ## Canal público e anti-bot
 

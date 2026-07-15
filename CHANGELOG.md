@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-15 - Recuperação consentida de checkout
+
+- Pedidos pendentes passam a ter janela de recuperação e expiração explícitas.
+- Rotina agendada no Supabase detecta abandono após inatividade e processa no máximo uma tentativa por pedido.
+- Envio exige início prévio do bot, consentimento ativo, checkout válido, ausência de acesso e intervalo por usuário.
+- Segredo do agendamento é gerado no banco, armazenado no Vault e validado por hash.
+- Área da cliente ganhou preferências de lembrete, canal, novidades e opt-out de marketing com trilha de auditoria.
+- Retomadas pelo botão do bot registram `checkout_recovered` sem confundir polling normal com recuperação.
+- Painel da proprietária passou a mostrar abandono e recuperação de checkout.
+
 ## 2026-07-15 - Analytics confiável do funil
 
 - Eventos passaram a registrar identificador idempotente, origem e canal de venda.
