@@ -12,7 +12,9 @@ O Series Curtas Express e uma aplicacao estatica hospedada na Vercel. A interfac
 - Banco: PostgreSQL do Supabase acessado somente pelo backend com REST.
 - Storage: buckets de capas, trailers e videos. O bucket de videos e privado.
 - Identidade: Telegram WebApp `initData`, validado no backend para operacoes privadas.
-- Pagamento: Mercado Pago, Pix e checkout iniciado pelo Telegram.
+- Pagamento: Telegram Stars para bens digitais dentro do Telegram; Mercado Pago preservado para um futuro checkout web autenticado.
+- Pedidos: `payment_orders` como fonte de verdade, itens normalizados em `payment_order_items` e compatibilidade temporária com o snapshot JSON.
+- Acessos: `entitlements` privados, concedidos e revogados somente pelo backend após conciliação.
 - Entrega: bot do Telegram com `protect_content=true` e controle de itens ja entregues.
 - Estado do usuario: favoritos e progresso no Supabase para usuarios Telegram; `localStorage` como fallback local.
 - Testes: verificacao de sintaxe, type-check Deno, smoke test Playwright e auditoria de playback no GitHub Actions.
@@ -32,7 +34,7 @@ O Series Curtas Express e uma aplicacao estatica hospedada na Vercel. A interfac
 - A autenticacao web independente ainda nao existe; operacoes privadas continuam vinculadas ao Telegram.
 - Parte das tabelas legadas permanece no banco embora nao participe dos fluxos comerciais atuais.
 - O frontend estatico ainda exige regeneracao das paginas de serie quando metadados SEO mudam.
-- A cobertura automatizada do backend prioriza conciliacao de pagamento; outros handlers ainda dependem do smoke integrado.
+- A cobertura automatizada do backend prioriza conciliacao de Mercado Pago e Telegram Stars; outros handlers ainda dependem do smoke integrado.
 
 ## Riscos e limites
 

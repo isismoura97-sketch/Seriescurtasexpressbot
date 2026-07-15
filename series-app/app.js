@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260712-03';
+const BUILD_VERSION = '20260714-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -1507,6 +1507,15 @@ function savePaymentPrefs() {
     }
 }
 
+function configurePaymentMethodsForContext() {
+    if (appContext.isTelegram) {
+        selectedPaymentMethod = 'telegram_checkout';
+    } else if (selectedPaymentMethod === 'telegram_checkout') {
+        selectedPaymentMethod = 'pix_qr';
+    }
+    savePaymentPrefs();
+}
+
 function isAwaitingPayment(order) {
     if (!order) return false;
     const status = String(order.status || '').toLowerCase();
@@ -1515,7 +1524,7 @@ function isAwaitingPayment(order) {
 
 function isTerminalPaymentFailure(order) {
     const status = String(order?.status || '').toLowerCase();
-    return ['rejected', 'cancelled', 'canceled', 'expired', 'failed', 'payment_review'].includes(status);
+    return ['rejected', 'cancelled', 'canceled', 'expired', 'failed', 'payment_review', 'refunded', 'charged_back'].includes(status);
 }
 
 function isDeliveryPending(order) {
@@ -1528,7 +1537,7 @@ function getPaymentMethodLabel(method = selectedPaymentMethod) {
         case 'pix_qr':
             return 'Pix com QR Code';
         case 'telegram_checkout':
-            return 'Checkout no Telegram';
+            return 'Telegram Stars';
         case 'mercado_pago_link':
         default:
             return 'Link Mercado Pago';
@@ -1547,7 +1556,7 @@ function getCheckoutButtonLabel() {
         case 'pix_qr':
             return '<i class="fas fa-qrcode"></i> Gerar Pix';
         case 'telegram_checkout':
-            return '<i class="fab fa-telegram"></i> Ir para checkout';
+            return '<i class="fas fa-star"></i> Pagar com Stars';
         case 'mercado_pago_link':
         default:
             return '<i class="fas fa-check"></i> Finalizar Compra';
@@ -1619,7 +1628,9 @@ function setCheckoutLoading(isLoading) {
 
 function updatePaymentMethodUI() {
     DOM.paymentMethods?.forEach((button) => {
-        const active = (button.dataset.paymentMethod || '') === selectedPaymentMethod;
+        const method = button.dataset.paymentMethod || '';
+        button.hidden = appContext.isTelegram ? method !== 'telegram_checkout' : method === 'telegram_checkout';
+        const active = method === selectedPaymentMethod;
         button.classList.toggle('active', active);
     });
 
@@ -1676,6 +1687,7 @@ function renderPaymentSummary(order) {
 
     const method = order.payment_method || selectedPaymentMethod;
     const amount = Number(order.amount || 0);
+    const providerAmount = Math.max(0, Math.round(Number(order.provider_amount || 0)));
     const status = String(order.status || 'created');
     const deliveryStatus = String(order.delivery_status || 'pending').toLowerCase();
     const deliveryPending = status === 'approved' && deliveryStatus !== 'completed';
@@ -1698,7 +1710,7 @@ function renderPaymentSummary(order) {
     `;
 
     const details = [];
-    details.push(`<div class="payment-detail"><span>Total</span><strong>${escapeHtml(formatPrice(amount))}</strong></div>`);
+    details.push(`<div class="payment-detail"><span>Total</span><strong>${escapeHtml(method === 'telegram_checkout' && providerAmount > 0 ? `${providerAmount} Stars` : formatPrice(amount))}</strong></div>`);
     if (status === 'approved') {
         const deliveryLabel = deliveryStatus === 'completed'
             ? 'Concluída'
@@ -1715,7 +1727,7 @@ function renderPaymentSummary(order) {
     }
 
     if (method === 'telegram_checkout') {
-        details.push(`<div class="payment-detail"><span>Telegram</span><strong>Confirmação pelo bot</strong></div>`);
+        details.push(`<div class="payment-detail"><span>Telegram</span><strong>Pagamento seguro com Stars</strong></div>`);
     }
 
     if (order.pix_qr_code) {
@@ -1773,9 +1785,9 @@ function renderPaymentSummary(order) {
             }
         });
     } else if (method === 'telegram_checkout') {
-        openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Pagar agora';
+        openButton.innerHTML = '<i class="fas fa-star"></i> Pagar com Stars';
         openButton.addEventListener('click', () => {
-            openExternalLink(getOrderPaymentUrl(order));
+            openTelegramInvoice(getOrderPaymentUrl(order));
         });
     } else {
         openButton.innerHTML = '<i class="fas fa-arrow-up-right-from-square"></i> Pagar agora';
@@ -1852,6 +1864,27 @@ function openExternalLink(url) {
     }
 
     window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function openTelegramInvoice(url) {
+    if (!url) return;
+    try {
+        if (tg && typeof tg.openInvoice === 'function') {
+            tg.openInvoice(url, (status) => {
+                const orderId = String(activePaymentOrder?.order_id || '');
+                if (status === 'paid' && orderId) {
+                    setPaymentSummaryLoading('Confirmando pagamento...');
+                    setTimeout(() => refreshPaymentStatus(orderId, true), 500);
+                } else if (status === 'failed') {
+                    showToast('O pagamento não foi concluído.', 'error');
+                }
+            });
+            return;
+        }
+    } catch (e) {
+        console.warn('[PAYMENT] Falha ao abrir fatura em Stars:', e.message);
+    }
+    openTelegramBotLink(url);
 }
 
 function openTelegramBotLink(url) {
@@ -4457,6 +4490,7 @@ function getPlaybackMode(serie) {
 // ==================== INICIALIZAÇÃO ====================
 async function init() {
     resolveTelegramContext();
+    configurePaymentMethodsForContext();
     trackStaleCartAbandonment();
     trackAnalyticsEvent('app_opened');
     restoreFavoriteSeries();
@@ -5663,7 +5697,7 @@ function checkout() {
         showToast('Tudo certo. Agora é só pagar.', 'success');
 
         if (selectedPaymentMethod === 'telegram_checkout') {
-            openExternalLink(getOrderPaymentUrl(order));
+            openTelegramInvoice(getOrderPaymentUrl(order));
         } else if (selectedPaymentMethod !== 'pix_qr' && order.checkout_url) {
             openExternalLink(order.checkout_url);
         }

@@ -29,6 +29,7 @@ params.set('allowed_updates', JSON.stringify([
   'callback_query',
   'channel_post',
   'edited_channel_post',
+  'pre_checkout_query',
 ]));
 
 const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`, {

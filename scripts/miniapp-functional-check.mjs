@@ -199,6 +199,7 @@ async function installRoutes(page, options = {}) {
             sendData(payload) { window.__sentData = payload; },
             openTelegramLink(url) { window.__openedTelegramLink = url; },
             openLink(url) { window.__openedLink = url; },
+            openInvoice(url, callback) { window.__openedInvoice = url; setTimeout(() => callback?.('paid'), 0); },
           }
         };
       ` : 'window.Telegram = undefined;',
@@ -284,15 +285,16 @@ async function installRoutes(page, options = {}) {
         body: JSON.stringify({
           order: {
             order_id: 'order-test',
-            status: 'pending',
-            payment_method: 'pix_qr',
+            status: 'pending_payment',
+            payment_method: 'telegram_checkout',
+            payment_provider: 'telegram_stars',
+            provider_currency: 'XTR',
+            provider_amount: 45,
             subtotal: 5.9,
             discount_amount: 0.59,
             coupon_code: 'TESTE10',
             amount: 5.31,
-            pix_qr_code: '000201TESTEPIX',
-            pix_qr_code_base64: '',
-            checkout_url: 'https://mp.test/checkout',
+            checkout_url: 'https://t.me/$test-invoice',
             items: [{ id: 'paid-series', title: 'Serie Paga', price: 5.9, quantity: 1 }],
           },
         }),
@@ -309,8 +311,10 @@ async function installRoutes(page, options = {}) {
             order_id: 'order-test',
             status: 'approved',
             delivery_status: 'completed',
-            payment_method: 'pix_qr',
-            pix_qr_code: '000201TESTEPIX',
+            payment_method: 'telegram_checkout',
+            payment_provider: 'telegram_stars',
+            provider_currency: 'XTR',
+            provider_amount: 45,
             subtotal: 5.9,
             discount_amount: 0.59,
             coupon_code: 'TESTE10',
@@ -792,7 +796,8 @@ async function main() {
       topBadges: document.querySelectorAll('#catalogGrid .badge-gratis-landscape, #catalogGrid .badge-telegram-landscape, #catalogGrid .badge-locked-landscape, #catalogGrid .badge-unavailable-landscape').length,
       lockedPaidPlayback: document.querySelector('#catalogGrid .card[data-id="paid-series"]')?.dataset.playback || '',
       missingPlayback: document.querySelector('#catalogGrid .card[data-id="missing-video"]')?.dataset.playback || '',
-      pixActive: document.querySelector('[data-payment-method="pix_qr"]')?.classList.contains('active'),
+      starsActive: document.querySelector('[data-payment-method="telegram_checkout"]')?.classList.contains('active'),
+      webMethodsHidden: [...document.querySelectorAll('[data-payment-method="pix_qr"], [data-payment-method="mercado_pago_link"]')].every((node) => node.hidden),
       appJs: [...document.scripts].find((script) => {
         const pathname = new URL(script.src, location.href).pathname;
         return pathname.endsWith('/app.min.js') || pathname.endsWith('/app.js');
@@ -925,7 +930,6 @@ async function main() {
       total: document.querySelector('#cartTotal')?.textContent?.trim() || '',
       discountVisible: document.querySelector('#cartDiscountRow')?.hidden === false,
     }));
-    await page.fill('#buyerEmailInput', 'teste@example.com');
     await page.locator('#checkoutBtn').click();
     await page.waitForFunction(() => {
       const panel = document.querySelector('#paymentSummaryPanel');
@@ -1100,8 +1104,8 @@ async function main() {
 
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
-    if (!initial.pixActive) failures.push('pix not active by default');
-    if (!initial.appJs.includes('20260712-03')) failures.push('cache version not updated');
+    if (!initial.starsActive || !initial.webMethodsHidden) failures.push('Telegram Stars not enforced inside Telegram');
+    if (!initial.appJs.includes('20260714-01')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1138,7 +1142,7 @@ async function main() {
     );
     if (!normalizedCouponState.status.includes('TESTE10') || normalizedCouponState.subtotal !== 'R$ 5,90' || !normalizedCouponState.discount.includes('R$ 0,59') || normalizedCouponState.total !== 'R$ 5,31' || !normalizedCouponState.discountVisible) failures.push(`coupon UI failed: ${JSON.stringify(couponState)}`);
     if (checkoutRequestPayload?.coupon_code !== 'TESTE10' || 'total' in (checkoutRequestPayload || {})) failures.push(`checkout coupon payload failed: ${JSON.stringify(checkoutRequestPayload)}`);
-    if (checkoutState.summaryHidden === false && !checkoutState.summaryText.includes('000201TESTEPIX')) failures.push('pix checkout summary failed');
+    if (checkoutRequestPayload?.payment_method !== 'telegram_checkout') failures.push('Telegram checkout method not submitted');
     if (!paidCardAfterPayment.action.includes('Receber no Telegram')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
     if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
     if (customerOverviewState.path !== '/minha-conta' || !customerOverviewState.title.includes('Isis') || customerOverviewState.summaryCards !== 4 || customerOverviewState.libraryCards !== 1 || !customerOverviewState.accountVisible) failures.push(`customer overview failed: ${JSON.stringify(customerOverviewState)}`);

@@ -11,6 +11,7 @@ Aplicação web estática para o catálogo "Séries Curtas Express", com integra
 - `series-app/styles.css` - estilos visuais
 - `series-app/vercel.json` - configuração de SPA para Vercel
 - `docs/architecture-audit.md` - arquitetura, riscos e estratégia incremental
+- `docs/PAYMENTS_AND_ENTITLEMENTS.md` - canais de pagamento, conciliação, acessos e operação
 - `CHANGELOG.md` - histórico de mudanças relevantes
 
 ## Execução local

@@ -1,6 +1,7 @@
 import {
   normalizeWebhookStatus,
   validateApprovedPaymentForOrder,
+  validateTelegramStarsPaymentForOrder,
 } from "./index.ts";
 
 function assertEquals(actual: unknown, expected: unknown, message: string) {
@@ -69,5 +70,51 @@ Deno.test("pagamento sem referencia so e aceito quando o ID foi vinculado ao ped
     ),
     "Pagamento sem referencia confiavel ao pedido",
     "ID nao vinculado",
+  );
+});
+
+const starsOrder = {
+  order_id: "stars-order-123",
+  user_id: "1048601631",
+  payment_provider: "telegram_stars",
+  provider_currency: "XTR",
+  provider_amount: 50,
+};
+
+const starsPayment = {
+  invoice_payload: "stars-order-123",
+  currency: "XTR",
+  total_amount: 50,
+  telegram_payment_charge_id: "charge-123",
+};
+
+Deno.test("pagamento em Stars valido corresponde ao pedido e ao usuario", () => {
+  assertEquals(
+    validateTelegramStarsPaymentForOrder(starsOrder, starsPayment, "1048601631"),
+    "",
+    "pagamento Stars valido",
+  );
+});
+
+Deno.test("pagamento em Stars bloqueia usuario, moeda, valor e pedido divergentes", () => {
+  assertEquals(
+    validateTelegramStarsPaymentForOrder(starsOrder, starsPayment, "999"),
+    "Pagamento vinculado a outro usuario",
+    "usuario divergente",
+  );
+  assertEquals(
+    validateTelegramStarsPaymentForOrder(starsOrder, { ...starsPayment, currency: "BRL" }, "1048601631"),
+    "Moeda da fatura invalida",
+    "moeda divergente",
+  );
+  assertEquals(
+    validateTelegramStarsPaymentForOrder(starsOrder, { ...starsPayment, total_amount: 5 }, "1048601631"),
+    "Quantidade de Stars divergente",
+    "valor divergente",
+  );
+  assertEquals(
+    validateTelegramStarsPaymentForOrder(starsOrder, { ...starsPayment, invoice_payload: "outro" }, "1048601631"),
+    "Fatura vinculada a outro pedido",
+    "pedido divergente",
   );
 });

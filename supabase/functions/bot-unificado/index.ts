@@ -16,7 +16,7 @@ const TELEGRAM_BOT_USERNAME = (
 ).trim();
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
-const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "SÃ©ries Curtas Express <onboarding@resend.dev>";
+const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "Séries Curtas Express <onboarding@resend.dev>";
 const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260712-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
@@ -26,10 +26,13 @@ const MERCADO_PAGO_PIX_KEY = Deno.env.get("MERCADO_PAGO_PIX_KEY") ?? "";
 const MERCADO_PAGO_PIX_COPY = Deno.env.get("MERCADO_PAGO_PIX_COPY") ?? "";
 const MERCADO_PAGO_PIX_QR_CODE_BASE64 = Deno.env.get("MERCADO_PAGO_PIX_QR_CODE_BASE64") ?? "";
 const PAYMENT_ORDERS_TABLE = Deno.env.get("PAYMENT_ORDERS_TABLE") ?? "payment_orders";
+const PAYMENT_ORDER_ITEMS_TABLE = Deno.env.get("PAYMENT_ORDER_ITEMS_TABLE") ?? "payment_order_items";
+const ENTITLEMENTS_TABLE = Deno.env.get("ENTITLEMENTS_TABLE") ?? "entitlements";
 const SHOPPING_CARTS_TABLE = Deno.env.get("SHOPPING_CARTS_TABLE") ?? "shopping_carts";
 const COUPONS_TABLE = Deno.env.get("COUPONS_TABLE") ?? "coupons";
 const COUPON_REDEMPTIONS_TABLE = Deno.env.get("COUPON_REDEMPTIONS_TABLE") ?? "coupon_redemptions";
 const APP_EVENTS_TABLE = Deno.env.get("APP_EVENTS_TABLE") ?? "app_events";
+const TELEGRAM_STARS_DEFAULT_PRICE = Math.max(1, Math.round(Number(Deno.env.get("TELEGRAM_STARS_DEFAULT_PRICE") ?? "50") || 50));
 const OWNER_TELEGRAM_USER_ID = Deno.env.get("OWNER_TELEGRAM_USER_ID") ?? "";
 const OWNER_AREA_PASSWORD = Deno.env.get("OWNER_AREA_PASSWORD") ?? "";
 const OWNER_AREA_PASSWORD_SHA256 = Deno.env.get("OWNER_AREA_PASSWORD_SHA256") ?? "";
@@ -132,8 +135,15 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "add_to_cart",
   "remove_from_cart",
   "checkout_started",
+  "checkout_created",
+  "checkout_reused",
   "payment_created",
   "payment_approved",
+  "purchase_completed",
+  "purchase_failed",
+  "purchase_refunded",
+  "purchase_chargeback",
+  "telegram_pre_checkout_approved",
   "delivery_requested",
   "delivery_completed",
   "cart_abandoned",
@@ -265,11 +275,11 @@ function buildSupportMailtoUrl(input: {
   context?: string;
 }) {
   const lines = [
-    "Nova solicitaÃ§Ã£o de suporte enviada pelo Mini App.",
+    "Nova solicitação de suporte enviada pelo Mini App.",
     "",
-    `E-mail do usuÃ¡rio: ${input.email || "nÃ£o informado"}`,
-    `Assunto: ${input.subject || "nÃ£o informado"}`,
-    `DescriÃ§Ã£o: ${input.description || "nÃ£o informado"}`,
+    `E-mail do usuário: ${input.email || "não informado"}`,
+    `Assunto: ${input.subject || "não informado"}`,
+    `Descrição: ${input.description || "não informado"}`,
   ];
 
   if (input.context) {
@@ -277,7 +287,7 @@ function buildSupportMailtoUrl(input: {
   }
 
   const body = lines.join("\n");
-  return `mailto:${encodeURIComponent(SUPPORT_INBOX_EMAIL)}?subject=${encodeURIComponent(`[Suporte Mini App] ${input.subject || "SolicitaÃ§Ã£o"}`)}&body=${encodeURIComponent(body)}`;
+  return `mailto:${encodeURIComponent(SUPPORT_INBOX_EMAIL)}?subject=${encodeURIComponent(`[Suporte Mini App] ${input.subject || "Solicitação"}`)}&body=${encodeURIComponent(body)}`;
 }
 
 async function sendSupportEmail(input: {
@@ -295,11 +305,11 @@ async function sendSupportEmail(input: {
 
   const subject = `[Suporte Mini App] ${input.subject}`.slice(0, 140);
   const plainTextLines = [
-    "Nova solicitaÃ§Ã£o de suporte enviada pelo Mini App.",
+    "Nova solicitação de suporte enviada pelo Mini App.",
     "",
-    `E-mail do usuÃ¡rio: ${input.email}`,
+    `E-mail do usuário: ${input.email}`,
     `Assunto: ${input.subject}`,
-    `DescriÃ§Ã£o: ${input.description}`,
+    `Descrição: ${input.description}`,
   ];
 
   if (input.context) {
@@ -315,10 +325,10 @@ async function sendSupportEmail(input: {
   }
 
   const htmlLines = [
-    "<p>Nova solicitaÃ§Ã£o de suporte enviada pelo Mini App.</p>",
-    `<p><strong>E-mail do usuÃ¡rio:</strong> ${escapeHtml(input.email)}</p>`,
+    "<p>Nova solicitação de suporte enviada pelo Mini App.</p>",
+    `<p><strong>E-mail do usuário:</strong> ${escapeHtml(input.email)}</p>`,
     `<p><strong>Assunto:</strong> ${escapeHtml(input.subject)}</p>`,
-    `<p><strong>DescriÃ§Ã£o:</strong><br>${escapeHtml(input.description).replace(/\n/g, "<br>")}</p>`,
+    `<p><strong>Descrição:</strong><br>${escapeHtml(input.description).replace(/\n/g, "<br>")}</p>`,
     input.context ? `<p><strong>Contexto:</strong> ${escapeHtml(input.context)}</p>` : "",
     `<p><strong>Telegram ID:</strong> ${escapeHtml(input.telegramUserId)}</p>`,
     input.telegramName ? `<p><strong>Nome Telegram:</strong> ${escapeHtml(input.telegramName)}</p>` : "",
@@ -408,7 +418,7 @@ async function sendSupportTelegramNotification(input: {
 function buildMainBotReplyMarkup() {
   return stringifyJson({
     inline_keyboard: [
-      [{ text: "CatÃ¡logo", url: CATALOG_URL }],
+      [{ text: "Catálogo", url: CATALOG_URL }],
       [{ text: "Mini App", web_app: { url: SERIES_WEBAPP_URL } }],
       [{ text: "Suporte", url: SUPPORT_URL }],
     ],
@@ -589,7 +599,7 @@ function stringifyJson(value: unknown) {
 
 async function supabaseRestRequest(path: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃ£o configurado");
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
   }
 
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -689,7 +699,7 @@ function getStorageObjectName(seriesId: string, kind: string, fileName: string) 
 
 async function uploadStorageObject(bucket: string, objectPath: string, file: File) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃ£o configurado");
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
   }
 
   const url = `${SUPABASE_URL}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStorageObjectPath(objectPath)}`;
@@ -732,7 +742,7 @@ async function uploadStorageObject(bucket: string, objectPath: string, file: Fil
 
 async function uploadStorageStream(bucket: string, objectPath: string, req: Request) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃƒÂ£o configurado");
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
   }
 
   if (!req.body) {
@@ -786,7 +796,7 @@ async function uploadStorageStream(bucket: string, objectPath: string, req: Requ
 
 async function createStorageSignedUploadUrl(bucket: string, objectPath: string, upsert = true) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nÃ£o configurado");
+    throw new Error("SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurado");
   }
 
   const url = `${SUPABASE_URL}/storage/v1/object/upload/sign/${encodeURIComponent(bucket)}/${encodeStorageObjectPath(objectPath)}`;
@@ -827,7 +837,7 @@ async function createStorageSignedUploadUrl(bucket: string, objectPath: string, 
     : "";
 
   if (!signedUrl) {
-    throw new Error("Supabase nÃ£o retornou a URL assinada de upload");
+    throw new Error("Supabase não retornou a URL assinada de upload");
   }
 
   return {
@@ -896,11 +906,24 @@ async function deleteSeriesMediaAssets(row: Record<string, unknown>) {
 
 type CheckoutMethod = "mercado_pago_link" | "pix_qr" | "telegram_checkout";
 
+type CanonicalCheckoutItem = {
+  id: string;
+  title: string;
+  quantity: number;
+  price: number;
+  cover_url: string | null;
+  stars_price?: number;
+};
+
 function normalizeCheckoutMethod(value: unknown): CheckoutMethod {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "pix" || normalized === "pix_qr" || normalized === "pix-qr") return "pix_qr";
   if (normalized === "telegram" || normalized === "telegram_checkout" || normalized === "telegram-checkout") return "telegram_checkout";
   return "mercado_pago_link";
+}
+
+function isTelegramDigitalPaymentMethodAllowed(method: CheckoutMethod): boolean {
+  return method === "telegram_checkout";
 }
 
 function normalizeCheckoutItems(value: unknown) {
@@ -945,8 +968,8 @@ function calculateCheckoutTotal(items: Array<{ quantity: number; price: number }
 
 function buildCheckoutDescription(items: Array<{ title: string }>) {
   const titles = items.map((item) => item.title).filter(Boolean).slice(0, 4);
-  if (!titles.length) return "Compra no SÃ©ries Express";
-  return titles.join(" â€¢ ").slice(0, 120);
+  if (!titles.length) return "Compra no Séries Express";
+  return titles.join(" • ").slice(0, 120);
 }
 
 function formatCurrencyBRL(value: number) {
@@ -973,7 +996,7 @@ function mercadoPagoApiUrl(path: string) {
 
 async function mercadoPagoRequest(path: string, init: { method?: string; headers?: Record<string, string>; body?: BodyInit } = {}) {
   if (!MERCADO_PAGO_ACCESS_TOKEN) {
-    throw new Error("MERCADO_PAGO_ACCESS_TOKEN nÃ£o configurado");
+    throw new Error("MERCADO_PAGO_ACCESS_TOKEN não configurado");
   }
 
   const res = await fetch(mercadoPagoApiUrl(path), {
@@ -1024,11 +1047,15 @@ async function createPaymentOrderRecord(entry: {
   subtotal?: number;
   discountAmount?: number;
   couponCode?: string | null;
-  items: Array<{ id: string; title: string; quantity: number; price: number; cover_url: string | null }>;
+  items: CanonicalCheckoutItem[];
   buyerEmail?: string | null;
   buyerName?: string | null;
   description: string;
   status?: string;
+  salesChannel?: "telegram" | "web";
+  paymentProvider?: "mercado_pago" | "telegram_stars";
+  providerCurrency?: "BRL" | "XTR";
+  providerAmount?: number | null;
 }) {
   const rows = await supabaseRestRequest(PAYMENT_ORDERS_TABLE, {
     method: "POST",
@@ -1044,6 +1071,10 @@ async function createPaymentOrderRecord(entry: {
         status: entry.status ?? "created",
         payment_method: entry.paymentMethod,
         checkout_mode: entry.paymentMethod,
+        sales_channel: entry.salesChannel ?? "telegram",
+        payment_provider: entry.paymentProvider ?? "mercado_pago",
+        provider_currency: entry.providerCurrency ?? "BRL",
+        provider_amount: entry.providerAmount ?? null,
         currency: "BRL",
         amount: Number(entry.amount.toFixed(2)),
         subtotal: Number((entry.subtotal ?? entry.amount).toFixed(2)),
@@ -1058,7 +1089,77 @@ async function createPaymentOrderRecord(entry: {
     ]),
   });
 
-  return Array.isArray(rows) && rows.length > 0 ? rows[0] : rows;
+  const order = Array.isArray(rows) && rows.length > 0 ? rows[0] : rows;
+  try {
+    await createPaymentOrderItemRecords(
+      entry.orderId,
+      entry.items,
+      entry.discountAmount ?? 0,
+      entry.paymentProvider === "telegram_stars",
+      entry.providerAmount ?? null,
+    );
+  } catch (error) {
+    await updatePaymentOrderRecord(entry.orderId, {
+      status: "failed",
+      error_message: "Falha ao registrar os itens do pedido",
+    }).catch(() => null);
+    throw error;
+  }
+  return order;
+}
+
+async function createPaymentOrderItemRecords(
+  orderId: string,
+  items: CanonicalCheckoutItem[],
+  orderDiscount: number,
+  usesStars: boolean,
+  providerOrderAmount: number | null,
+) {
+  let remainingDiscountCents = Math.max(0, Math.round(orderDiscount * 100));
+  const baseStarsTotal = items.reduce(
+    (sum, item) => sum + Math.max(1, Math.round(item.stars_price ?? TELEGRAM_STARS_DEFAULT_PRICE)),
+    0,
+  );
+  let remainingProviderAmount = usesStars
+    ? Math.max(1, Math.round(providerOrderAmount ?? baseStarsTotal))
+    : 0;
+  const rows = items.map((item, index) => {
+    const unitCents = Math.max(0, Math.round(item.price * 100));
+    const discountCents = Math.min(unitCents, remainingDiscountCents);
+    remainingDiscountCents -= discountCents;
+    const baseStars = Math.max(1, Math.round(item.stars_price ?? TELEGRAM_STARS_DEFAULT_PRICE));
+    const remainingItems = items.length - index - 1;
+    const proportionalStars = Math.round(
+      (baseStars / Math.max(1, baseStarsTotal)) * Math.max(items.length, providerOrderAmount ?? baseStarsTotal),
+    );
+    const providerAmount = usesStars
+      ? index === items.length - 1
+        ? remainingProviderAmount
+        : Math.max(1, Math.min(proportionalStars, remainingProviderAmount - remainingItems))
+      : null;
+    if (providerAmount != null) remainingProviderAmount = Math.max(0, remainingProviderAmount - providerAmount);
+    return {
+      order_id: orderId,
+      series_id: item.id,
+      title: item.title,
+      quantity: 1,
+      unit_amount: Number((unitCents / 100).toFixed(2)),
+      discount_amount: Number((discountCents / 100).toFixed(2)),
+      final_amount: Number(((unitCents - discountCents) / 100).toFixed(2)),
+      currency: "BRL",
+      provider_amount: providerAmount,
+    };
+  });
+
+  if (!rows.length) return;
+  await supabaseRestRequest(`${PAYMENT_ORDER_ITEMS_TABLE}?on_conflict=order_id,series_id`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      prefer: "resolution=ignore-duplicates,return=minimal",
+    },
+    body: stringifyJson(rows),
+  });
 }
 
 async function updatePaymentOrderRecord(orderId: string, patch: Record<string, unknown>) {
@@ -1085,6 +1186,39 @@ async function getPaymentOrderById(orderId: string) {
 async function getPaymentOrderByPaymentId(paymentId: string) {
   const rows = await supabaseRestRequest(`${PAYMENT_ORDERS_TABLE}?select=*&mercado_pago_payment_id=eq.${encodeURIComponent(paymentId)}&limit=1`);
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+}
+
+function getOrderItemIds(order: Record<string, unknown>) {
+  return (Array.isArray(order.items) ? order.items as Record<string, unknown>[] : [])
+    .map((item) => String(item.id ?? item.serie_id ?? item.series_id ?? "").trim())
+    .filter(Boolean)
+    .sort();
+}
+
+async function findReusablePendingOrder(entry: {
+  userId: string;
+  items: CanonicalCheckoutItem[];
+  couponCode: string | null;
+  paymentProvider: "mercado_pago" | "telegram_stars";
+}) {
+  const createdAfter = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const rows = await supabaseRestRequest(
+    `${PAYMENT_ORDERS_TABLE}?select=*&user_id=eq.${encodeURIComponent(entry.userId)}`
+      + `&payment_provider=eq.${encodeURIComponent(entry.paymentProvider)}`
+      + `&status=in.(created,pending,pending_payment)&created_at=gte.${encodeURIComponent(createdAfter)}`
+      + "&order=created_at.desc&limit=10",
+  );
+  if (!Array.isArray(rows)) return null;
+
+  const expectedIds = entry.items.map((item) => item.id).sort();
+  return rows.find((candidate) => {
+    const row = candidate as Record<string, unknown>;
+    const rowIds = getOrderItemIds(row);
+    const sameItems = rowIds.length === expectedIds.length
+      && rowIds.every((id, index) => id === expectedIds[index]);
+    const sameCoupon = normalizeCouponCode(row.coupon_code) === normalizeCouponCode(entry.couponCode);
+    return sameItems && sameCoupon && Boolean(String(row.checkout_url ?? row.ticket_url ?? "").trim());
+  }) as Record<string, unknown> | undefined || null;
 }
 
 async function getUserSeriesProgressRow(userId: string, seriesId: string) {
@@ -1423,6 +1557,28 @@ async function createMercadoPagoPixPayment(order: {
   }
 }
 
+async function createTelegramStarsInvoice(order: {
+  orderId: string;
+  description: string;
+  starsAmount: number;
+}) {
+  const amount = Math.max(1, Math.round(order.starsAmount));
+  const result = await telegramRequest("createInvoiceLink", {
+    title: "Series Curtas Express",
+    description: String(order.description || "Acesso a serie curta").slice(0, 255),
+    payload: order.orderId,
+    provider_token: "",
+    currency: "XTR",
+    prices: stringifyJson([{ label: "Acesso ao conteudo", amount }]),
+  });
+
+  const invoiceUrl = String(result ?? "").trim();
+  if (!invoiceUrl.startsWith("https://t.me/$")) {
+    throw new Error("Telegram nao retornou um link de pagamento valido");
+  }
+  return invoiceUrl;
+}
+
 async function fetchMercadoPagoPayment(paymentId: string) {
   return await mercadoPagoRequest(`/v1/payments/${encodeURIComponent(paymentId)}`) as Record<string, unknown>;
 }
@@ -1432,7 +1588,7 @@ function buildProcessingProgressBar(completed: number, total: number) {
   const width = 10;
   const ratio = Math.max(0, Math.min(1, completed / safeTotal));
   const filled = Math.max(0, Math.min(width, Math.round(ratio * width)));
-  return `${"â–ˆ".repeat(filled)}${"â–‘".repeat(width - filled)}`;
+  return `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
 }
 
 function buildDeliveryProgressText(
@@ -1447,7 +1603,7 @@ function buildDeliveryProgressText(
   const lines = [
     "Pagamento confirmado.",
     `Pedido: ${shortOrderId}`,
-    finished ? "Entrega em processamento finalizada." : "Liberando suas sÃ©ries no Telegram.",
+    finished ? "Entrega em processamento finalizada." : "Liberando suas séries no Telegram.",
     `${buildProcessingProgressBar(completed, total)} ${Math.min(completed, total)}/${total}`,
   ];
 
@@ -1458,13 +1614,13 @@ function buildDeliveryProgressText(
   if (finished) {
     lines.push(
       failedCount > 0
-        ? "Parte do pedido foi entregue. Se faltar algo, abra o catÃ¡logo e tente novamente."
-        : "Suas sÃ©ries jÃ¡ estÃ£o liberadas aqui no bot.",
+        ? "Parte do pedido foi entregue. Se faltar algo, abra o catálogo e tente novamente."
+        : "Suas séries já estão liberadas aqui no bot.",
     );
   }
 
   if (failedCount > 0) {
-    lines.push(`PendÃªncias: ${failedCount}`);
+    lines.push(`Pendências: ${failedCount}`);
   }
 
   return lines.join("\n");
@@ -1507,15 +1663,16 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
   const method = normalizeCheckoutMethod(order.payment_method);
   const amount = Number(order.amount ?? 0);
   const amountText = formatCurrencyBRL(amount);
+  const providerAmount = Math.max(0, Math.round(Number(order.provider_amount ?? 0) || 0));
   const shortOrderId = String(order.order_id ?? "").slice(0, 8);
   const baseLines = [
     "Pedido criado com sucesso.",
     `Pedido: ${shortOrderId}`,
-    `Pagamento: ${amountText}`,
+    `Pagamento: ${method === "telegram_checkout" && providerAmount > 0 ? `${providerAmount} Stars` : amountText}`,
   ];
 
   if (method === "mercado_pago_link" && typeof order.checkout_url === "string" && order.checkout_url) {
-    baseLines.push("Abra o botÃ£o abaixo para concluir o pagamento.");
+    baseLines.push("Abra o botão abaixo para concluir o pagamento.");
     await telegramRequest("sendMessage", {
       chat_id: chatId,
       text: baseLines.join("\n"),
@@ -1527,7 +1684,7 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
   }
 
   if (method === "pix_qr") {
-    baseLines.push("O QR Code do Pix estÃ¡ disponÃ­vel no mini app.");
+    baseLines.push("O QR Code do Pix está disponível no mini app.");
     if (typeof order.ticket_url === "string" && order.ticket_url) {
       baseLines.push(`Link alternativo: ${order.ticket_url}`);
     }
@@ -1542,14 +1699,14 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
   }
 
   if (method === "telegram_checkout") {
-    baseLines.push("O checkout guiado jÃ¡ estÃ¡ pronto dentro do Telegram.");
-    baseLines.push("Toque no botÃ£o para abrir o pagamento e concluir o pedido.");
+    baseLines.push("O pagamento seguro em Telegram Stars esta pronto.");
+    baseLines.push("Toque no botao abaixo para concluir.");
     await telegramRequest("sendMessage", {
       chat_id: chatId,
       text: baseLines.join("\n"),
       reply_markup: JSON.stringify({
         inline_keyboard: [[{
-          text: "Abrir pagamento",
+          text: "Pagar com Stars",
           url: typeof order.checkout_url === "string" && order.checkout_url
             ? order.checkout_url
             : buildTelegramCheckoutUrl(String(order.order_id ?? "")),
@@ -1564,7 +1721,7 @@ async function sendPaymentCreatedMessage(order: Record<string, unknown>) {
     chat_id: chatId,
     text: baseLines.join("\n"),
     reply_markup: JSON.stringify({
-      inline_keyboard: [[{ text: "Abrir catÃ¡logo", web_app: { url: SERIES_WEBAPP_URL } }]],
+      inline_keyboard: [[{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]],
     }),
   });
 }
@@ -1583,6 +1740,7 @@ async function sendPaymentConfirmationMessage(
   const method = normalizeCheckoutMethod(order.payment_method);
   const amount = Number(order.amount ?? 0);
   const amountText = formatCurrencyBRL(amount);
+  const providerAmount = Math.max(0, Math.round(Number(order.provider_amount ?? 0) || 0));
   const shortOrderId = String(order.order_id ?? "").slice(0, 8);
   const statusDetail = typeof payment.status_detail === "string" ? payment.status_detail : "";
   const items = Array.isArray(order.items) ? (order.items as Record<string, unknown>[]) : [];
@@ -1595,8 +1753,8 @@ async function sendPaymentConfirmationMessage(
   const lines = [
     "Pago com sucesso.",
     `Pedido: ${shortOrderId}`,
-    `Valor: ${amountText}`,
-    `MÃ©todo: ${method === "pix_qr" ? "Pix" : method === "telegram_checkout" ? "Telegram Checkout" : "Mercado Pago"}`,
+    `Valor: ${method === "telegram_checkout" && providerAmount > 0 ? `${providerAmount} Stars` : amountText}`,
+    `Metodo: ${method === "pix_qr" ? "Pix" : method === "telegram_checkout" ? "Telegram Stars" : "Mercado Pago"}`,
   ];
 
   if (statusDetail) {
@@ -1616,11 +1774,11 @@ async function sendPaymentConfirmationMessage(
   const buttons: Array<Array<{ text: string; url?: string; web_app?: { url: string } }>> = [];
   if (primarySeriesId) {
     buttons.push([{
-      text: primarySeriesTitle ? `Assistir ${primarySeriesTitle}` : "Abrir sÃ©rie",
+      text: primarySeriesTitle ? `Assistir ${primarySeriesTitle}` : "Abrir série",
       web_app: { url: buildSeriesLaunchUrl(primarySeriesId) },
     }]);
   }
-  buttons.push([{ text: "Abrir catÃ¡logo", web_app: { url: SERIES_WEBAPP_URL } }]);
+  buttons.push([{ text: "Abrir catálogo", web_app: { url: SERIES_WEBAPP_URL } }]);
 
   await telegramRequest("sendMessage", {
     chat_id: chatId,
@@ -1662,6 +1820,31 @@ function validateApprovedPaymentForOrder(order: Record<string, unknown>, payment
   const currency = String(payment.currency_id ?? "").trim().toUpperCase();
   if (currency !== "BRL") return "Moeda do pagamento invalida";
   if (payment.captured === false) return "Pagamento ainda nao foi capturado";
+  return "";
+}
+
+function validateTelegramStarsPaymentForOrder(
+  order: Record<string, unknown>,
+  payment: Record<string, unknown>,
+  userId: string,
+) {
+  const orderId = String(order.order_id ?? "").trim();
+  if (!orderId || String(payment.invoice_payload ?? "").trim() !== orderId) {
+    return "Fatura vinculada a outro pedido";
+  }
+  if (!userId || String(order.user_id ?? "").trim() !== userId) {
+    return "Pagamento vinculado a outro usuario";
+  }
+  if (String(order.payment_provider ?? "").trim() !== "telegram_stars") {
+    return "Provedor do pedido invalido";
+  }
+  if (String(order.provider_currency ?? "").trim().toUpperCase() !== "XTR"
+    || String(payment.currency ?? "").trim().toUpperCase() !== "XTR") {
+    return "Moeda da fatura invalida";
+  }
+  const expected = Math.round(Number(order.provider_amount ?? 0) || 0);
+  const paid = Math.round(Number(payment.total_amount ?? 0) || 0);
+  if (expected <= 0 || paid !== expected) return "Quantidade de Stars divergente";
   return "";
 }
 
@@ -1751,7 +1934,7 @@ async function validateMercadoPagoWebhookSignature(req: Request, payload: Record
   const { ts, v1 } = parseMercadoPagoSignature(signatureHeader);
   if (!ts || !v1) {
     if (isPayment) {
-      throw new Error("Assinatura do webhook invÃ¡lida");
+      throw new Error("Assinatura do webhook inválida");
     }
 
     return { validated: false, skipped: true, reason: "signature_headers_incomplete" };
@@ -1761,7 +1944,7 @@ async function validateMercadoPagoWebhookSignature(req: Request, payload: Record
   const expected = await hashMercadoPagoWebhookManifest(MERCADO_PAGO_WEBHOOK_SECRET, manifest);
 
   if (!timingSafeEqualHex(expected, v1)) {
-    throw new Error("Assinatura do webhook invÃ¡lida");
+    throw new Error("Assinatura do webhook inválida");
   }
 
   return { validated: true, skipped: false };
@@ -1858,11 +2041,19 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
 
   if (currentStatus === "approved") {
     nextPatch.confirmed_at = new Date().toISOString();
+    nextPatch.paid_at = new Date().toISOString();
+    nextPatch.external_payment_id = String(payment.id ?? order.mercado_pago_payment_id ?? "");
     nextPatch.error_message = null;
   } else if (currentStatus === "rejected") {
     nextPatch.rejected_at = new Date().toISOString();
   } else if (currentStatus === "cancelled" || currentStatus === "canceled") {
     nextPatch.canceled_at = new Date().toISOString();
+  } else if (currentStatus === "refunded") {
+    nextPatch.refunded_at = new Date().toISOString();
+    nextPatch.delivery_status = "revoked";
+  } else if (currentStatus === "charged_back") {
+    nextPatch.chargeback_at = new Date().toISOString();
+    nextPatch.delivery_status = "revoked";
   }
 
   const updatedOrder = orderId
@@ -1875,8 +2066,32 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
     await updateCouponRedemption(orderId, "reversed");
   }
 
+  if (
+    orderId
+    && previousStatus.toLowerCase() !== currentStatus
+    && ["rejected", "cancelled", "canceled", "expired"].includes(currentStatus)
+  ) {
+    await recordAppEvent({
+      eventName: "purchase_failed",
+      userId: String(updatedOrder.user_id ?? ""),
+      orderId,
+      metadata: { payment_provider: "mercado_pago", payment_status: currentStatus },
+    });
+  }
+
+  if (orderId && (currentStatus === "refunded" || currentStatus === "charged_back")) {
+    await revokeOrderEntitlements(orderId, currentStatus === "refunded" ? "refunded" : "charged_back");
+    await recordAppEvent({
+      eventName: currentStatus === "refunded" ? "purchase_refunded" : "purchase_chargeback",
+      userId: String(updatedOrder.user_id ?? ""),
+      orderId,
+      metadata: { payment_provider: "mercado_pago" },
+    });
+  }
+
   let finalOrder = updatedOrder;
   if (currentStatus === "approved") {
+    await grantOrderEntitlements(updatedOrder);
     const deliveryStatus = String(updatedOrder.delivery_status ?? "pending").trim().toLowerCase();
     const shouldDeliver = previousStatus !== "approved" || deliveryStatus !== "completed";
     let deliverySummary = null;
@@ -1895,6 +2110,15 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
         metadata: {
           payment_method: normalizeCheckoutMethod(updatedOrder.payment_method),
           delivery_status: String(deliverySummary?.deliveryStatus ?? updatedOrder.delivery_status ?? "pending"),
+        },
+      });
+      await recordAppEvent({
+        eventName: "purchase_completed",
+        userId: String(updatedOrder.user_id ?? ""),
+        orderId,
+        metadata: {
+          payment_provider: "mercado_pago",
+          amount: Number(updatedOrder.amount ?? 0) || 0,
         },
       });
     }
@@ -2095,7 +2319,7 @@ async function updateCouponRedemption(orderId: string, status: "applied" | "reve
 async function handlePaymentCreate(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
-    return json(req, { error: "Corpo da requisiÃ§Ã£o invÃ¡lido" }, 400);
+    return json(req, { error: "Corpo da requisição inválido" }, 400);
   }
 
   let userId = "";
@@ -2118,6 +2342,12 @@ async function handlePaymentCreate(req: Request) {
   if (!items.length) return json(req, { error: "Carrinho vazio" }, 400);
 
   const paymentMethod = normalizeCheckoutMethod(body.payment_method ?? body.method ?? body.checkout_method);
+  if (!isTelegramDigitalPaymentMethodAllowed(paymentMethod)) {
+    return json(req, {
+      error: "Dentro do Telegram, conteudos digitais devem ser pagos com Telegram Stars.",
+      code: "telegram_stars_required",
+    }, 400);
+  }
   const buyerEmail = String(body.buyer_email ?? body.email ?? "").trim();
   const buyerName = String(body.buyer_name ?? body.name ?? "").trim();
   let pricing;
@@ -2127,35 +2357,90 @@ async function handlePaymentCreate(req: Request) {
     return json(req, { error: error instanceof Error ? error.message : "Cupom invalido" }, 400);
   }
   const amount = pricing.total;
+  const baseStarsAmount = items.reduce(
+    (sum, item) => sum + Math.max(1, Math.round(item.stars_price ?? TELEGRAM_STARS_DEFAULT_PRICE)),
+    0,
+  );
+  const discountRatio = pricing.subtotal > 0 ? pricing.total / pricing.subtotal : 1;
+  const starsAmount = Math.max(items.length, Math.round(baseStarsAmount * discountRatio));
   const description = buildCheckoutDescription(items);
+
+  const reusableOrder = await findReusablePendingOrder({
+    userId,
+    items,
+    couponCode: pricing.code || null,
+    paymentProvider: "telegram_stars",
+  }).catch(() => null);
+  if (reusableOrder) {
+    const reusableOrderId = String(reusableOrder.order_id ?? "").trim();
+    await recordAppEvent({
+      eventName: "checkout_reused",
+      userId,
+      orderId: reusableOrderId,
+      metadata: { payment_provider: "telegram_stars", item_count: items.length },
+    });
+    return json(req, {
+      ok: true,
+      reused: true,
+      order: reusableOrder,
+      payment_method: "telegram_checkout",
+      payment_link: String(reusableOrder.checkout_url ?? ""),
+      provider_currency: "XTR",
+      provider_amount: Number(reusableOrder.provider_amount ?? starsAmount) || starsAmount,
+    });
+  }
+
   const orderId = crypto.randomUUID();
   const chatId = userId;
 
   if (paymentMethod === "pix_qr" && !buyerEmail) {
-    return json(req, { error: "Informe um e-mail vÃ¡lido para gerar o Pix." }, 400);
+    return json(req, { error: "Informe um e-mail válido para gerar o Pix." }, 400);
   }
 
-  let order = await createPaymentOrderRecord({
-    orderId,
-    userId,
-    chatId,
-    paymentMethod,
-    amount,
-    subtotal: pricing.subtotal,
-    discountAmount: pricing.discountAmount,
-    couponCode: pricing.code || null,
-    items,
-    buyerEmail: buyerEmail || null,
-    buyerName: buyerName || null,
-    description,
-    status: "created",
-  });
+  let order: Record<string, unknown>;
+  try {
+    order = await createPaymentOrderRecord({
+      orderId,
+      userId,
+      chatId,
+      paymentMethod,
+      amount,
+      subtotal: pricing.subtotal,
+      discountAmount: pricing.discountAmount,
+      couponCode: pricing.code || null,
+      items,
+      buyerEmail: buyerEmail || null,
+      buyerName: buyerName || null,
+      description,
+      status: "created",
+      salesChannel: "telegram",
+      paymentProvider: "telegram_stars",
+      providerCurrency: "XTR",
+      providerAmount: starsAmount,
+    }) as Record<string, unknown>;
+  } catch (error) {
+    await recordAppEvent({
+      eventName: "purchase_failed",
+      userId,
+      orderId,
+      metadata: { payment_provider: "telegram_stars", stage: "order_creation" },
+    });
+    return json(req, {
+      error: error instanceof Error ? error.message : "Nao foi possivel criar o pedido",
+    }, 500);
+  }
 
   if (pricing.code && pricing.discountAmount > 0) {
     try {
       await createCouponRedemption({ code: pricing.code, userId, orderId, discountAmount: pricing.discountAmount });
     } catch {
       await updatePaymentOrderRecord(orderId, { status: "failed", error_message: "Falha ao reservar cupom" }).catch(() => null);
+      await recordAppEvent({
+        eventName: "purchase_failed",
+        userId,
+        orderId,
+        metadata: { payment_provider: "telegram_stars", stage: "coupon_reservation" },
+      });
       return json(req, { error: "Nao foi possivel reservar este cupom. Tente novamente." }, 409);
     }
   }
@@ -2170,8 +2455,37 @@ async function handlePaymentCreate(req: Request) {
       amount,
     },
   });
+  await recordAppEvent({
+    eventName: "checkout_created",
+    userId,
+    orderId,
+    metadata: {
+      payment_provider: "telegram_stars",
+      item_count: items.length,
+      provider_amount: starsAmount,
+    },
+  });
 
   try {
+    if (paymentMethod === "telegram_checkout") {
+      const invoiceUrl = await createTelegramStarsInvoice({ orderId, description, starsAmount });
+      order = await updatePaymentOrderRecord(orderId, {
+        status: "pending_payment",
+        checkout_url: invoiceUrl,
+        last_event_at: new Date().toISOString(),
+      }) as Record<string, unknown>;
+
+      await sendPaymentCreatedMessage(order);
+      return json(req, {
+        ok: true,
+        order,
+        payment_method: paymentMethod,
+        payment_link: invoiceUrl,
+        provider_currency: "XTR",
+        provider_amount: starsAmount,
+      });
+    }
+
     if (paymentMethod === "pix_qr") {
       const pix = await createMercadoPagoPixPayment({
         orderId,
@@ -2249,6 +2563,12 @@ async function handlePaymentCreate(req: Request) {
       last_event_at: new Date().toISOString(),
     }).catch(() => null);
     if (pricing.code) await updateCouponRedemption(orderId, "reversed");
+    await recordAppEvent({
+      eventName: "purchase_failed",
+      userId,
+      orderId,
+      metadata: { payment_provider: "telegram_stars", stage: "checkout_creation" },
+    });
     return json(req, { error: message }, 500);
   }
 }
@@ -2256,7 +2576,7 @@ async function handlePaymentCreate(req: Request) {
 async function handlePaymentStatus(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) {
-    return json(req, { error: "Corpo da requisiÃ§Ã£o invÃ¡lido" }, 400);
+    return json(req, { error: "Corpo da requisição inválido" }, 400);
   }
 
   const orderId = String(body.order_id ?? body.orderId ?? "").trim();
@@ -2276,7 +2596,7 @@ async function handlePaymentStatus(req: Request) {
 
   const order = await getPaymentOrderById(orderId);
   if (!order) {
-    return json(req, { error: "Pedido nÃ£o encontrado" }, 404);
+    return json(req, { error: "Pedido não encontrado" }, 404);
   }
 
   if (String(order.user_id) !== userId) {
@@ -2285,7 +2605,7 @@ async function handlePaymentStatus(req: Request) {
 
   let refreshedOrder = order;
   const paymentId = String(order.mercado_pago_payment_id ?? "").trim();
-  if (paymentId && String(order.status ?? "").toLowerCase() !== "approved") {
+  if (paymentId && !["refunded", "charged_back"].includes(String(order.status ?? "").toLowerCase())) {
     try {
       const payment = await fetchMercadoPagoPayment(paymentId);
       const externalReference = String(payment.external_reference ?? "").trim();
@@ -2319,7 +2639,7 @@ async function handlePaymentStatus(req: Request) {
 async function handleMercadoPagoWebhook(req: Request, url: URL) {
   const payload = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!payload) {
-    return json(req, { ok: false, error: "Webhook invÃ¡lido" }, 400);
+    return json(req, { ok: false, error: "Webhook inválido" }, 400);
   }
 
   try {
@@ -2412,7 +2732,7 @@ async function recordPublicChannelAudit(entry: {
       ]),
     });
   } catch (error) {
-    console.error("[AUDIT] Falha ao registrar entrada do canal pÃºblico:", error);
+    console.error("[AUDIT] Falha ao registrar entrada do canal público:", error);
   }
 }
 
@@ -2451,7 +2771,7 @@ async function recordPublicChannelPost(entry: {
       ]),
     });
   } catch (error) {
-    console.error("[AUDIT] Falha ao registrar post do canal pÃºblico:", error);
+    console.error("[AUDIT] Falha ao registrar post do canal público:", error);
   }
 }
 
@@ -2480,7 +2800,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
   } else {
     if (username.length < 5 || username.length > 24) {
       score += policy.shortUsernamePenalty;
-      reasons.push("Username fora do padrÃ£o comum");
+      reasons.push("Username fora do padrão comum");
     }
 
     if (looksRandomText(username)) {
@@ -2491,7 +2811,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
 
     if (/(.)\1{3,}/.test(username)) {
       score += policy.repeatedUsernamePenalty;
-      reasons.push("Username com repetiÃ§Ã£o excessiva");
+      reasons.push("Username com repetição excessiva");
       strongSignals.push("username_repetido");
     }
   }
@@ -2504,7 +2824,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
 
     if (looksRandomText(displayName.replace(/\s+/g, ""))) {
       score += policy.randomDisplayNamePenalty;
-      reasons.push("Nome parece aleatÃ³rio");
+      reasons.push("Nome parece aleatório");
       strongSignals.push("nome_random");
     }
   } else {
@@ -2514,7 +2834,7 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
 
   if (!languageCode) {
     score += policy.noLanguagePenalty;
-    reasons.push("Sem cÃ³digo de idioma");
+    reasons.push("Sem código de idioma");
   }
 
   try {
@@ -2525,12 +2845,12 @@ async function analyzePublicChannelJoin(user: Record<string, unknown>) {
     }
   } catch {
     score += 5;
-    reasons.push("NÃ£o foi possÃ­vel verificar foto de perfil");
+    reasons.push("Não foi possível verificar foto de perfil");
   }
 
   if (firstName && lastName && looksRandomText(`${firstName}${lastName}`)) {
     score += policy.randomDisplayNamePenalty;
-    reasons.push("Nome completo parece aleatÃ³rio");
+    reasons.push("Nome completo parece aleatório");
     strongSignals.push("nome_completo_random");
   }
 
@@ -2591,6 +2911,7 @@ async function configureTelegramBotSurface() {
       { command: "catalogo", description: "Ver series disponiveis" },
       { command: "continuar", description: "Retomar ultima serie" },
       { command: "recomendar", description: "Receber recomendacoes" },
+      { command: "paysupport", description: "Ajuda com pagamentos" },
       { command: "menu", description: "Mostrar opcoes" },
       { command: "ajuda", description: "Receber ajuda" },
     ]),
@@ -2681,7 +3002,7 @@ async function encryptChallenge(secret: string, payload: Record<string, unknown>
 async function decryptChallenge(secret: string, token: string) {
   const [ivPart, cipherPart] = token.split(".");
   if (!ivPart || !cipherPart) {
-    throw new Error("Token de desafio invÃ¡lido");
+    throw new Error("Token de desafio inválido");
   }
 
   const iv = base64UrlDecode(ivPart);
@@ -2713,7 +3034,7 @@ function buildCaptchaQuestion() {
   const operators = [
     { label: "+", compute: (a: number, b: number) => a + b },
     { label: "-", compute: (a: number, b: number) => a - b },
-    { label: "Ã—", compute: (a: number, b: number) => a * b },
+    { label: "×", compute: (a: number, b: number) => a * b },
   ];
 
   const a = Math.floor(Math.random() * 8) + 2;
@@ -2722,7 +3043,7 @@ function buildCaptchaQuestion() {
   const left = operator.label === "-" && a < b ? b : a;
   const right = operator.label === "-" && a < b ? a : b;
   const answer = String(operator.compute(left, right));
-  const question = `Quanto Ã© ${left} ${operator.label} ${right}?`;
+  const question = `Quanto é ${left} ${operator.label} ${right}?`;
 
   return { question, answer };
 }
@@ -2805,7 +3126,7 @@ async function validateWebAppInitData(initData: string) {
   const expectedHash = Array.from(expectedHashBytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
   if (!constantTimeEqual(hash, expectedHash)) {
-    throw new Error("Dados do Telegram invÃ¡lidos");
+    throw new Error("Dados do Telegram inválidos");
   }
 
   const authDate = Number(params.get("auth_date") || "0");
@@ -2815,17 +3136,17 @@ async function validateWebAppInitData(initData: string) {
 
   const age = Math.floor(Date.now() / 1000) - authDate;
   if (age < 0 || age > WEBAPP_MAX_AGE_SECONDS) {
-    throw new Error("SessÃ£o do Telegram expirada");
+    throw new Error("Sessão do Telegram expirada");
   }
 
   const userRaw = params.get("user");
   if (!userRaw) {
-    throw new Error("UsuÃ¡rio do Telegram ausente");
+    throw new Error("Usuário do Telegram ausente");
   }
 
   const user = JSON.parse(userRaw) as { id?: number | string; is_bot?: boolean };
   if (!user?.id || user.is_bot) {
-    throw new Error("UsuÃ¡rio do Telegram invÃ¡lido");
+    throw new Error("Usuário do Telegram inválido");
   }
 
   return { userId: String(user.id), user, authDate };
@@ -2885,9 +3206,9 @@ async function answerChatJoinRequestQuery(
 async function sendCaptchaInvitation(chatId: string | number, webAppUrl: string) {
   return await telegramRequest("sendMessage", {
     chat_id: chatId,
-    text: "Abra a verificaÃ§Ã£o para confirmar sua entrada.",
+    text: "Abra a verificação para confirmar sua entrada.",
     reply_markup: JSON.stringify({
-      inline_keyboard: [[{ text: "Abrir verificaÃ§Ã£o", web_app: { url: webAppUrl } }]],
+      inline_keyboard: [[{ text: "Abrir verificação", web_app: { url: webAppUrl } }]],
     }),
   });
 }
@@ -2906,6 +3227,196 @@ async function declineChatJoinRequest(chatId: string | number, userId: string | 
   });
 }
 
+async function answerTelegramPreCheckout(queryId: string, ok: boolean, errorMessage = "") {
+  return await telegramRequest("answerPreCheckoutQuery", {
+    pre_checkout_query_id: queryId,
+    ok,
+    ...(ok || !errorMessage ? {} : { error_message: errorMessage.slice(0, 200) }),
+  });
+}
+
+async function handleTelegramPreCheckoutQuery(req: Request, update: Record<string, unknown>) {
+  const query = update.pre_checkout_query as Record<string, unknown> | undefined;
+  if (!query) return null;
+
+  const queryId = String(query.id ?? "").trim();
+  const orderId = String(query.invoice_payload ?? "").trim();
+  const user = query.from as Record<string, unknown> | undefined;
+  const userId = String(user?.id ?? "").trim();
+  const currency = String(query.currency ?? "").trim().toUpperCase();
+  const totalAmount = Math.round(Number(query.total_amount ?? 0) || 0);
+  if (!queryId) return json(req, { ok: false, error: "Consulta de pagamento sem identificador" }, 400);
+
+  try {
+    const order = orderId ? await getPaymentOrderById(orderId) as Record<string, unknown> | null : null;
+    const validationError = order
+      ? validateTelegramStarsPaymentForOrder(order, query, userId)
+      : "Pedido nao encontrado";
+    const valid = Boolean(
+      order
+      && !validationError
+      && !["approved", "refunded", "charged_back"].includes(String(order.status ?? "").toLowerCase())
+    );
+
+    if (!valid || !order) {
+      await answerTelegramPreCheckout(queryId, false, "Este pedido nao esta mais disponivel. Abra o catalogo e tente novamente.");
+      return json(req, { ok: true, action: "telegram_pre_checkout_rejected" });
+    }
+
+    const itemIds = (Array.isArray(order.items) ? order.items as Record<string, unknown>[] : [])
+      .map((item) => String(item.id ?? item.serie_id ?? item.series_id ?? "").trim())
+      .filter(Boolean);
+    const accessible = isOwnerUserId(userId) ? new Set<string>() : await getAccessibleSeriesIds(userId);
+    if (itemIds.some((seriesId) => accessible.has(seriesId))) {
+      await answerTelegramPreCheckout(queryId, false, "Voce ja possui acesso a um dos itens deste pedido.");
+      return json(req, { ok: true, action: "telegram_pre_checkout_already_owned" });
+    }
+
+    await answerTelegramPreCheckout(queryId, true);
+    await recordAppEvent({
+      eventName: "telegram_pre_checkout_approved",
+      userId,
+      orderId,
+      metadata: { provider_currency: "XTR", provider_amount: totalAmount },
+    });
+    return json(req, { ok: true, action: "telegram_pre_checkout_approved" });
+  } catch (error) {
+    await answerTelegramPreCheckout(queryId, false, "Nao foi possivel validar o pedido agora. Tente novamente.").catch(() => null);
+    console.error("[PAYMENT] Falha no pre-checkout do Telegram:", error instanceof Error ? error.message : String(error));
+    return json(req, { ok: true, action: "telegram_pre_checkout_failed" });
+  }
+}
+
+async function handleTelegramSuccessfulPayment(
+  req: Request,
+  message: Record<string, unknown>,
+  payment: Record<string, unknown>,
+) {
+  const orderId = String(payment.invoice_payload ?? "").trim();
+  const chargeId = String(payment.telegram_payment_charge_id ?? "").trim();
+  const providerChargeId = String(payment.provider_payment_charge_id ?? "").trim();
+  const currency = String(payment.currency ?? "").trim().toUpperCase();
+  const totalAmount = Math.round(Number(payment.total_amount ?? 0) || 0);
+  const from = message.from as Record<string, unknown> | undefined;
+  const userId = String(from?.id ?? "").trim();
+  const order = orderId ? await getPaymentOrderById(orderId) as Record<string, unknown> | null : null;
+
+  const validationError = order
+    ? validateTelegramStarsPaymentForOrder(order, payment, userId)
+    : "Pedido nao encontrado";
+  if (!order || validationError || !chargeId) {
+    console.error("[PAYMENT] successful_payment do Telegram rejeitado por divergencia", orderId);
+    return json(req, { ok: false, error: "Pagamento divergente do pedido" }, 409);
+  }
+
+  const alreadyApproved = String(order.status ?? "").toLowerCase() === "approved";
+  if (alreadyApproved && String(order.telegram_payment_charge_id ?? "") !== chargeId) {
+    return json(req, { ok: false, error: "Pedido ja vinculado a outro pagamento" }, 409);
+  }
+
+  let approvedOrder = alreadyApproved ? order : await updatePaymentOrderRecord(orderId, {
+    status: "approved",
+    external_payment_id: chargeId,
+    telegram_payment_charge_id: chargeId,
+    telegram_provider_charge_id: providerChargeId || null,
+    confirmed_at: new Date().toISOString(),
+    paid_at: new Date().toISOString(),
+    last_event_at: new Date().toISOString(),
+    error_message: null,
+    webhook_payload: { source: "telegram_successful_payment", currency, total_amount: totalAmount },
+  }) as Record<string, unknown>;
+
+  await grantOrderEntitlements(approvedOrder);
+  await updateCouponRedemption(orderId, "applied");
+  const deliverySummary = await deliverApprovedOrderSeries(approvedOrder);
+  approvedOrder = await getPaymentOrderById(orderId) as Record<string, unknown> || approvedOrder;
+
+  if (!alreadyApproved) {
+    await recordAppEvent({
+      eventName: "payment_approved",
+      userId,
+      orderId,
+      metadata: {
+        payment_method: "telegram_checkout",
+        payment_provider: "telegram_stars",
+        provider_currency: "XTR",
+        provider_amount: totalAmount,
+        delivery_status: deliverySummary.deliveryStatus,
+      },
+    });
+    await recordAppEvent({
+      eventName: "purchase_completed",
+      userId,
+      orderId,
+      metadata: {
+        payment_provider: "telegram_stars",
+        provider_currency: "XTR",
+        provider_amount: totalAmount,
+      },
+    });
+  }
+
+  if (!approvedOrder.delivery_notification_sent_at) {
+    await sendPaymentConfirmationMessage(approvedOrder, { status_detail: "Confirmado pelo Telegram" }, deliverySummary);
+    approvedOrder = await updatePaymentOrderRecord(orderId, {
+      delivery_notification_sent_at: new Date().toISOString(),
+    }) as Record<string, unknown>;
+  }
+
+  return json(req, {
+    ok: true,
+    action: alreadyApproved ? "telegram_payment_replayed" : "telegram_payment_approved",
+    order_id: orderId,
+    delivery_status: approvedOrder.delivery_status ?? deliverySummary.deliveryStatus,
+  });
+}
+
+async function handleTelegramRefundedPayment(
+  req: Request,
+  payment: Record<string, unknown>,
+) {
+  const orderId = String(payment.invoice_payload ?? "").trim();
+  const chargeId = String(payment.telegram_payment_charge_id ?? "").trim();
+  const order = orderId ? await getPaymentOrderById(orderId) as Record<string, unknown> | null : null;
+  const userId = String(order?.user_id ?? "").trim();
+  const validationError = order
+    ? validateTelegramStarsPaymentForOrder(order, payment, userId)
+    : "Pedido nao encontrado";
+
+  if (
+    !order
+    || validationError
+    || !chargeId
+    || String(order.telegram_payment_charge_id ?? "").trim() !== chargeId
+  ) {
+    console.error("[PAYMENT] refunded_payment do Telegram rejeitado por divergencia", orderId);
+    return json(req, { ok: false, error: "Estorno divergente do pedido" }, 409);
+  }
+
+  if (String(order.status ?? "").toLowerCase() !== "refunded") {
+    await updatePaymentOrderRecord(orderId, {
+      status: "refunded",
+      refunded_at: new Date().toISOString(),
+      delivery_status: "revoked",
+      last_event_at: new Date().toISOString(),
+      webhook_payload: {
+        source: "telegram_refunded_payment",
+        currency: String(payment.currency ?? "").toUpperCase(),
+        total_amount: Math.round(Number(payment.total_amount ?? 0) || 0),
+      },
+    });
+    await revokeOrderEntitlements(orderId, "refunded");
+    await recordAppEvent({
+      eventName: "purchase_refunded",
+      userId,
+      orderId,
+      metadata: { payment_provider: "telegram_stars" },
+    });
+  }
+
+  return json(req, { ok: true, action: "telegram_payment_refunded", order_id: orderId });
+}
+
 async function handleTelegramUserMessage(req: Request, update: Record<string, unknown>) {
   const message = getUpdateMessage(update);
   if (!message) {
@@ -2920,6 +3431,16 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
   const isOwnerSender = senderUserId === String(OWNER_TELEGRAM_USER_ID);
   if (chatId == null) {
     return json(req, { ok: true, ignored: true });
+  }
+
+  const successfulPayment = message.successful_payment as Record<string, unknown> | undefined;
+  if (successfulPayment) {
+    return await handleTelegramSuccessfulPayment(req, message, successfulPayment);
+  }
+
+  const refundedPayment = message.refunded_payment as Record<string, unknown> | undefined;
+  if (refundedPayment) {
+    return await handleTelegramRefundedPayment(req, refundedPayment);
   }
 
   const mediaFileEntries = getTelegramMediaFileEntries(message);
@@ -3000,7 +3521,7 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
         const order = await getPaymentOrderById(orderId);
         if (order) {
           if (String(order.status ?? "").toLowerCase() === "approved") {
-            await sendPaymentConfirmationMessage(order as Record<string, unknown>, { status_detail: "Pagamento jÃ¡ confirmado." });
+            await sendPaymentConfirmationMessage(order as Record<string, unknown>, { status_detail: "Pagamento já confirmado." });
           } else {
             await sendPaymentCreatedMessage(order as Record<string, unknown>);
           }
@@ -3031,7 +3552,7 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
     return json(req, { ok: true, action: "start_welcome_sent" });
   }
 
-  if (/^(?:\/menu|menu|\/catalogo|catalogo|\/catÃ¡logo|catÃ¡logo|\/ajuda|ajuda|\/help|help)$/i.test(text)) {
+  if (/^(?:\/menu|menu|\/catalogo|catalogo|\/catálogo|catálogo|\/ajuda|ajuda|\/help|help)$/i.test(text)) {
     await sendBotWelcomeMessageRich(chatId);
     return json(req, { ok: true, action: "menu_sent" });
   }
@@ -3044,6 +3565,17 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
   if (/^(?:\/recomendar|recomendar|\/recomendacoes|recomendacoes)$/i.test(text)) {
     await sendRecommendationsMessage(chatId, String(chatId));
     return json(req, { ok: true, action: "recommend_sent" });
+  }
+
+  if (/^\/paysupport(?:@\w+)?$/i.test(text)) {
+    await telegramRequest("sendMessage", {
+      chat_id: chatId,
+      text: "Para ajuda com pagamento ou entrega, abra o suporte e informe o codigo do pedido.",
+      reply_markup: stringifyJson({
+        inline_keyboard: [[{ text: "Abrir suporte", web_app: { url: `${SERIES_WEBAPP_URL.replace(/\/$/, "")}/ajuda` } }]],
+      }),
+    });
+    return json(req, { ok: true, action: "payment_support_sent" });
   }
 
   if (/^(?:\/fileid|fileid)(?:\s+[A-Za-z0-9_-]+)?$/i.test(text)) {
@@ -3059,8 +3591,8 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
     await telegramRequest("sendMessage", {
       chat_id: chatId,
       text: [
-        "Envie uma foto, vÃ­deo, documento, Ã¡udio ou outro arquivo no privado.",
-        "Eu vou responder com o File_ID e o File Unique ID da mÃ­dia enviada.",
+        "Envie uma foto, vídeo, documento, áudio ou outro arquivo no privado.",
+        "Eu vou responder com o File_ID e o File Unique ID da mídia enviada.",
       ].join("\n"),
       reply_markup: JSON.stringify({
         inline_keyboard: [
@@ -3082,7 +3614,7 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
 
 async function proxyTelegramFile(req: Request, fileId: string, title = "") {
   if (!TELEGRAM_BOT_TOKEN) {
-    return json(req, { error: "TELEGRAM_BOT_TOKEN nÃ£o configurado" }, 500);
+    return json(req, { error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
   }
 
   let file_path = "";
@@ -3524,10 +4056,10 @@ async function sendSeriesLaunchPrompt(chatId: string | number, serieId: string, 
     chat_id: chatId,
     text: title
       ? `Abrindo "${title}" no mini app.`
-      : "Abrindo a sÃ©rie no mini app.",
+      : "Abrindo a série no mini app.",
     reply_markup: JSON.stringify({
       inline_keyboard: [[{
-        text: "Abrir a sÃ©rie",
+        text: "Abrir a série",
         web_app: { url: buildSeriesLaunchUrl(serieId) },
       }]],
     }),
@@ -3562,7 +4094,7 @@ async function sendCheckoutAck(chatId: string | number, itemCount: number, total
     text: `Seu carrinho esta pronto: ${itemCount} item${itemCount === 1 ? "" : "s"} por ${total}.`,
     reply_markup: JSON.stringify({
       inline_keyboard: [[{
-        text: "Abrir catÃ¡logo",
+        text: "Abrir catálogo",
         web_app: { url: SERIES_WEBAPP_URL },
       }]],
     }),
@@ -3722,20 +4254,23 @@ async function sendRecommendationsMessage(chatId: string | number, userId: strin
 
 async function handleTelegramWebhook(req: Request) {
   if (!TELEGRAM_BOT_TOKEN) {
-    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN nÃ£o configurado" }, 500);
+    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
   }
 
   if (TELEGRAM_WEBHOOK_SECRET) {
     const secretToken = req.headers.get("x-telegram-bot-api-secret-token") || "";
     if (!constantTimeEqual(secretToken, TELEGRAM_WEBHOOK_SECRET)) {
-      return json(req, { ok: false, error: "Webhook invÃ¡lido" }, 403);
+      return json(req, { ok: false, error: "Webhook inválido" }, 403);
     }
   }
 
   const update = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!update) {
-    return json(req, { ok: false, error: "Update invÃ¡lido" }, 400);
+    return json(req, { ok: false, error: "Update inválido" }, 400);
   }
+
+  const preCheckoutResponse = await handleTelegramPreCheckoutQuery(req, update);
+  if (preCheckoutResponse) return preCheckoutResponse;
 
   const channelPostUpdate = getUpdateChannelPost(update);
   if (channelPostUpdate) {
@@ -3858,7 +4393,7 @@ async function handleTelegramWebhook(req: Request) {
         await sendModerationAlert(
           [
             `Modo: ${analysis.policy.mode}`,
-            `ExpulsÃ£o automÃ¡tica no canal pÃºblico: ${safeName}`,
+            `Expulsão automática no canal público: ${safeName}`,
             `Score: ${analysis.score}`,
             `Limite de banimento: ${analysis.policy.banThreshold}`,
             `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
@@ -3891,7 +4426,7 @@ async function handleTelegramWebhook(req: Request) {
         await sendModerationAlert(
           [
             `Modo: ${analysis.policy.mode}`,
-            `Falha ao expulsar membro suspeito no canal pÃºblico: ${safeName}`,
+            `Falha ao expulsar membro suspeito no canal público: ${safeName}`,
             `Score: ${analysis.score}`,
             `Limite de banimento: ${analysis.policy.banThreshold}`,
             `Erro: ${message}`,
@@ -3928,7 +4463,7 @@ async function handleTelegramWebhook(req: Request) {
       await sendModerationAlert(
         [
           `Modo: ${analysis.policy.mode}`,
-          `Novo inscrito suspeito no canal pÃºblico: ${safeName}`,
+          `Novo inscrito suspeito no canal público: ${safeName}`,
           `Score: ${analysis.score}`,
           `Limite de alerta: ${analysis.policy.alertThreshold}`,
           `Motivos: ${analysis.reasons.join("; ") || "sem motivos adicionais"}`,
@@ -4035,6 +4570,7 @@ async function handleTelegramWebhookRepair(req: Request) {
       "callback_query",
       "channel_post",
       "edited_channel_post",
+      "pre_checkout_query",
     ]),
   });
   await configureTelegramBotSurface();
@@ -4049,7 +4585,7 @@ async function handleTelegramWebhookRepair(req: Request) {
 
 async function handleCaptchaVerify(req: Request) {
   if (!TELEGRAM_BOT_TOKEN) {
-    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN nÃ£o configurado" }, 500);
+    return json(req, { ok: false, error: "TELEGRAM_BOT_TOKEN não configurado" }, 500);
   }
 
   const body = (await req.json().catch(() => null)) as {
@@ -4069,7 +4605,7 @@ async function handleCaptchaVerify(req: Request) {
   } catch (error) {
     return json(
       req,
-      { ok: false, error: error instanceof Error ? error.message : "Dados do Telegram invÃ¡lidos" },
+      { ok: false, error: error instanceof Error ? error.message : "Dados do Telegram inválidos" },
       403,
     );
   }
@@ -4078,14 +4614,14 @@ async function handleCaptchaVerify(req: Request) {
   try {
     publicPayload = JSON.parse(textDecode(base64UrlDecode(body.token))) as Record<string, unknown>;
   } catch {
-    return json(req, { ok: false, error: "Token da verificaÃ§Ã£o invÃ¡lido" }, 400);
+    return json(req, { ok: false, error: "Token da verificação inválido" }, 400);
   }
 
   const challengeToken = typeof publicPayload.c === "string" ? publicPayload.c : "";
   const publicUserId = typeof publicPayload.u === "string" ? publicPayload.u : "";
 
   if (!challengeToken || !publicUserId || !constantTimeEqual(publicUserId, telegramUserId)) {
-    return json(req, { ok: false, error: "UsuÃ¡rio nÃ£o corresponde ao desafio" }, 403);
+    return json(req, { ok: false, error: "Usuário não corresponde ao desafio" }, 403);
   }
 
   let privatePayload: Record<string, unknown>;
@@ -4107,7 +4643,7 @@ async function handleCaptchaVerify(req: Request) {
   }
 
   if (!constantTimeEqual(userId, telegramUserId)) {
-    return json(req, { ok: false, error: "Conta invÃ¡lida para este desafio" }, 403);
+    return json(req, { ok: false, error: "Conta inválida para este desafio" }, 403);
   }
 
   if (!expiresAt || Math.floor(Date.now() / 1000) > expiresAt) {
@@ -4312,6 +4848,13 @@ function getSeriesPrice(row: Record<string, unknown>) {
   return accessType === "paid" || accessType === "premium" ? 5.9 : 0;
 }
 
+function getSeriesStarsPrice(row: Record<string, unknown>) {
+  const configured = Number(row.telegram_stars_price ?? 0);
+  return Number.isFinite(configured) && configured > 0
+    ? Math.round(configured)
+    : TELEGRAM_STARS_DEFAULT_PRICE;
+}
+
 async function getSeriesBySlug(slug: string) {
   const normalized = slugifySeriesTitle(slug);
   if (!normalized) return null;
@@ -4341,13 +4884,7 @@ async function resolveCanonicalCheckoutItems(value: unknown) {
   if (!requestedItems.length) return [];
 
   const seen = new Set<string>();
-  const canonicalItems: Array<{
-    id: string;
-    title: string;
-    quantity: number;
-    price: number;
-    cover_url: string | null;
-  }> = [];
+  const canonicalItems: CanonicalCheckoutItem[] = [];
 
   for (const requested of requestedItems) {
     if (seen.has(requested.id)) continue;
@@ -4374,6 +4911,7 @@ async function resolveCanonicalCheckoutItems(value: unknown) {
       quantity: Math.min(1, Math.max(1, requested.quantity)),
       price,
       cover_url: resolveSeriesCoverPublicUrl(rowRecord) || null,
+      stars_price: getSeriesStarsPrice(rowRecord),
     });
   }
 
@@ -4417,13 +4955,78 @@ async function getApprovedPurchaseRows(userId: string) {
   }
 }
 
+async function getActiveEntitlementRows(userId: string) {
+  if (!userId) return [];
+  try {
+    const data = await supabaseFetch(
+      `${ENTITLEMENTS_TABLE}?select=series_id,status,user_id,order_id&user_id=eq.${encodeURIComponent(userId)}&status=eq.active&limit=500`,
+    );
+    return Array.isArray(data) ? data as Record<string, unknown>[] : [];
+  } catch {
+    return [];
+  }
+}
+
+async function grantOrderEntitlements(order: Record<string, unknown>) {
+  const orderId = String(order.order_id ?? "").trim();
+  const userId = String(order.user_id ?? "").trim();
+  const items = Array.isArray(order.items) ? order.items as Record<string, unknown>[] : [];
+  if (!orderId || !userId || !items.length) return [];
+
+  const now = new Date().toISOString();
+  const rows = items
+    .map((item) => String(item.id ?? item.serie_id ?? item.series_id ?? "").trim())
+    .filter((seriesId, index, all) => seriesId && all.indexOf(seriesId) === index)
+    .map((seriesId) => ({
+      user_id: userId,
+      series_id: seriesId,
+      order_id: orderId,
+      source: "purchase",
+      status: "active",
+      granted_at: now,
+      revoked_at: null,
+      revoke_reason: null,
+      updated_at: now,
+    }));
+
+  if (!rows.length) return [];
+  const result = await supabaseRestRequest(`${ENTITLEMENTS_TABLE}?on_conflict=user_id,series_id`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      prefer: "resolution=merge-duplicates,return=representation",
+    },
+    body: stringifyJson(rows),
+  });
+  return Array.isArray(result) ? result : [];
+}
+
+async function revokeOrderEntitlements(orderId: string, reason: "refunded" | "charged_back") {
+  if (!orderId) return;
+  await supabaseRestRequest(`${ENTITLEMENTS_TABLE}?order_id=eq.${encodeURIComponent(orderId)}&status=eq.active`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", prefer: "return=minimal" },
+    body: stringifyJson({
+      status: "revoked",
+      revoked_at: new Date().toISOString(),
+      revoke_reason: reason,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+}
+
 async function getAccessibleSeriesIds(userId: string) {
-  const [orders, purchases] = await Promise.all([
+  const [entitlements, orders, purchases] = await Promise.all([
+    getActiveEntitlementRows(userId),
     getApprovedPaymentOrderRows(userId),
     getApprovedPurchaseRows(userId),
   ]);
 
   const ids = new Set<string>();
+  for (const entitlement of entitlements) {
+    const id = String(entitlement.series_id ?? "").trim();
+    if (id) ids.add(id);
+  }
   for (const order of orders) {
     const items = Array.isArray(order.items) ? order.items : [];
     for (const item of items) {
@@ -4470,19 +5073,19 @@ function resolveSeriesCoverPublicUrl(row: Record<string, unknown>) {
 function truncateTelegramCaption(text: string, maxLength = 1024) {
   const normalized = String(text || "").replace(/\r\n/g, "\n").trim();
   if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}â€¦`;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
 function buildSeriesAnnouncementCaption(row: Record<string, unknown>) {
-  const description = String(row.description ?? "").trim() || String(row.title ?? "Nova sÃ©rie").trim() || "Nova sÃ©rie no catÃ¡logo.";
+  const description = String(row.description ?? "").trim() || String(row.title ?? "Nova série").trim() || "Nova série no catálogo.";
   const lines = [
-    "NO AR! âœ…",
+    "NO AR! ✅",
     "",
     description,
   ];
 
   if (isSeriesFree(row)) {
-    lines.push("", "SÃ©rie gratuita.");
+    lines.push("", "Série gratuita.");
   }
 
   return truncateTelegramCaption(lines.join("\n"));
@@ -4496,17 +5099,17 @@ function normalizeAnnouncementTextV2(value: unknown) {
 }
 
 function buildSeriesAnnouncementCaptionV2(row: Record<string, unknown>) {
-  const title = normalizeAnnouncementTextV2(row.title ?? "Nova sÃƒÂ©rie") || "Nova sÃƒÂ©rie";
+  const title = normalizeAnnouncementTextV2(row.title ?? "Nova série") || "Nova série";
   const description = normalizeAnnouncementTextV2(row.description ?? "") || title;
   const lines = [
-    "NO AR! Ã¢Å“â€¦",
+    "NO AR! ✅",
     title,
     "",
     description,
   ];
 
   if (isSeriesFree(row)) {
-    lines.push("", "SÃƒÂ©rie gratuita.");
+    lines.push("", "Série gratuita.");
   }
 
   return truncateTelegramCaption(lines.join("\n"));
@@ -4561,7 +5164,7 @@ async function postSeriesAnnouncementToChannel(row: Record<string, unknown>) {
         caption,
       });
     } catch (error) {
-      console.warn("[CHANNEL] Falha ao publicar capa da sÃ©rie:", error instanceof Error ? error.message : String(error));
+      console.warn("[CHANNEL] Falha ao publicar capa da série:", error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -4571,7 +5174,7 @@ async function postSeriesAnnouncementToChannel(row: Record<string, unknown>) {
       text: caption,
     });
   } catch (error) {
-    console.warn("[CHANNEL] Falha ao publicar aviso de nova sÃ©rie:", error instanceof Error ? error.message : String(error));
+    console.warn("[CHANNEL] Falha ao publicar aviso de nova série:", error instanceof Error ? error.message : String(error));
     return null;
   }
 }
@@ -4897,7 +5500,7 @@ async function resolveTelegramPlayback(req: Request, fileId: string, title: stri
       return json(req, {
         type: "internal_player_unavailable",
         title,
-        reason: "Este vÃ­deo precisa ser migrado ou convertido para reproduÃ§Ã£o protegida dentro do Mini App.",
+        reason: "Este vídeo precisa ser migrado ou convertido para reprodução protegida dentro do Mini App.",
       });
     }
     throw error;
@@ -4920,7 +5523,7 @@ async function handleStream(req: Request, url: URL) {
 
   const row = await getSeriesById(serieId);
   if (!row) {
-    return json(req, { error: "SÃ©rie nÃ£o encontrada" }, 404);
+    return json(req, { error: "Série não encontrada" }, 404);
   }
 
   const storagePlayback = await resolveStoragePlayback(row as Record<string, unknown>, String((row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title));
@@ -4943,7 +5546,7 @@ async function handleStream(req: Request, url: URL) {
         return json(req, {
           type: "internal_player_unavailable",
           title: (row as Record<string, unknown>)[SERIES_TITLE_COLUMN] ?? title,
-          reason: "Este vÃ­deo precisa ser migrado ou convertido para reproduÃ§Ã£o protegida dentro do Mini App.",
+          reason: "Este vídeo precisa ser migrado ou convertido para reprodução protegida dentro do Mini App.",
         });
       }
       throw error;
@@ -4956,7 +5559,7 @@ async function handleStream(req: Request, url: URL) {
     });
   }
 
-  return json(req, { error: "VÃ­deo nÃ£o disponÃ­vel" }, 404);
+  return json(req, { error: "Vídeo não disponível" }, 404);
 }
 
 async function handleStreamV2(req: Request, url: URL) {
@@ -5162,6 +5765,9 @@ function serializeCustomerOrder(row: Record<string, unknown>) {
     order_id: String(row.order_id ?? ""),
     status: String(row.status ?? "unknown"),
     payment_method: String(row.payment_method ?? "unknown"),
+    payment_provider: String(row.payment_provider ?? "unknown"),
+    provider_currency: String(row.provider_currency ?? ""),
+    provider_amount: Number(row.provider_amount ?? 0) || 0,
     amount: Number(row.amount ?? 0) || 0,
     subtotal: Number(row.subtotal ?? row.amount ?? 0) || 0,
     discount_amount: Number(row.discount_amount ?? 0) || 0,
@@ -5180,7 +5786,7 @@ function serializeCustomerOrder(row: Record<string, unknown>) {
 
 async function getCustomerPaymentRows(userId: string) {
   const data = await supabaseFetch(
-    `${PAYMENT_ORDERS_TABLE}?select=order_id,status,payment_method,amount,subtotal,discount_amount,coupon_code,items,created_at,confirmed_at,delivery_status,delivery_completed_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=200`,
+      `${PAYMENT_ORDERS_TABLE}?select=order_id,status,payment_method,payment_provider,provider_currency,provider_amount,amount,subtotal,discount_amount,coupon_code,items,created_at,confirmed_at,delivery_status,delivery_completed_at&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=200`,
   );
   return Array.isArray(data) ? data as Record<string, unknown>[] : [];
 }
@@ -5288,7 +5894,7 @@ function sumApprovedPayments(rows: Record<string, unknown>[]) {
 async function getOwnerPaymentRows() {
   try {
     const data = await supabaseFetch(
-      `${PAYMENT_ORDERS_TABLE}?select=order_id,user_id,status,payment_method,amount,items,buyer_email,created_at,confirmed_at,mercado_pago_payment_id,delivery_status,delivery_attempts,delivered_item_ids,delivery_started_at,delivery_completed_at,delivery_last_error&order=created_at.desc&limit=100`,
+      `${PAYMENT_ORDERS_TABLE}?select=order_id,user_id,status,payment_method,payment_provider,sales_channel,provider_currency,provider_amount,amount,items,buyer_email,created_at,confirmed_at,mercado_pago_payment_id,telegram_payment_charge_id,delivery_status,delivery_attempts,delivered_item_ids,delivery_started_at,delivery_completed_at,delivery_last_error&order=created_at.desc&limit=100`,
     );
     return Array.isArray(data) ? data as Record<string, unknown>[] : [];
   } catch {
@@ -5329,6 +5935,10 @@ function serializeOwnerPaymentOrder(row: Record<string, unknown>) {
     user_id: String(row.user_id ?? ""),
     status: String(row.status ?? "unknown"),
     payment_method: String(row.payment_method ?? "unknown"),
+    payment_provider: String(row.payment_provider ?? "unknown"),
+    sales_channel: String(row.sales_channel ?? "unknown"),
+    provider_currency: String(row.provider_currency ?? ""),
+    provider_amount: Number(row.provider_amount ?? 0) || 0,
     amount: Number(row.amount ?? 0) || 0,
     buyer_email: String(row.buyer_email ?? ""),
     created_at: row.created_at ?? null,
@@ -5863,9 +6473,20 @@ async function verifyApprovedOrderForOwnerRetry(order: Record<string, unknown>) 
     return { ok: false as const, status: 409, error: "Somente pedidos aprovados podem ser reprocessados" };
   }
 
-  const paymentId = String(order.mercado_pago_payment_id ?? "").trim();
+  const paymentProvider = String(order.payment_provider ?? "mercado_pago").trim().toLowerCase();
+  if (paymentProvider === "telegram_stars") {
+    const chargeId = String(order.telegram_payment_charge_id ?? "").trim();
+    const currency = String(order.provider_currency ?? "").trim().toUpperCase();
+    const providerAmount = Math.round(Number(order.provider_amount ?? 0) || 0);
+    if (!chargeId || currency !== "XTR" || providerAmount <= 0) {
+      return { ok: false as const, status: 409, error: "Este pedido nao possui comprovante valido do Telegram" };
+    }
+    return { ok: true as const, source: "telegram_stars" };
+  }
+
+  const paymentId = String(order.mercado_pago_payment_id ?? order.external_payment_id ?? "").trim();
   if (!paymentId) {
-    return { ok: true as const, source: "approved_order" };
+    return { ok: false as const, status: 409, error: "Este pedido nao possui comprovante de pagamento conciliado" };
   }
 
   try {
@@ -6101,7 +6722,7 @@ async function handleOwnerSeriesCreate(req: Request) {
   const seoNoindex = isTruthyInput(form.get("seo_noindex"));
 
   if (!title) {
-    return json(req, { error: "Informe o tÃ­tulo da sÃ©rie" }, 400);
+    return json(req, { error: "Informe o título da série" }, 400);
   }
 
   if (status === "published" && !description) {
@@ -6140,7 +6761,7 @@ async function handleOwnerSeriesCreate(req: Request) {
 
   if (status === "published" && !(video instanceof File) && !uploadedVideoPath && !videoFileIdInput) {
     if (!existingRow) {
-      return json(req, { error: "Envie o vÃ­deo principal da sÃ©rie" }, 400);
+      return json(req, { error: "Envie o vídeo principal da série" }, 400);
     }
   }
 
@@ -6150,7 +6771,7 @@ async function handleOwnerSeriesCreate(req: Request) {
   const price = forceFree ? 0 : normalizedPrice;
 
   if (status === "published" && !forceFree && price <= 0) {
-    return json(req, { error: "Informe um valor maior que zero para a sÃ©rie paga" }, 400);
+    return json(req, { error: "Informe um valor maior que zero para a série paga" }, 400);
   }
 
   const seriesId = seriesIdInput || String(existingRow?.id ?? "").trim() || crypto.randomUUID();
@@ -6202,7 +6823,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     || null;
 
   if (status === "published" && (!coverUrl || (!videoPath && !videoUrl && !videoFileIdInput && !String(existingRow?.[PRIMARY_SERIES_VIDEO_FILE_ID_COLUMN] ?? "").trim()))) {
-    return json(req, { error: "A sÃ©rie precisa de capa e vÃ­deo principal" }, 400);
+    return json(req, { error: "A série precisa de capa e vídeo principal" }, 400);
   }
 
   const rowPayload: Record<string, unknown> = {
@@ -6266,7 +6887,7 @@ async function handleOwnerSeriesCreate(req: Request) {
   const freshRow = await getSeriesById(seriesId);
   const finalRow = freshRow && typeof freshRow === "object" ? freshRow : savedRow;
   if (!finalRow || typeof finalRow !== "object") {
-    return json(req, { error: "NÃ£o foi possÃ­vel registrar a sÃ©rie" }, 500);
+    return json(req, { error: "Não foi possível registrar a série" }, 500);
   }
 
   const previousSlug = String(existingRow?.slug ?? "").trim();
@@ -6310,7 +6931,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     try {
       await postSeriesAnnouncementToChannel(finalRow as Record<string, unknown>);
     } catch (error) {
-      console.warn("[CHANNEL] Falha ao anunciar nova sÃ©rie no canal:", error instanceof Error ? error.message : String(error));
+      console.warn("[CHANNEL] Falha ao anunciar nova série no canal:", error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -6598,7 +7219,7 @@ async function handleSupportSubmit(req: Request) {
   const telegramUserName = String(user.username ?? "").trim();
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return json(req, { error: "Informe um e-mail vÃ¡lido" }, 400);
+    return json(req, { error: "Informe um e-mail válido" }, 400);
   }
   if (subject.length < 3) {
     return json(req, { error: "Informe um assunto" }, 400);
@@ -6610,7 +7231,7 @@ async function handleSupportSubmit(req: Request) {
   if (!RESEND_API_KEY) {
     return json(req, {
       ok: false,
-      error: "Envio automÃ¡tico de e-mail ainda nÃ£o configurado neste ambiente.",
+      error: "Envio automático de e-mail ainda não configurado neste ambiente.",
       mailto_url: buildSupportMailtoUrl({ email, subject, description, context }),
     });
   }
@@ -6632,7 +7253,7 @@ async function handleSupportSubmit(req: Request) {
     const sentError = "error" in sent ? sent.error : "";
     return json(req, {
       ok: false,
-      error: sentError || "NÃ£o foi possÃ­vel enviar o e-mail de suporte.",
+      error: sentError || "Não foi possível enviar o e-mail de suporte.",
       mailto_url: sent.mailtoUrl || buildSupportMailtoUrl({ email, subject, description, context }),
     }, 502);
   }
@@ -6676,7 +7297,7 @@ async function handleSupportSubmitV2(req: Request) {
   const telegramUserName = String(user.username ?? "").trim();
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return json(req, { error: "Informe um e-mail vÃ¡lido" }, 400);
+    return json(req, { error: "Informe um e-mail válido" }, 400);
   }
   if (subject.length < 3) {
     return json(req, { error: "Informe um assunto" }, 400);
@@ -6712,7 +7333,7 @@ async function handleSupportSubmitV2(req: Request) {
   if (!emailSent && !telegramSent) {
     return json(req, {
       ok: false,
-      error: "NÃ£o foi possÃ­vel registrar a solicitaÃ§Ã£o agora.",
+      error: "Não foi possível registrar a solicitação agora.",
       mailto_url: mailtoUrl,
     }, 502);
   }
@@ -6726,7 +7347,11 @@ async function handleSupportSubmitV2(req: Request) {
   });
 }
 
-export { normalizeWebhookStatus, validateApprovedPaymentForOrder };
+export {
+  normalizeWebhookStatus,
+  validateApprovedPaymentForOrder,
+  validateTelegramStarsPaymentForOrder,
+};
 
 if (import.meta.main) Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -6871,7 +7496,7 @@ if (import.meta.main) Deno.serve(async (req) => {
       return await handleCaptchaVerify(req);
     }
 
-    return json(req, { error: "AÃ§Ã£o invÃ¡lida" }, 400);
+    return json(req, { error: "Ação inválida" }, 400);
   } catch (error) {
     return json(req, { error: error instanceof Error ? error.message : "Erro interno" }, 500);
   }

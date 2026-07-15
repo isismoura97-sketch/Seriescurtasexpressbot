@@ -95,3 +95,13 @@ Todas as alteracoes relevantes deste projeto sao registradas neste arquivo.
 - Validacao de compra no backend.
 - Entrega protegida pelo bot.
 - Player, favoritos, progresso, pagamentos e area da proprietaria.
+# 2026-07-14 - Pagamentos por contexto e acessos normalizados
+
+- Telegram Stars passou a ser o único método oferecido dentro do Telegram para bens digitais.
+- O backend agora valida pre-checkout, pagamento confirmado e estorno do Telegram antes de alterar o acesso.
+- Pedidos passaram a registrar canal, provedor, moeda e identificadores externos de forma unificada.
+- Itens de pedido e acessos foram normalizados sem remover os campos legados.
+- Checkouts pendentes equivalentes são reutilizados para evitar cobranças duplicadas.
+- Reembolso e chargeback revogam o acesso; reprocessamento exige comprovante conciliado.
+- O painel e a área da cliente recebem metadados do provedor sem expor credenciais.
+- A suíte funcional foi atualizada para simular faturas em Stars.
