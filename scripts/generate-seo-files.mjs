@@ -121,7 +121,7 @@ function buildSeriesHtml(template, serie, slug) {
   html = replaceMeta(html, 'name', 'robots', seo.robots);
   html = html.replace(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeHtml(canonical)}">`);
   html = html.replace(/<script id="seriesStructuredData" type="application\/ld\+json">[\s\S]*?<\/script>/i, `<script id="seriesStructuredData" type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`);
-  return applyStructuredDataCsp(html);
+  return `${applyStructuredDataCsp(html).replace(/[ \t]+$/gm, '').trimEnd()}\n`;
 }
 
 const response = await fetch(API_URL, { headers: { accept: 'application/json' } });
