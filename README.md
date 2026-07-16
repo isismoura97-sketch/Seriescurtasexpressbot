@@ -13,6 +13,7 @@ Aplicação web estática para o catálogo "Séries Curtas Express", com integra
 - `docs/architecture-audit.md` - arquitetura, riscos e estratégia incremental
 - `docs/PAYMENTS_AND_ENTITLEMENTS.md` - canais de pagamento, conciliação, acessos e operação
 - `docs/FUNNEL_ANALYTICS.md` - eventos, idempotência e métricas reais do funil
+- `docs/DELIVERY_SECURITY_OPERATIONS_ROADMAP.md` - estado atual e próximas etapas de contas, segurança e operação
 - `CHANGELOG.md` - histórico de mudanças relevantes
 
 ## Execução local
@@ -51,6 +52,14 @@ node scripts/generate-seo-files.mjs
 ```
 
 Os arquivos resultantes ficam em `series-app/sitemap.xml` e `series-app/series/[slug]/index.html`. As páginas geradas já entregam título, description, canonical, Open Graph e Schema.org no HTML inicial, antes da execução do JavaScript.
+
+O cadastro da série é a fonte de verdade do SEO. O backend gera automaticamente slug, título, descrição, canonical, Open Graph, Twitter Card e Schema.org a partir dos dados reais do catálogo. Campos editoriais preenchidos no CMS funcionam como substituições opcionais, sem apagar a geração automática. O painel mostra prévias para Google e compartilhamento social, indica quais campos são automáticos ou personalizados e permite excluir uma página do sitemap sem remover a série do catálogo.
+
+Ao publicar ou editar o catálogo, regenere os arquivos indexáveis e inclua o resultado no deploy:
+
+```bash
+node scripts/generate-seo-files.mjs
+```
 
 ## Contexto híbrido
 
@@ -223,7 +232,9 @@ Também estão disponíveis:
 - filtros por situação editorial;
 - entrega por Telegram, web ou modo híbrido;
 - título e descrição SEO;
-- canonical, Open Graph e controle `noindex`;
+- canonical, Open Graph, controle `noindex` e inclusão no sitemap;
+- geração automática com prévias para Google, Telegram e WhatsApp;
+- substituições editoriais opcionais sem duplicar a fonte de verdade;
 - histórico de slugs para redirecionar endereços antigos;
 - preço em centavos sincronizado com o campo legado `price`.
 

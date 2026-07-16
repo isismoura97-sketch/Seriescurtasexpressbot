@@ -33,7 +33,7 @@ O Series Curtas Express e uma aplicacao estatica hospedada na Vercel. A interfac
 - A Edge Function ainda concentra Telegram, pagamento, catalogo, administracao e moderacao.
 - A autenticacao web independente ainda nao existe; operacoes privadas continuam vinculadas ao Telegram.
 - Parte das tabelas legadas permanece no banco embora nao participe dos fluxos comerciais atuais.
-- O frontend estatico ainda exige regeneracao das paginas de serie quando metadados SEO mudam.
+- A publicacao estatica ainda exige executar o gerador de paginas SEO antes do deploy; o comando e deterministico e usa o catalogo como fonte de verdade.
 - A cobertura automatizada do backend prioriza conciliacao de Mercado Pago e Telegram Stars; outros handlers ainda dependem do smoke integrado.
 
 ## Riscos e limites
@@ -42,7 +42,7 @@ O Series Curtas Express e uma aplicacao estatica hospedada na Vercel. A interfac
 - Conteudo pago nunca pode ser liberado por estado local ou parametro de URL.
 - Rotas amigaveis precisam usar caminhos absolutos para CSS, JavaScript e imagens.
 - Selos como "Em alta" ou "Mais assistida" so podem aparecer com dados objetivos.
-- SEO dinamico no cliente melhora compartilhamento e navegacao, mas HTML pre-renderizado sera uma evolucao posterior para indexacao ideal.
+- Metadados dinamicos mantem a navegacao correta no Mini App, enquanto paginas pre-renderizadas entregam SEO e compartilhamento no HTML inicial.
 
 ## Estrategia incremental
 
@@ -62,6 +62,23 @@ O Series Curtas Express e uma aplicacao estatica hospedada na Vercel. A interfac
 - Series pagas exibem preco antes do checkout.
 - Busca e filtros sao acessiveis e representados na URL.
 - Testes existentes e novos testes hibridos passam.
+
+# Evolucao - SEO automatico pelo CMS
+
+Implementado em 15/07/2026:
+
+- cadastro da serie como fonte de verdade para slug e metadados;
+- valores automaticos para titulo, descricao, canonical, Open Graph, Twitter Card e Schema.org;
+- substituicoes editoriais opcionais, identificadas no painel como automaticas ou personalizadas;
+- previa para Google e compartilhamento social antes de salvar;
+- controle independente de `noindex` e inclusao no sitemap;
+- sitemap e paginas estaticas gerados somente para series publicadas, ativas e indexaveis;
+- dados estruturados sem duracao, classificacao, ano, avaliacao ou oferta inventados;
+- oferta estruturada somente para serie paga com preco real;
+- testes de regressao no backend e no smoke do CMS.
+
+Trade-off: a geracao dos arquivos estaticos continua sendo uma etapa explicita do build/deploy. Isso preserva a stack simples e barata sem introduzir um framework SSR apenas para SEO.
+
 # Sprint 2 - Administração e CMS
 
 Implementado em 11/07/2026:

@@ -61,17 +61,35 @@ function safeHttpsUrl(value, fallback) {
   }
 }
 
-function buildSeriesHtml(template, serie, slug) {
+function getResolvedSeo(serie, slug) {
+  const backendSeo = serie?.seo && typeof serie.seo === 'object' ? serie.seo : {};
   const pageUrl = `${SITE_URL}/series/${slug}`;
-  const title = String(serie.seo_title || `${serie.title || 'Série'} — Série Curta Completa`).slice(0, 70);
-  const description = String(serie.seo_description || serie.short_description || serie.description || `Conheça ${serie.title || 'esta série curta completa'}.`).slice(0, 180);
-  const canonical = safeHttpsUrl(serie.canonical_url, pageUrl);
-  const image = safeHttpsUrl(serie.og_image_url, String(serie.cover_url || `${SITE_URL}/assets/logo-welcome.png`));
-  const socialTitle = String(serie.og_title || title);
-  const socialDescription = String(serie.og_description || description);
+  return {
+    title: String(backendSeo.title || serie.seo_title || `${serie.title || 'Série'} — Série Curta Completa`).slice(0, 70),
+    description: String(backendSeo.description || serie.seo_description || serie.short_description || serie.description || `Conheça ${serie.title || 'esta série curta completa'}.`).slice(0, 180),
+    canonical_url: safeHttpsUrl(backendSeo.canonical_url || serie.canonical_url, pageUrl),
+    og_title: String(backendSeo.og_title || serie.og_title || backendSeo.title || serie.seo_title || serie.title || 'Série Curta Completa'),
+    og_description: String(backendSeo.og_description || serie.og_description || backendSeo.description || serie.seo_description || serie.short_description || serie.description || ''),
+    og_image_url: safeHttpsUrl(backendSeo.og_image_url || serie.og_image_url || serie.backdrop_url, String(serie.cover_url || `${SITE_URL}/assets/logo-welcome.png`)),
+    robots: String(backendSeo.robots || (serie.seo_noindex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large')),
+    indexable: typeof backendSeo.indexable === 'boolean'
+      ? backendSeo.indexable
+      : serie.status === 'published' && serie.is_active !== false && serie.seo_noindex !== true && serie.seo_sitemap_enabled !== false,
+    schema: backendSeo.schema && typeof backendSeo.schema === 'object' ? backendSeo.schema : null,
+  };
+}
+
+function buildSeriesHtml(template, serie, slug) {
+  const seo = getResolvedSeo(serie, slug);
+  const title = seo.title;
+  const description = seo.description;
+  const canonical = seo.canonical_url;
+  const image = seo.og_image_url;
+  const socialTitle = seo.og_title;
+  const socialDescription = seo.og_description;
   const genres = String(serie.category || '').split(/[,/|;]/).map((entry) => entry.trim()).filter(Boolean);
   const duration = Number(serie.duration_minutes || 0);
-  const schema = {
+  const schema = seo.schema || {
     '@context': 'https://schema.org',
     '@type': 'Movie',
     name: String(serie.title || ''),
@@ -100,7 +118,7 @@ function buildSeriesHtml(template, serie, slug) {
   html = replaceMeta(html, 'name', 'twitter:title', socialTitle);
   html = replaceMeta(html, 'name', 'twitter:description', socialDescription);
   html = replaceMeta(html, 'name', 'twitter:image', image);
-  html = replaceMeta(html, 'name', 'robots', serie.seo_noindex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large');
+  html = replaceMeta(html, 'name', 'robots', seo.robots);
   html = html.replace(/<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, `<link rel="canonical" href="${escapeHtml(canonical)}">`);
   html = html.replace(/<script id="seriesStructuredData" type="application\/ld\+json">[\s\S]*?<\/script>/i, `<script id="seriesStructuredData" type="application/ld+json">${JSON.stringify(schema).replace(/</g, '\\u003c')}</script>`);
   return applyStructuredDataCsp(html);
@@ -131,14 +149,17 @@ const urls = new Set([
 
 for (const serie of catalog) {
   const slug = String(serie?.slug || '').trim() || slugify(serie?.title || serie?.id);
-  if (slug && serie?.seo_noindex !== true) urls.add(`${SITE_URL}/series/${slug}`);
+  const seo = getResolvedSeo(serie, slug);
+  if (slug && seo.indexable) urls.add(`${SITE_URL}/series/${slug}`);
   if (slug) {
     const pageDirectory = path.join(seriesPagesDirectory, slug);
     await fs.mkdir(pageDirectory, { recursive: true });
     await fs.writeFile(path.join(pageDirectory, 'index.html'), buildSeriesHtml(indexTemplate, serie, slug), 'utf8');
   }
-  const categories = String(serie?.category || '').split(/[,/|;]/).map(slugify).filter(Boolean);
-  categories.forEach((category) => urls.add(`${SITE_URL}/categoria/${category}`));
+  if (seo.indexable) {
+    const categories = String(serie?.category || '').split(/[,/|;]/).map(slugify).filter(Boolean);
+    categories.forEach((category) => urls.add(`${SITE_URL}/categoria/${category}`));
+  }
 }
 
 const xml = `<?xml version="1.0" encoding="UTF-8"?>

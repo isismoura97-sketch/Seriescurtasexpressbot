@@ -1051,6 +1051,10 @@ async function main() {
       statusField: document.querySelector('#ownerSeriesForm [name="status"]')?.value || '',
       deliveryField: document.querySelector('#ownerSeriesForm [name="content_delivery_type"]')?.value || '',
       seoField: Boolean(document.querySelector('#ownerSeriesForm [name="seo_title"]')),
+      seoGenerateButton: Boolean(document.querySelector('[data-owner-generate-seo]')),
+      seoRestoreButton: Boolean(document.querySelector('[data-owner-restore-seo]')),
+      seoPreviewCount: document.querySelectorAll('.owner-seo-preview').length,
+      seoSitemapChecked: Boolean(document.querySelector('#ownerSeriesForm [name="seo_sitemap_enabled"]')?.checked),
       editorialButtons: document.querySelectorAll('[data-owner-editorial-action]').length,
       statusPills: document.querySelectorAll('.owner-pill-status').length,
       couponForm: Boolean(document.querySelector('#ownerCouponForm')),
@@ -1152,7 +1156,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.starsActive || !initial.webMethodsHidden) failures.push('Telegram Stars not enforced inside Telegram');
-    if (!initial.appJs.includes('20260715-02')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260715-03')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1201,7 +1205,7 @@ async function main() {
       || !ownerState.text.includes('Conversão e abandono')
       || !ownerState.text.includes('Checkout → compra')
       || !ownerState.text.includes('Conversão por canal')) failures.push('owner area failed');
-    if (!ownerState.seoField || !ownerState.statusField || !ownerState.deliveryField || ownerState.editorialButtons < 2 || ownerState.statusPills < 2) failures.push(`owner CMS lifecycle failed: ${JSON.stringify(ownerState)}`);
+    if (!ownerState.seoField || !ownerState.seoGenerateButton || !ownerState.seoRestoreButton || ownerState.seoPreviewCount < 2 || !ownerState.seoSitemapChecked || !ownerState.statusField || !ownerState.deliveryField || ownerState.editorialButtons < 2 || ownerState.statusPills < 2) failures.push(`owner CMS lifecycle failed: ${JSON.stringify(ownerState)}`);
     if (!ownerState.couponForm || ownerState.couponCards !== 1 || !ownerState.couponText.includes('CLIENTE10')) failures.push(`owner coupon UI failed: ${JSON.stringify(ownerState)}`);
     if (ownerCouponSavePayload?.code !== 'NOVO15' || ownerCouponSavePayload?.discount_type !== 'percentage' || Number(ownerCouponSavePayload?.discount_value) !== 15 || Number(ownerCouponSavePayload?.usage_limit) !== 50 || ownerCouponSavePayload?.eligible_series_ids?.[0] !== 'paid-owner-series') failures.push(`owner coupon save failed: ${JSON.stringify(ownerCouponSavePayload)}`);
     if (ownerCouponActionPayload?.code !== 'CLIENTE10' || ownerCouponActionPayload?.operation !== 'deactivate') failures.push(`owner coupon action failed: ${JSON.stringify(ownerCouponActionPayload)}`);

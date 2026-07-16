@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260715-02';
+const BUILD_VERSION = '20260715-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -89,6 +89,60 @@ function slugify(value) {
 
 function getSeriesSlug(serie) {
     return String(serie?.slug || '').trim() || slugify(serie?.title || serie?.id || 'serie');
+}
+
+function truncateSeoText(value, maxLength) {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    if (normalized.length <= maxLength) return normalized;
+    const shortened = normalized.slice(0, Math.max(1, maxLength - 1)).replace(/\s+\S*$/, '').trim();
+    return `${shortened || normalized.slice(0, Math.max(1, maxLength - 1)).trim()}…`;
+}
+
+function buildAutomaticSeriesSeo(serie = {}) {
+    const title = String(serie.title || '').replace(/\s+/g, ' ').trim();
+    const slug = getSeriesSlug({ ...serie, title });
+    const canonical = sanitizeUrl(serie.canonical_url) || new URL(`/series/${slug}`, window.location.origin).toString();
+    const genres = normalizeSeriesTerms(serie.genre || serie.genres || serie.category);
+    const summary = String(serie.short_description || serie.description || '').replace(/\s+/g, ' ').trim();
+    const genreText = genres.length ? ` de ${genres.slice(0, 3).join(', ')}` : '';
+    const generatedTitle = truncateSeoText(`${title || 'Série'} — Série Curta Completa`, 70);
+    const generatedDescription = truncateSeoText(
+        `Conheça ${title || 'esta série'}, uma série curta completa${genreText}.${summary ? ` ${summary}` : ''}`,
+        180
+    );
+    const resolvedTitle = truncateSeoText(serie.seo_title || generatedTitle, 70);
+    const resolvedDescription = truncateSeoText(serie.seo_description || generatedDescription, 180);
+    const image = sanitizeUrl(serie.og_image_url) || sanitizeUrl(serie.backdrop_url) || getCoverUrl(serie);
+    const sitemapEnabled = serie.seo_sitemap_enabled !== false;
+    const status = String(serie.status || 'published').toLowerCase();
+    const active = serie.is_active == null ? status === 'published' : serie.is_active === true;
+    const indexable = status === 'published' && active && serie.seo_noindex !== true && sitemapEnabled;
+    return {
+        slug,
+        title: resolvedTitle,
+        description: resolvedDescription,
+        canonical_url: canonical,
+        og_title: truncateSeoText(serie.og_title || resolvedTitle, 95),
+        og_description: truncateSeoText(serie.og_description || resolvedDescription, 220),
+        og_image_url: image,
+        title_mode: serie.seo_title ? 'custom' : 'automatic',
+        description_mode: serie.seo_description ? 'custom' : 'automatic',
+        social_mode: serie.og_title || serie.og_description || serie.og_image_url ? 'custom' : 'automatic',
+        sitemap_enabled: sitemapEnabled,
+        indexable,
+        robots: indexable ? 'index,follow,max-image-preview:large' : 'noindex,nofollow',
+        schema: null,
+    };
+}
+
+function getSeriesResolvedSeo(serie = {}) {
+    const automatic = buildAutomaticSeriesSeo(serie);
+    const backendSeo = serie.seo && typeof serie.seo === 'object' ? serie.seo : {};
+    return {
+        ...automatic,
+        ...backendSeo,
+        schema: backendSeo.schema && typeof backendSeo.schema === 'object' ? backendSeo.schema : automatic.schema,
+    };
 }
 
 function buildTelegramSeriesLink(serie) {
@@ -652,14 +706,13 @@ function setMetaContent(selector, content) {
 
 function updatePageMetadata(serie = null) {
     const siteName = 'Séries Curtas Express';
-    const title = serie ? String(serie.seo_title || `${serie.title} — Série Curta Completa`).slice(0, 70) : siteName;
-    const description = serie
-        ? String(serie.seo_description || serie.short_description || serie.description || `Conheça ${serie.title}, uma série curta completa.`).slice(0, 180)
-        : 'Descubra séries curtas completas, gratuitas e premium, com acesso pelo Telegram.';
-    const canonical = serie ? (sanitizeUrl(serie.canonical_url) || buildSeriesPageUrl(serie)) : new URL('/', window.location.origin).toString();
-    const image = serie ? (sanitizeUrl(serie.og_image_url) || getCoverUrl(serie)) : new URL('/assets/logo-welcome.png', window.location.origin).toString();
-    const socialTitle = serie ? String(serie.og_title || title) : title;
-    const socialDescription = serie ? String(serie.og_description || description) : description;
+    const seo = serie ? getSeriesResolvedSeo(serie) : null;
+    const title = seo?.title || siteName;
+    const description = seo?.description || 'Descubra séries curtas completas, gratuitas e premium, com acesso pelo Telegram.';
+    const canonical = seo?.canonical_url || new URL('/', window.location.origin).toString();
+    const image = seo?.og_image_url || new URL('/assets/logo-welcome.png', window.location.origin).toString();
+    const socialTitle = seo?.og_title || title;
+    const socialDescription = seo?.og_description || description;
 
     document.title = title;
     setMetaContent('meta[name="description"]', description);
@@ -671,7 +724,7 @@ function updatePageMetadata(serie = null) {
     setMetaContent('meta[name="twitter:description"]', socialDescription);
     setMetaContent('meta[name="twitter:image"]', image);
     document.querySelector('link[rel="canonical"]')?.setAttribute('href', canonical);
-    setMetaContent('meta[name="robots"]', serie?.seo_noindex ? 'noindex,nofollow' : 'index,follow,max-image-preview:large');
+    setMetaContent('meta[name="robots"]', seo?.robots || 'index,follow,max-image-preview:large');
 
     const schemaNode = document.getElementById('seriesStructuredData');
     if (!schemaNode) return;
@@ -681,7 +734,7 @@ function updatePageMetadata(serie = null) {
     }
     const genres = normalizeSeriesTerms(serie.genre || serie.genres || serie.category);
     const durationMinutes = Number(serie.duration_minutes || serie.durationMinutes || 0);
-    schemaNode.textContent = JSON.stringify({
+    schemaNode.textContent = JSON.stringify(seo?.schema || {
         '@context': 'https://schema.org',
         '@type': 'Movie',
         name: String(serie.title || ''),
@@ -3166,6 +3219,8 @@ function updateOwnerFormMode(serie = null) {
         const field = form?.querySelector(`[name="${name}"]`);
         if (field instanceof HTMLInputElement) field.checked = serie?.[name] === true;
     });
+    const sitemapField = form?.querySelector('[name="seo_sitemap_enabled"]');
+    if (sitemapField instanceof HTMLInputElement) sitemapField.checked = serie?.seo_sitemap_enabled !== false;
     const statusSelect = form?.querySelector('[name="status"]');
     if (statusSelect instanceof HTMLSelectElement) statusSelect.value = serie?.status || 'published';
     const deliverySelect = form?.querySelector('[name="content_delivery_type"]');
@@ -3201,6 +3256,7 @@ function updateOwnerFormMode(serie = null) {
     if (form) {
         form.dataset.mode = editing ? 'edit' : 'create';
     }
+    syncOwnerSeoPreview();
 }
 
 function openOwnerSeriesEditor(seriesId) {
@@ -3246,6 +3302,163 @@ function formatOwnerDate(value) {
     }).format(date);
 }
 
+const OWNER_SEO_FIELD_NAMES = ['seo_title', 'seo_description', 'canonical_url', 'og_title', 'og_description', 'og_image_url'];
+
+function getOwnerSeoField(form, name) {
+    const field = form?.querySelector(`[name="${name}"]`);
+    return field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement ? field : null;
+}
+
+function buildOwnerSeriesDraftFromForm(form) {
+    const value = (name) => String(getOwnerSeoField(form, name)?.value || '').trim();
+    const fieldValue = (name) => {
+        const field = getOwnerSeoField(form, name);
+        return field?.dataset.seoGenerated === 'true' ? '' : String(field?.value || '').trim();
+    };
+    const checkbox = (name) => {
+        const field = form?.querySelector(`[name="${name}"]`);
+        return field instanceof HTMLInputElement && field.checked;
+    };
+    const titleField = form?.querySelector('[name="title"]');
+    const categoryField = form?.querySelector('[name="category"]');
+    const descriptionField = form?.querySelector('[name="description"]');
+    const slugField = form?.querySelector('[name="slug"]');
+    const shortDescriptionField = form?.querySelector('[name="short_description"]');
+    const statusField = form?.querySelector('[name="status"]');
+    const priceField = form?.querySelector('[name="price"]');
+    const coverPreview = document.getElementById('ownerCoverPreviewImage');
+    return {
+        id: ownerSeriesEditId || 'nova-serie',
+        title: titleField instanceof HTMLInputElement ? titleField.value : '',
+        category: categoryField instanceof HTMLInputElement ? categoryField.value : '',
+        description: descriptionField instanceof HTMLTextAreaElement ? descriptionField.value : '',
+        short_description: shortDescriptionField instanceof HTMLTextAreaElement ? shortDescriptionField.value : '',
+        slug: slugField instanceof HTMLInputElement ? slugField.value : '',
+        seo_title: fieldValue('seo_title'),
+        seo_description: fieldValue('seo_description'),
+        canonical_url: fieldValue('canonical_url'),
+        og_title: fieldValue('og_title'),
+        og_description: fieldValue('og_description'),
+        og_image_url: fieldValue('og_image_url'),
+        cover_url: coverPreview instanceof HTMLImageElement ? coverPreview.src : '',
+        status: statusField instanceof HTMLSelectElement ? statusField.value : 'draft',
+        is_active: statusField instanceof HTMLSelectElement && statusField.value === 'published',
+        is_free: checkbox('is_free'),
+        price: priceField instanceof HTMLInputElement ? Number(priceField.value || 0) : 0,
+        seo_noindex: checkbox('seo_noindex'),
+        seo_sitemap_enabled: checkbox('seo_sitemap_enabled'),
+        _display_values: Object.fromEntries(OWNER_SEO_FIELD_NAMES.map((name) => [name, value(name)])),
+    };
+}
+
+function setOwnerSeoPreviewText(name, value) {
+    const node = document.querySelector(`[data-owner-seo-preview="${name}"]`);
+    if (node) node.textContent = String(value || '');
+}
+
+function syncOwnerSeoPreview() {
+    const form = document.getElementById('ownerSeriesForm');
+    if (!(form instanceof HTMLFormElement)) return;
+    const draft = buildOwnerSeriesDraftFromForm(form);
+    const seo = buildAutomaticSeriesSeo(draft);
+    const display = draft._display_values || {};
+    const coverPreview = document.querySelector('[data-owner-seo-preview="image"]');
+
+    setOwnerSeoPreviewText('url', seo.canonical_url.replace(/^https?:\/\//, '').replace(/\/$/, '').replace(/\//g, ' › '));
+    setOwnerSeoPreviewText('title', display.seo_title || seo.title);
+    setOwnerSeoPreviewText('description', display.seo_description || seo.description);
+    setOwnerSeoPreviewText('social_title', display.og_title || display.seo_title || seo.og_title);
+    setOwnerSeoPreviewText('social_description', display.og_description || display.seo_description || seo.og_description);
+    if (coverPreview instanceof HTMLImageElement) {
+        coverPreview.src = display.og_image_url || seo.og_image_url || PLACEHOLDER_IMAGE;
+        coverPreview.onerror = () => {
+            coverPreview.onerror = null;
+            coverPreview.src = PLACEHOLDER_IMAGE;
+        };
+    }
+
+    OWNER_SEO_FIELD_NAMES.forEach((name) => {
+        const field = getOwnerSeoField(form, name);
+        const modeNode = form.querySelector(`[data-owner-seo-mode-for="${name}"]`);
+        const counterNode = form.querySelector(`[data-owner-count-for="${name}"]`);
+        const automatic = !field?.value.trim() || field.dataset.seoGenerated === 'true';
+        if (modeNode) modeNode.textContent = automatic ? 'Gerado automaticamente' : 'Personalizado manualmente';
+        if (counterNode && field?.maxLength > 0) counterNode.textContent = `${field.value.length}/${field.maxLength}`;
+        field?.closest('.payment-field')?.classList.toggle('is-seo-custom', !automatic);
+    });
+
+    const title = String(draft.title || '').trim();
+    const description = String(draft.description || '').trim();
+    const slug = slugify(draft.slug || draft.title);
+    const paidPriceValid = draft.is_free || Number(draft.price) > 0;
+    const coverReady = Boolean(ownerSeriesEditId || document.querySelector('input[name="cover_file"]')?.files?.[0]);
+    const videoReady = Boolean(
+        ownerSeriesEditId
+        || document.querySelector('input[name="video_file"]')?.files?.[0]
+        || extractTelegramFileIdInput(document.getElementById('ownerSeriesVideoFileId')?.value || '')
+    );
+    const checklist = [
+        [Boolean(title), 'Título preenchido'],
+        [Boolean(slug), 'Endereço amigável válido'],
+        [coverReady, 'Capa adicionada'],
+        [Boolean(description), 'Sinopse preenchida'],
+        [paidPriceValid, 'Preço configurado'],
+        [videoReady, 'Conteúdo disponível'],
+        [Boolean(seo.title && seo.description), 'SEO configurado'],
+        [seo.indexable || draft.seo_noindex || !draft.seo_sitemap_enabled || draft.status !== 'published', 'Indexação coerente'],
+    ];
+    const checklistNode = form.querySelector('[data-owner-seo-checklist]');
+    if (checklistNode) {
+        checklistNode.innerHTML = checklist.map(([valid, label]) => (
+            `<li class="${valid ? 'is-valid' : 'is-pending'}"><i class="fas ${valid ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i> ${label}</li>`
+        )).join('');
+    }
+}
+
+function generateOwnerAutomaticSeo() {
+    const form = document.getElementById('ownerSeriesForm');
+    if (!(form instanceof HTMLFormElement)) return;
+    const draft = buildOwnerSeriesDraftFromForm(form);
+    const automatic = buildAutomaticSeriesSeo({
+        ...draft,
+        seo_title: '',
+        seo_description: '',
+        canonical_url: '',
+        og_title: '',
+        og_description: '',
+        og_image_url: '',
+    });
+    const generatedValues = {
+        seo_title: automatic.title,
+        seo_description: automatic.description,
+        canonical_url: automatic.canonical_url,
+        og_title: automatic.og_title,
+        og_description: automatic.og_description,
+        og_image_url: automatic.og_image_url.startsWith('http') ? automatic.og_image_url : '',
+    };
+    Object.entries(generatedValues).forEach(([name, value]) => {
+        const field = getOwnerSeoField(form, name);
+        if (!field) return;
+        field.value = value;
+        field.dataset.seoGenerated = 'true';
+    });
+    syncOwnerSeoPreview();
+    showToast('Prévia SEO gerada com os dados reais da série.', 'success');
+}
+
+function restoreOwnerAutomaticSeo() {
+    const form = document.getElementById('ownerSeriesForm');
+    if (!(form instanceof HTMLFormElement)) return;
+    OWNER_SEO_FIELD_NAMES.forEach((name) => {
+        const field = getOwnerSeoField(form, name);
+        if (!field) return;
+        field.value = '';
+        delete field.dataset.seoGenerated;
+    });
+    syncOwnerSeoPreview();
+    showToast('Os valores automáticos de SEO foram restaurados.', 'success');
+}
+
 function wireOwnerUploadForm() {
     const form = document.getElementById('ownerSeriesForm');
     const freeToggle = document.getElementById('ownerSeriesFree');
@@ -3268,6 +3481,8 @@ function wireOwnerUploadForm() {
         };
 
         freeToggle.onchange = syncPriceState;
+        freeToggle.addEventListener('change', syncOwnerSeoPreview);
+        priceInput.addEventListener('input', syncOwnerSeoPreview);
         syncPriceState();
     }
 
@@ -3275,6 +3490,7 @@ function wireOwnerUploadForm() {
         coverInput.onchange = () => {
             const file = coverInput.files?.[0] || null;
             syncOwnerCoverPreviewFromFile(file);
+            syncOwnerSeoPreview();
         };
     }
 
@@ -3305,8 +3521,33 @@ function wireOwnerUploadForm() {
     };
 
     if (statusSelect instanceof HTMLSelectElement) {
-        statusSelect.onchange = syncOwnerEditorialRequirements;
+        statusSelect.onchange = () => {
+            syncOwnerEditorialRequirements();
+            syncOwnerSeoPreview();
+        };
     }
+
+    const seoSourceNames = [
+        'title', 'category', 'description', 'short_description', 'slug', 'language',
+        'duration_minutes', 'release_year', 'age_rating', 'seo_noindex', 'seo_sitemap_enabled',
+    ];
+    seoSourceNames.forEach((name) => {
+        const field = form?.querySelector(`[name="${name}"]`);
+        field?.addEventListener(field instanceof HTMLInputElement && field.type === 'checkbox' ? 'change' : 'input', syncOwnerSeoPreview);
+    });
+
+    OWNER_SEO_FIELD_NAMES.forEach((name) => {
+        const field = getOwnerSeoField(form, name);
+        field?.addEventListener('input', () => {
+            delete field.dataset.seoGenerated;
+            syncOwnerSeoPreview();
+        });
+    });
+
+    const generateSeoButton = form?.querySelector('[data-owner-generate-seo]');
+    if (generateSeoButton instanceof HTMLButtonElement) generateSeoButton.onclick = generateOwnerAutomaticSeo;
+    const restoreSeoButton = form?.querySelector('[data-owner-restore-seo]');
+    if (restoreSeoButton instanceof HTMLButtonElement) restoreSeoButton.onclick = restoreOwnerAutomaticSeo;
 
     form?.querySelectorAll('[maxlength][name]').forEach((field) => {
         if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) return;
@@ -3321,16 +3562,19 @@ function wireOwnerUploadForm() {
     if (videoFileIdInput instanceof HTMLTextAreaElement) {
         videoFileIdInput.onchange = syncOwnerVideoSources;
         videoFileIdInput.oninput = () => {
-            if (!videoFileIdInput.value.trim()) return;
             const normalized = extractTelegramFileIdInput(videoFileIdInput.value);
             if (normalized && normalized !== videoFileIdInput.value) {
                 videoFileIdInput.value = normalized;
             }
+            syncOwnerSeoPreview();
         };
     }
 
     if (videoInput instanceof HTMLInputElement) {
-        videoInput.onchange = syncOwnerVideoSources;
+        videoInput.onchange = () => {
+            syncOwnerVideoSources();
+            syncOwnerSeoPreview();
+        };
     }
 
     if (cancelBtn instanceof HTMLButtonElement) {
@@ -3355,6 +3599,7 @@ function wireOwnerUploadForm() {
                 videoFileIdInput.value = '';
             }
             syncOwnerVideoSources();
+            syncOwnerSeoPreview();
         };
     }
 
@@ -3362,6 +3607,7 @@ function wireOwnerUploadForm() {
         form.onsubmit = submitOwnerSeriesUpload;
     }
     syncOwnerEditorialRequirements();
+    syncOwnerSeoPreview();
 }
 
 function openOwnerArea() {
@@ -4121,33 +4367,63 @@ function renderOwnerDashboard(data) {
                                 <span>Campos opcionais. Se ficarem vazios, a página usa automaticamente o título, a descrição e a capa.</span>
                             </div>
                             <div class="owner-upload-grid">
-                                <label class="payment-field owner-upload-span-2">
-                                    <span>Título SEO <small data-owner-count-for="seo_title">0/70</small></span>
-                                    <input type="text" name="seo_title" maxlength="70" placeholder="Título exibido no Google">
-                                </label>
-                                <label class="payment-field owner-upload-span-2">
-                                    <span>Descrição SEO <small data-owner-count-for="seo_description">0/180</small></span>
-                                    <textarea name="seo_description" rows="3" maxlength="180" placeholder="Resumo exibido nos resultados de busca"></textarea>
-                                </label>
-                                <label class="payment-field owner-upload-span-2">
-                                    <span>URL canônica</span>
-                                    <input type="url" name="canonical_url" inputmode="url" placeholder="https://seriescurtasexpressbot.vercel.app/series/...">
-                                </label>
-                                <label class="payment-field">
-                                    <span>Título social</span>
-                                    <input type="text" name="og_title" placeholder="Título ao compartilhar">
-                                </label>
-                                <label class="payment-field">
-                                    <span>Imagem social</span>
-                                    <input type="url" name="og_image_url" inputmode="url" placeholder="https://...">
-                                </label>
-                                <label class="payment-field owner-upload-span-2">
-                                    <span>Descrição social</span>
-                                    <textarea name="og_description" rows="2" placeholder="Texto ao compartilhar a página"></textarea>
-                                </label>
-                            </div>
-                            <label class="owner-upload-toggle"><input type="checkbox" name="seo_noindex"><span>Não indexar esta página nos buscadores</span></label>
-                        </section>
+                                 <label class="payment-field owner-upload-span-2">
+                                     <span>Título SEO <small data-owner-count-for="seo_title">0/70</small></span>
+                                     <input type="text" name="seo_title" maxlength="70" placeholder="Título exibido no Google">
+                                     <small class="owner-seo-field-mode" data-owner-seo-mode-for="seo_title">Gerado automaticamente</small>
+                                 </label>
+                                 <label class="payment-field owner-upload-span-2">
+                                     <span>Descrição SEO <small data-owner-count-for="seo_description">0/180</small></span>
+                                     <textarea name="seo_description" rows="3" maxlength="180" placeholder="Resumo exibido nos resultados de busca"></textarea>
+                                     <small class="owner-seo-field-mode" data-owner-seo-mode-for="seo_description">Gerado automaticamente</small>
+                                 </label>
+                                 <label class="payment-field owner-upload-span-2">
+                                     <span>URL canônica</span>
+                                     <input type="url" name="canonical_url" inputmode="url" placeholder="https://seriescurtasexpressbot.vercel.app/series/...">
+                                     <small class="owner-seo-field-mode" data-owner-seo-mode-for="canonical_url">Gerada automaticamente</small>
+                                 </label>
+                                 <label class="payment-field">
+                                     <span>Título social</span>
+                                     <input type="text" name="og_title" placeholder="Título ao compartilhar">
+                                     <small class="owner-seo-field-mode" data-owner-seo-mode-for="og_title">Gerado automaticamente</small>
+                                 </label>
+                                 <label class="payment-field">
+                                     <span>Imagem social</span>
+                                     <input type="url" name="og_image_url" inputmode="url" placeholder="https://...">
+                                     <small class="owner-seo-field-mode" data-owner-seo-mode-for="og_image_url">Usa a capa automaticamente</small>
+                                 </label>
+                                 <label class="payment-field owner-upload-span-2">
+                                     <span>Descrição social</span>
+                                     <textarea name="og_description" rows="2" placeholder="Texto ao compartilhar a página"></textarea>
+                                     <small class="owner-seo-field-mode" data-owner-seo-mode-for="og_description">Gerada automaticamente</small>
+                                 </label>
+                             </div>
+                             <div class="owner-editor-flags">
+                                 <label class="owner-upload-toggle"><input type="checkbox" name="seo_noindex"><span>Não indexar esta página nos buscadores</span></label>
+                                 <label class="owner-upload-toggle"><input type="checkbox" name="seo_sitemap_enabled" checked><span>Permitir aparecer no sitemap</span></label>
+                             </div>
+                             <div class="owner-seo-actions">
+                                 <button type="button" class="btn btn-primary" data-owner-generate-seo><i class="fas fa-wand-magic-sparkles"></i> Gerar SEO automaticamente</button>
+                                 <button type="button" class="btn btn-secondary" data-owner-restore-seo><i class="fas fa-arrow-rotate-left"></i> Restaurar valores automáticos</button>
+                             </div>
+                             <div class="owner-seo-preview-grid" aria-live="polite">
+                                 <article class="owner-seo-preview owner-seo-google-preview">
+                                     <span class="owner-seo-preview-label"><i class="fab fa-google"></i> Prévia do Google</span>
+                                     <small data-owner-seo-preview="url">seriescurtasexpressbot.vercel.app › series</small>
+                                     <strong data-owner-seo-preview="title">Título da série — Série Curta Completa</strong>
+                                     <p data-owner-seo-preview="description">A descrição será gerada com os dados do cadastro.</p>
+                                 </article>
+                                 <article class="owner-seo-preview owner-seo-social-preview">
+                                     <div class="owner-seo-social-image"><img data-owner-seo-preview="image" src="${PLACEHOLDER_IMAGE}" alt="Prévia de compartilhamento"></div>
+                                     <div>
+                                         <span class="owner-seo-preview-label"><i class="fas fa-share-nodes"></i> Telegram e WhatsApp</span>
+                                         <strong data-owner-seo-preview="social_title">Título da série</strong>
+                                         <p data-owner-seo-preview="social_description">Texto de compartilhamento.</p>
+                                     </div>
+                                 </article>
+                             </div>
+                             <ul class="owner-seo-checklist" data-owner-seo-checklist></ul>
+                         </section>
                         <section class="owner-form-group">
                             <div class="owner-form-group-head">
                                 <strong>Descoberta e página pública</strong>
@@ -4425,6 +4701,12 @@ async function submitOwnerSeriesUpload(event) {
     if (!(form instanceof HTMLFormElement)) return;
 
     const formData = new FormData(form);
+    OWNER_SEO_FIELD_NAMES.forEach((name) => {
+        const field = getOwnerSeoField(form, name);
+        if (field?.dataset.seoGenerated === 'true') formData.set(name, '');
+    });
+    const sitemapField = form.querySelector('[name="seo_sitemap_enabled"]');
+    formData.set('seo_sitemap_enabled', sitemapField instanceof HTMLInputElement && sitemapField.checked ? 'true' : 'false');
     formData.set('init_data', tg?.initData || '');
     formData.set('password', String(DOM.ownerPasswordInput?.value || ''));
     formData.set('series_id', ownerSeriesEditId || '');

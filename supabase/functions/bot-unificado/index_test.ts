@@ -1,4 +1,5 @@
 import {
+  buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
   getCheckoutRecoverySkipReason,
   normalizeWebhookStatus,
@@ -26,6 +27,74 @@ const approvedPayment = {
   currency_id: "BRL",
   captured: true,
 };
+
+Deno.test("SEO automatico usa dados reais e nao inventa campos opcionais", () => {
+  const seo = buildAutomaticSeriesSeo({
+    id: "serie-1",
+    title: "A Prometida do Principe Vampiro",
+    description: "Romance sobrenatural em uma corte de vampiros.",
+    category: "Romance, Fantasia",
+    cover_url: "https://example.com/capa.webp",
+    language: "pt-BR",
+    is_free: true,
+    is_active: true,
+    status: "published",
+  }, "https://series.example.com");
+
+  assertEquals(seo.slug, "a-prometida-do-principe-vampiro", "slug automatico");
+  assertEquals(seo.title_mode, "automatic", "modo do titulo");
+  assertEquals(seo.description_mode, "automatic", "modo da descricao");
+  assertEquals(seo.canonical_url, "https://series.example.com/series/a-prometida-do-principe-vampiro", "canonical");
+  assertEquals(seo.indexable, true, "pagina indexavel");
+  assertEquals(seo.schema.isAccessibleForFree, true, "acesso gratuito real");
+  assertEquals("offers" in seo.schema, false, "serie gratuita sem oferta paga");
+  assertEquals("duration" in seo.schema, false, "duracao ausente nao inventada");
+  assertEquals("alternateName" in seo.schema, false, "titulo alternativo ausente nao inventado");
+  assertEquals("contentRating" in seo.schema, false, "classificacao ausente nao inventada");
+});
+
+Deno.test("SEO personalizado prevalece e serie paga recebe oferta real", () => {
+  const seo = buildAutomaticSeriesSeo({
+    id: "serie-2",
+    title: "Noiva de 90 Dias da Mafia",
+    slug: "noiva-mafia",
+    seo_title: "Noiva da Mafia - Serie Curta",
+    seo_description: "Descricao editorial aprovada.",
+    og_title: "Noiva da Mafia no Telegram",
+    canonical_url: "https://series.example.com/series/noiva-mafia",
+    cover_url: "https://example.com/noiva.webp",
+    price: 5.9,
+    is_free: false,
+    currency: "BRL",
+    is_active: true,
+    status: "published",
+  }, "https://series.example.com");
+
+  assertEquals(seo.title, "Noiva da Mafia - Serie Curta", "titulo personalizado");
+  assertEquals(seo.description, "Descricao editorial aprovada.", "descricao personalizada");
+  assertEquals(seo.og_title, "Noiva da Mafia no Telegram", "titulo social personalizado");
+  assertEquals(seo.title_mode, "custom", "modo personalizado");
+  assertEquals(seo.schema.offers?.price, "5.90", "preco real no schema");
+  assertEquals(seo.schema.offers?.priceCurrency, "BRL", "moeda real no schema");
+});
+
+Deno.test("SEO exclui do indice quando publicacao ou sitemap bloqueiam acesso", () => {
+  const hidden = buildAutomaticSeriesSeo({
+    title: "Serie Oculta",
+    is_active: true,
+    status: "published",
+    seo_sitemap_enabled: false,
+  }, "https://series.example.com");
+  const draft = buildAutomaticSeriesSeo({
+    title: "Serie em Rascunho",
+    is_active: true,
+    status: "draft",
+  }, "https://series.example.com");
+
+  assertEquals(hidden.indexable, false, "sitemap desativado");
+  assertEquals(hidden.robots, "noindex,nofollow", "robots bloqueado");
+  assertEquals(draft.indexable, false, "rascunho nao indexavel");
+});
 
 Deno.test("pagamento autorizado permanece pendente ate a captura", () => {
   assertEquals(normalizeWebhookStatus("authorized"), "pending", "status autorizado");

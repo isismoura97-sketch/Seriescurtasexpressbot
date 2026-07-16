@@ -206,6 +206,121 @@ function normalizeSeriesTags(value: unknown) {
   return Array.from(new Set(entries.map((entry) => String(entry ?? "").trim()).filter(Boolean))).slice(0, 24);
 }
 
+function truncateSeoText(value: unknown, maxLength: number) {
+  const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  const shortened = normalized.slice(0, Math.max(1, maxLength - 1)).replace(/\s+\S*$/, "").trim();
+  return `${shortened || normalized.slice(0, Math.max(1, maxLength - 1)).trim()}…`;
+}
+
+function getSeriesGenres(value: unknown) {
+  const entries = Array.isArray(value) ? value : String(value ?? "").split(/[,/|;]/);
+  return Array.from(new Set(entries.map((entry) => String(entry ?? "").trim()).filter(Boolean))).slice(0, 8);
+}
+
+function getSeriesSeoBaseUrl(siteUrl: string) {
+  try {
+    const parsed = new URL(siteUrl || SERIES_WEBAPP_URL);
+    return `${parsed.origin}/`;
+  } catch {
+    return "https://seriescurtasexpressbot.vercel.app/";
+  }
+}
+
+function getSeriesSeoHttpsUrl(value: unknown) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "";
+  try {
+    const parsed = new URL(normalized);
+    return parsed.protocol === "https:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function buildAutomaticSeriesSeo(row: Record<string, unknown>, siteUrl = SERIES_WEBAPP_URL) {
+  const title = String(row.title ?? "").replace(/\s+/g, " ").trim();
+  const slug = slugifySeriesTitle(row.slug || title || row.id);
+  const baseUrl = getSeriesSeoBaseUrl(siteUrl);
+  const pageUrl = new URL(`/series/${slug}`, baseUrl).toString();
+  const genres = getSeriesGenres(row.genres ?? row.genre ?? row.category);
+  const summary = String(row.short_description ?? row.description ?? "").replace(/\s+/g, " ").trim();
+  const genreText = genres.length ? ` de ${genres.slice(0, 3).join(", ")}` : "";
+  const generatedTitle = truncateSeoText(`${title || "Série"} — Série Curta Completa`, 70);
+  const generatedDescription = truncateSeoText(
+    `Conheça ${title || "esta série"}, uma série curta completa${genreText}.${summary ? ` ${summary}` : ""}`,
+    180,
+  );
+  const customTitle = String(row.seo_title ?? "").trim();
+  const customDescription = String(row.seo_description ?? "").trim();
+  const customSocialTitle = String(row.og_title ?? "").trim();
+  const customSocialDescription = String(row.og_description ?? "").trim();
+  const canonicalUrl = getSeriesSeoHttpsUrl(row.canonical_url) || pageUrl;
+  const imageUrl = getSeriesSeoHttpsUrl(row.og_image_url)
+    || getSeriesSeoHttpsUrl(row.backdrop_url)
+    || getSeriesSeoHttpsUrl(row.cover_url)
+    || new URL("/assets/logo-welcome.png", baseUrl).toString();
+  const resolvedTitle = truncateSeoText(customTitle || generatedTitle, 70);
+  const resolvedDescription = truncateSeoText(customDescription || generatedDescription, 180);
+  const socialTitle = truncateSeoText(customSocialTitle || resolvedTitle, 95);
+  const socialDescription = truncateSeoText(customSocialDescription || resolvedDescription, 220);
+  const status = String(row.status ?? "published").trim().toLowerCase();
+  const active = row.is_active == null ? status === "published" : isTruthyInput(row.is_active);
+  const sitemapEnabled = row.seo_sitemap_enabled !== false;
+  const indexable = status === "published" && active && row.seo_noindex !== true && sitemapEnabled;
+  const free = isSeriesFree(row);
+  const duration = Number(row.duration_minutes ?? 0);
+  const releaseYear = Number(row.release_year ?? 0);
+  const publishedAt = String(row.published_at ?? "").trim();
+  const alternateTitle = String(row.alternate_title ?? "").trim();
+  const ageRating = String(row.age_rating ?? "").trim();
+  const language = String(row.language ?? "").trim();
+  const price = getSeriesPrice(row);
+  const schema: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "Movie",
+    name: title,
+    alternateName: alternateTitle || undefined,
+    description: resolvedDescription,
+    image: imageUrl || undefined,
+    thumbnailUrl: imageUrl || undefined,
+    genre: genres.length ? genres : undefined,
+    duration: duration > 0 ? `PT${Math.round(duration)}M` : undefined,
+    inLanguage: language || undefined,
+    datePublished: publishedAt || (releaseYear > 0 ? String(releaseYear) : undefined),
+    contentRating: ageRating || undefined,
+    isAccessibleForFree: free,
+    url: canonicalUrl,
+    offers: !free && price > 0
+      ? {
+        "@type": "Offer",
+        price: price.toFixed(2),
+        priceCurrency: String(row.currency ?? "BRL"),
+        availability: active ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+        url: canonicalUrl,
+      }
+      : undefined,
+  };
+
+  return {
+    slug,
+    title: resolvedTitle,
+    description: resolvedDescription,
+    canonical_url: canonicalUrl,
+    og_title: socialTitle,
+    og_description: socialDescription,
+    og_image_url: imageUrl,
+    twitter_card: "summary_large_image",
+    title_mode: customTitle ? "custom" : "automatic",
+    description_mode: customDescription ? "custom" : "automatic",
+    social_mode: customSocialTitle || customSocialDescription || row.og_image_url ? "custom" : "automatic",
+    sitemap_enabled: sitemapEnabled,
+    indexable,
+    robots: indexable ? "index,follow,max-image-preview:large" : "noindex,nofollow",
+    schema: JSON.parse(JSON.stringify(schema)),
+  };
+}
+
 function resolveSeriesAnnouncementChannelTarget() {
   if (SERIES_ANNOUNCE_CHANNEL_ID) return SERIES_ANNOUNCE_CHANNEL_ID;
   const handle = normalizeHandle(SERIES_ANNOUNCE_CHANNEL_USERNAME);
@@ -5015,13 +5130,16 @@ async function getSeriesList(userId = "", includeProtected = false) {
     const hasVideoFileId = Boolean(extractTelegramFileId(row));
     const hasEpisodePlayback = Number(episodeData.playable_episode_count ?? 0) > 0;
     const playbackMode = hasVideoUrl ? "direct" : (hasVideoFileId || hasEpisodePlayback ? "telegram" : "missing");
+    const coverUrl = String(row.cover_url ?? "").trim()
+      || (String(row.cover_storage_path ?? "").trim() ? storagePublicUrl(SERIES_COVER_BUCKET, String(row.cover_storage_path)) : null);
+    const trailerUrl = String(row.trailer_url ?? "").trim()
+      || (String(row.trailer_storage_path ?? "").trim() ? storagePublicUrl(SERIES_TRAILER_BUCKET, String(row.trailer_storage_path)) : null);
     const output: Record<string, unknown> = {
       ...row,
       ...episodeData,
-      cover_url: String(row.cover_url ?? "").trim()
-        || (String(row.cover_storage_path ?? "").trim() ? storagePublicUrl(SERIES_COVER_BUCKET, String(row.cover_storage_path)) : null),
-      trailer_url: String(row.trailer_url ?? "").trim()
-        || (String(row.trailer_storage_path ?? "").trim() ? storagePublicUrl(SERIES_TRAILER_BUCKET, String(row.trailer_storage_path)) : null),
+      cover_url: coverUrl,
+      trailer_url: trailerUrl,
+      seo: buildAutomaticSeriesSeo({ ...row, cover_url: coverUrl }),
       is_free: free,
       has_access: hasAccess,
       is_favorite: favoriteIds.has(seriesId),
@@ -6294,6 +6412,8 @@ function getOwnerSeriesValidationError(row: Record<string, unknown>, targetStatu
 }
 
 function serializeOwnerSeries(row: Record<string, unknown>) {
+  const coverUrl = String(row.cover_url ?? "").trim()
+    || (String(row.cover_storage_path ?? "").trim() ? storagePublicUrl(SERIES_COVER_BUCKET, String(row.cover_storage_path)) : null);
   return {
     id: String(row.id ?? ""),
     title: String(row.title ?? ""),
@@ -6325,9 +6445,11 @@ function serializeOwnerSeries(row: Record<string, unknown>) {
     og_description: String(row.og_description ?? ""),
     og_image_url: String(row.og_image_url ?? ""),
     seo_noindex: row.seo_noindex === true,
+    seo_sitemap_enabled: row.seo_sitemap_enabled !== false,
+    seo: buildAutomaticSeriesSeo({ ...row, cover_url: coverUrl }),
     price: Number(row.price ?? 0) || 0,
     created_at: row.created_at ?? null,
-    cover_url: row.cover_url ?? null,
+    cover_url: coverUrl,
     cover_storage_path: row.cover_storage_path ?? null,
     cover_file_id: row.cover_file_id ?? null,
     trailer_url: row.trailer_url ?? null,
@@ -7171,6 +7293,10 @@ async function handleOwnerSeriesCreate(req: Request) {
   const canonicalUrl = normalizeOwnerOptionalUrl(canonicalInput);
   const ogImageUrl = normalizeOwnerOptionalUrl(ogImageInput);
   const seoNoindex = isTruthyInput(form.get("seo_noindex"));
+  const seoSitemapInput = form.get("seo_sitemap_enabled");
+  const seoSitemapEnabled = seoSitemapInput == null || String(seoSitemapInput).trim() === ""
+    ? existingRow?.seo_sitemap_enabled !== false
+    : isTruthyInput(seoSitemapInput);
 
   if (!title) {
     return json(req, { error: "Informe o título da série" }, 400);
@@ -7226,10 +7352,18 @@ async function handleOwnerSeriesCreate(req: Request) {
   }
 
   const seriesId = seriesIdInput || String(existingRow?.id ?? "").trim() || crypto.randomUUID();
-  const slug = requestedSlug || String(existingRow?.slug ?? "").trim() || `${slugifySeriesTitle(title)}-${seriesId.slice(0, 8)}`;
-  const slugOwner = await getSeriesBySlug(slug);
+  const generatedSlug = slugifySeriesTitle(title) || `serie-${seriesId.slice(0, 8)}`;
+  let slug = requestedSlug || String(existingRow?.slug ?? "").trim() || generatedSlug;
+  let slugOwner = await getSeriesBySlug(slug);
   if (slugOwner && String(slugOwner.id ?? "") !== seriesId) {
-    return json(req, { error: "Este endereco amigavel ja esta sendo usado por outra serie" }, 409);
+    if (requestedSlug || existingRow?.slug) {
+      return json(req, { error: "Este endereco amigavel ja esta sendo usado por outra serie" }, 409);
+    }
+    slug = `${generatedSlug}-${seriesId.slice(0, 8)}`;
+    slugOwner = await getSeriesBySlug(slug);
+    if (slugOwner && String(slugOwner.id ?? "") !== seriesId) {
+      return json(req, { error: "Nao foi possivel gerar um endereco exclusivo para a serie" }, 409);
+    }
   }
   const coverObjectPath = cover instanceof File && cover.size > 0 ? getStorageObjectName(seriesId, "cover", cover.name || "cover") : "";
   const videoObjectPath = video instanceof File && video.size > 0 ? getStorageObjectName(seriesId, "video", video.name || "video") : "";
@@ -7309,6 +7443,7 @@ async function handleOwnerSeriesCreate(req: Request) {
     og_description: ogDescription,
     og_image_url: ogImageUrl,
     seo_noindex: seoNoindex,
+    seo_sitemap_enabled: seoSitemapEnabled,
     price,
     cover_url: coverUrl,
     cover_storage_path: coverPath,
@@ -7799,6 +7934,7 @@ async function handleSupportSubmitV2(req: Request) {
 }
 
 export {
+  buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
   getCheckoutRecoverySkipReason,
   normalizeWebhookStatus,

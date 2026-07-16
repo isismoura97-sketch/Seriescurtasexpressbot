@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-15 - SEO automatico orientado pelo catalogo
+
+- Cadastro da serie passou a gerar slug, titulo, descricao, canonical, Open Graph, Twitter Card e Schema.org automaticamente.
+- CMS ganhou indicacao de campos automaticos ou personalizados, previa para Google e compartilhamento social e restauracao segura dos valores automaticos.
+- Inclusao no sitemap pode ser controlada separadamente do estado editorial e do `noindex`.
+- Paginas estaticas e sitemap passaram a consumir o SEO resolvido pelo backend, mantendo o catalogo como fonte de verdade.
+- Dados estruturados omitem informacoes inexistentes e so publicam oferta quando a serie e paga e possui preco real.
+- Duas series publicadas que ainda nao tinham pagina estatica foram adicionadas ao conjunto indexavel.
+- Canonical incorreto e titulo social herdado entre os dois cadastros mais recentes foram reparados sem alterar descricao, capa, preco ou entrega.
+- Testes Deno e smoke funcional cobrem o novo fluxo sem alterar pagamento, acesso ou entrega.
+
 ## 2026-07-15 - Recuperação consentida de checkout
 
 - Pedidos pendentes passam a ter janela de recuperação e expiração explícitas.
