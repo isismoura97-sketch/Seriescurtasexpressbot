@@ -8,6 +8,7 @@
 - Após a confirmação, autenticação, consentimentos e vínculo web são removidos e os cookies de sessão são apagados.
 - Pedidos, comprovantes, acessos e registros de entrega associados ao Telegram permanecem preservados para suporte, obrigações financeiras e continuidade das compras.
 - Novos testes cobrem sanitização da exportação, proxies autenticados e limpeza dos cookies somente após exclusão bem-sucedida.
+- Os endpoints de conta compartilham uma única função dinâmica com lista explícita de rotas, mantendo o projeto dentro do limite do plano Hobby da Vercel.
 
 ## 2026-07-17 - Carrinho e preferências sincronizados
 
