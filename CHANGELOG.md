@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-17 - Portabilidade e exclusão segura da conta
+
+- A área da cliente ganhou uma página de configurações para exportar os próprios dados em JSON.
+- A exportação reúne conta, vínculo Telegram, consentimentos, biblioteca, compras, favoritos, histórico, preferências e carrinho sem expor senhas, mídia protegida, URLs de vídeo ou `file_id`.
+- A exclusão da conta web exige sessão ativa, confirmação textual exata e nova validação da senha atual no Supabase Auth.
+- Após a confirmação, autenticação, consentimentos e vínculo web são removidos e os cookies de sessão são apagados.
+- Pedidos, comprovantes, acessos e registros de entrega associados ao Telegram permanecem preservados para suporte, obrigações financeiras e continuidade das compras.
+- Novos testes cobrem sanitização da exportação, proxies autenticados e limpeza dos cookies somente após exclusão bem-sucedida.
+
 ## 2026-07-17 - Carrinho e preferências sincronizados
 
 - Contas web confirmadas e vinculadas passaram a sincronizar favoritos, carrinho, cupons e preferências com o mesmo Telegram ID usado nas compras.

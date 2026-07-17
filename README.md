@@ -82,7 +82,8 @@ Quando aberto pelo Telegram, o Mini App disponibiliza:
 - `/minha-biblioteca` com séries compradas e aprovadas;
 - `/minhas-compras` com pedidos e estados de pagamento;
 - `/historico` com progresso real registrado;
-- `/favoritos` com os favoritos já sincronizados.
+- `/favoritos` com os favoritos já sincronizados;
+- `/configuracoes` com portabilidade de dados e gestão da conta web.
 
 O endpoint `action=customer-area` aceita duas identidades validadas pelo backend: o `initData` assinado do Telegram ou uma sessão Supabase vinculada previamente ao mesmo Telegram ID. A biblioteca não confia no frontend: apenas compras aprovadas retornam com acesso.
 
@@ -92,7 +93,9 @@ As tabelas `customer_accounts`, `customer_account_consents` e `customer_telegram
 
 Quando a conta web já está confirmada e vinculada, favoritos, carrinho, cupom e preferências são lidos e gravados usando o mesmo Telegram ID. A usuária pode preparar o carrinho no navegador; ao finalizar, o sistema salva os itens no backend e abre o bot com `start=cart`. O Mini App restaura o carrinho e mantém a criação do pedido, a confirmação do pagamento e a entrega protegida dentro do Telegram.
 
-Os endpoints `/api/account/favorite`, `/api/account/cart`, `/api/account/coupon` e `/api/account/notifications` são proxies same-origin. Eles não recebem o Telegram ID do navegador como fonte de confiança: a identidade é resolvida no backend a partir da sessão Supabase ativa e do vínculo previamente validado.
+Os endpoints `/api/account/favorite`, `/api/account/cart`, `/api/account/coupon`, `/api/account/notifications`, `/api/account/export` e `/api/account/delete` são proxies same-origin. Eles não recebem o Telegram ID do navegador como fonte de confiança: a identidade é resolvida no backend a partir da sessão Supabase ativa e do vínculo previamente validado.
+
+A exportação da conta retorna somente campos pessoais e operacionais seguros. Referências internas de mídia, caminhos privados, URLs assinadas e `file_id` não são incluídos. A exclusão exige a senha atual e a frase `EXCLUIR MINHA CONTA`; somente depois da reautenticação o Supabase Auth remove a conta e o vínculo web. Registros financeiros e acessos do Telegram não são apagados junto com o login web.
 
 Variáveis necessárias nas funções da Vercel:
 

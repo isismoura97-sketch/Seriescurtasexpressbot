@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260717-01';
+const BUILD_VERSION = '20260717-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -796,7 +796,7 @@ const STATIC_CONTENT_PAGES = {
     '/privacidade': {
         title: 'Política de privacidade',
         description: 'Como o Séries Curtas Express utiliza dados necessários para operar o serviço.',
-        body: '<p class="content-page-kicker">Privacidade</p><h1>Política de privacidade</h1><h2>Dados utilizados</h2><p>A conta web utiliza nome, e-mail, registros de consentimento e um vínculo validado com o Telegram. O identificador Telegram é usado para reunir favoritos, progresso, compras e entregas existentes. Senhas são processadas pelo Supabase Auth e não são armazenadas pela aplicação.</p><h2>Sessão e segurança</h2><p>A sessão web fica em cookies protegidos e não é salva no armazenamento local do navegador. Favoritos locais podem permanecer neste dispositivo quando não houver conta vinculada.</p><h2>Pagamentos</h2><p>Dados de pagamento são processados pelo Mercado Pago. O sistema registra apenas os dados necessários para acompanhar o pedido e confirmar a entrega.</p><h2>Contato</h2><p>Solicitações relacionadas a dados e privacidade podem ser enviadas para <a href="mailto:${SUPPORT_INBOX_EMAIL}">${SUPPORT_INBOX_EMAIL}</a>.</p>',
+        body: '<p class="content-page-kicker">Privacidade</p><h1>Política de privacidade</h1><h2>Dados utilizados</h2><p>A conta web utiliza nome, e-mail, registros de consentimento e um vínculo validado com o Telegram. O identificador Telegram é usado para reunir favoritos, progresso, compras e entregas existentes. Senhas são processadas pelo Supabase Auth e não são armazenadas pela aplicação.</p><h2>Sessão e segurança</h2><p>A sessão web fica em cookies protegidos e não é salva no armazenamento local do navegador. Favoritos locais podem permanecer neste dispositivo quando não houver conta vinculada.</p><h2>Portabilidade e exclusão</h2><p>Na página Configurações, a pessoa pode exportar os dados associados à conta e excluir o login web após confirmar a senha atual. A exportação não contém arquivos de vídeo, URLs protegidas ou identificadores internos de mídia. Pedidos, comprovantes, acessos e registros de entrega podem ser preservados quando necessários para cumprir obrigações financeiras, prestar suporte e manter conteúdos adquiridos no Telegram.</p><h2>Pagamentos</h2><p>Dados de pagamento são processados pelo Mercado Pago. O sistema registra apenas os dados necessários para acompanhar o pedido e confirmar a entrega.</p><h2>Contato</h2><p>Solicitações relacionadas a dados e privacidade podem ser enviadas para <a href="mailto:${SUPPORT_INBOX_EMAIL}">${SUPPORT_INBOX_EMAIL}</a>.</p>',
     },
     '/blog': {
         title: 'Blog',
@@ -841,7 +841,7 @@ function renderNotFoundPage() {
     setMetaContent('meta[name="robots"]', 'noindex,follow');
 }
 
-const CUSTOMER_ROUTES = new Set(['/minha-conta', '/minha-biblioteca', '/minhas-compras', '/historico']);
+const CUSTOMER_ROUTES = new Set(['/minha-conta', '/minha-biblioteca', '/minhas-compras', '/historico', '/configuracoes']);
 
 function requestTelegramCustomerArea() {
     return requestJson(`${API_URL}?action=customer-area`, {
@@ -1134,6 +1134,7 @@ function renderCustomerNav(path) {
         ['/minhas-compras', 'Compras', 'fa-receipt'],
         ['/historico', 'Histórico', 'fa-clock-rotate-left'],
         ['/favoritos', 'Favoritos', 'fa-heart'],
+        ['/configuracoes', 'Configurações', 'fa-gear'],
     ];
     return `<nav class="customer-nav" aria-label="Área da cliente">${links.map(([href, label, icon]) => `
         <a href="${href}" class="customer-nav-link ${path === href ? 'active' : ''}"><i class="fas ${icon}"></i> ${label}</a>
@@ -1210,6 +1211,55 @@ function renderCustomerNotificationPreferences(preferences = {}) {
     `;
 }
 
+function renderCustomerDataControls() {
+    if (!webAccountSession?.authenticated) {
+        return `
+            <section class="customer-section customer-data-section">
+                <div class="customer-section-head"><div><span>Conta web</span><h2>Proteja e gerencie seus dados</h2></div><i class="fas fa-shield-halved" aria-hidden="true"></i></div>
+                <p>Crie uma conta web e vincule-a ao Telegram para exportar seus dados e gerenciar o acesso pelo navegador.</p>
+                <button type="button" class="btn btn-primary" data-account-create><i class="fas fa-user-plus"></i> Criar conta web</button>
+            </section>
+        `;
+    }
+
+    return `
+        <section class="customer-section customer-data-section">
+            <div class="customer-section-head"><div><span>Portabilidade</span><h2>Exportar meus dados</h2></div><i class="fas fa-file-arrow-down" aria-hidden="true"></i></div>
+            <p>Baixe um arquivo JSON com dados da conta, vínculo com o Telegram, consentimentos, biblioteca, compras, favoritos, histórico, preferências e carrinho.</p>
+            <p class="customer-data-note"><i class="fas fa-lock"></i> O arquivo não contém senha, URLs protegidas, arquivos de vídeo nem identificadores internos de mídia.</p>
+            <button type="button" class="btn btn-secondary" data-account-export><i class="fas fa-download"></i> Baixar meus dados</button>
+            <p class="customer-data-status" data-account-export-status role="status" aria-live="polite"></p>
+        </section>
+        <section class="customer-section customer-danger-section">
+            <div class="customer-section-head"><div><span>Zona de segurança</span><h2>Excluir conta web</h2></div><i class="fas fa-triangle-exclamation" aria-hidden="true"></i></div>
+            <p>Esta ação remove permanentemente seu login web, consentimentos da conta e vínculo com o Telegram.</p>
+            <p class="customer-data-note"><i class="fas fa-circle-info"></i> Compras, comprovantes, acessos e registros de entrega associados ao Telegram são preservados para suporte, obrigações financeiras e continuidade dos conteúdos adquiridos.</p>
+            <form class="customer-delete-form" data-account-delete-form>
+                <label><span>Senha atual</span><input type="password" name="password" minlength="8" maxlength="128" autocomplete="current-password" required></label>
+                <label><span>Digite <strong>EXCLUIR MINHA CONTA</strong></span><input type="text" name="confirmation" autocomplete="off" spellcheck="false" required></label>
+                <label class="customer-delete-confirm"><input type="checkbox" name="understood" required><span>Entendi que a conta web será excluída permanentemente.</span></label>
+                <button type="submit" class="btn btn-danger"><i class="fas fa-user-slash"></i> Excluir minha conta web</button>
+                <p class="customer-data-status" data-account-delete-status role="status" aria-live="polite"></p>
+            </form>
+        </section>
+    `;
+}
+
+function downloadCustomerData(data) {
+    const exportedAt = new Date();
+    const date = exportedAt.toISOString().slice(0, 10);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `series-curtas-express-dados-${date}.json`;
+    link.hidden = true;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function wireCustomerAreaActions() {
     document.querySelectorAll('[data-customer-series-id]').forEach((button) => {
         if (!(button instanceof HTMLButtonElement)) return;
@@ -1279,6 +1329,78 @@ function wireCustomerAreaActions() {
             }
         });
     }
+
+    const exportButton = DOM.contentPage?.querySelector('[data-account-export]');
+    if (exportButton instanceof HTMLButtonElement) {
+        exportButton.addEventListener('click', async () => {
+            const status = DOM.contentPage?.querySelector('[data-account-export-status]');
+            exportButton.disabled = true;
+            exportButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparando arquivo...';
+            if (status instanceof HTMLElement) status.textContent = '';
+            try {
+                const response = await requestWebAccountAction('export');
+                if (!response?.data) throw new Error('A exportação não retornou dados.');
+                downloadCustomerData(response.data);
+                if (status instanceof HTMLElement) status.textContent = 'Arquivo gerado com sucesso.';
+                showToast('Seus dados foram preparados.', 'success');
+            } catch (error) {
+                if (status instanceof HTMLElement) status.textContent = error.message || 'Não foi possível exportar os dados.';
+                showToast(error.message || 'Não foi possível exportar os dados.', 'error');
+            } finally {
+                exportButton.disabled = false;
+                exportButton.innerHTML = '<i class="fas fa-download"></i> Baixar meus dados';
+            }
+        });
+    }
+
+    const deleteForm = DOM.contentPage?.querySelector('[data-account-delete-form]');
+    if (deleteForm instanceof HTMLFormElement) {
+        deleteForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const submitButton = deleteForm.querySelector('button[type="submit"]');
+            const status = deleteForm.querySelector('[data-account-delete-status]');
+            const formData = new FormData(deleteForm);
+            const confirmation = String(formData.get('confirmation') || '').trim();
+            if (confirmation !== 'EXCLUIR MINHA CONTA') {
+                if (status instanceof HTMLElement) status.textContent = 'Digite a frase exatamente como exibida.';
+                return;
+            }
+            if (submitButton instanceof HTMLButtonElement) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Excluindo conta...';
+            }
+            if (status instanceof HTMLElement) status.textContent = '';
+            try {
+                await requestWebAccountAction('delete', {
+                    password: String(formData.get('password') || ''),
+                    confirmation,
+                }, 30000);
+                webAccountSession = { authenticated: false };
+                webAccountSessionLoadedAt = Date.now();
+                customerAreaSnapshot = null;
+                customerAreaLoadedAt = 0;
+                if (!appContext.isTelegram) {
+                    cart = [];
+                    activeCoupon = null;
+                    favoriteSeriesIds = new Set();
+                    localStorage.removeItem('cart_series');
+                    localStorage.removeItem(FAVORITES_STORAGE_KEY);
+                    updateCartUI();
+                }
+                showToast('Sua conta web foi excluída.', 'success');
+                history.replaceState({ route: 'customer' }, '', '/minha-conta');
+                if (appContext.isTelegram) await applyPublicRoute();
+                else renderAccountAuth('login', 'Sua conta web foi excluída. Seus acessos do Telegram permanecem disponíveis.');
+            } catch (error) {
+                if (status instanceof HTMLElement) status.textContent = error.message || 'Não foi possível excluir a conta.';
+                showToast(error.message || 'Não foi possível excluir a conta.', 'error');
+                if (submitButton instanceof HTMLButtonElement) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = '<i class="fas fa-user-slash"></i> Excluir minha conta web';
+                }
+            }
+        });
+    }
 }
 
 function renderCustomerArea(path, data) {
@@ -1304,6 +1426,8 @@ function renderCustomerArea(path, data) {
                 ${item.available ? `<button type="button" class="btn btn-secondary" data-customer-series-id="${escapeAttr(String(item.series_id || ''))}">Abrir</button>` : ''}
             </article>
         `).join('') || '<div class="customer-empty"><i class="fas fa-clock-rotate-left"></i><h3>Seu histórico está vazio</h3><p>As séries abertas pelo Telegram aparecerão aqui.</p></div>'}</div></section>`;
+    } else if (path === '/configuracoes') {
+        body = renderCustomerDataControls();
     } else {
         body = `
             <section class="customer-summary-grid">

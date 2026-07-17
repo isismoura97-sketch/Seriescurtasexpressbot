@@ -107,6 +107,15 @@ Implementado em 11/07/2026:
 
 Trade-off: nesta etapa, a identidade da cliente continua sendo o Telegram ID validado. Não foi adicionada autenticação web separada, evitando custo, duplicação de contas e risco de divergência entre compras web e Telegram.
 
+Evolução concluída em 16 e 17/07/2026:
+
+- autenticação web em cookies protegidos, com confirmação de e-mail e vínculo um-para-um com o Telegram;
+- sincronização de biblioteca, compras, favoritos, carrinho, cupons e preferências pelo mesmo Telegram ID;
+- exportação de dados próprios sem referências protegidas de mídia;
+- exclusão da conta web com reautenticação por senha e preservação dos registros financeiros e acessos do Telegram.
+
+Trade-off atual: a conta web é uma credencial adicional para consultar e preparar o carrinho, mas o Telegram ID continua sendo a identidade operacional de compra, acesso e entrega. Isso permite excluir o login web sem destruir comprovantes ou conteúdos adquiridos.
+
 # Sprint 4 - Carrinho e checkout comercial
 
 Implementado em 12/07/2026:

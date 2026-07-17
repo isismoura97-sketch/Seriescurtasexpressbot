@@ -132,6 +132,7 @@ const EPISODE_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("EPISODE_VIDEO_FILE_ID_COLUM
 const USER_SERIES_PROGRESS_TABLE = Deno.env.get("USER_SERIES_PROGRESS_TABLE") ?? "user_series_progress";
 const USER_SERIES_FAVORITES_TABLE = Deno.env.get("USER_SERIES_FAVORITES_TABLE") ?? "user_series_favorites";
 const CUSTOMER_ACCOUNTS_TABLE = Deno.env.get("CUSTOMER_ACCOUNTS_TABLE") ?? "customer_accounts";
+const CUSTOMER_ACCOUNT_CONSENTS_TABLE = Deno.env.get("CUSTOMER_ACCOUNT_CONSENTS_TABLE") ?? "customer_account_consents";
 const CUSTOMER_TELEGRAM_LINKS_TABLE = Deno.env.get("CUSTOMER_TELEGRAM_LINKS_TABLE") ?? "customer_telegram_links";
 const ANALYTICS_EVENT_NAMES = new Set([
   "app_opened",
@@ -6200,7 +6201,7 @@ async function validateSupabaseAccountToken(req: Request) {
   }
 
   const accountRows = await supabaseFetch(
-    `${CUSTOMER_ACCOUNTS_TABLE}?select=id,full_name,email,status,email_verified_at&id=eq.${encodeURIComponent(String(user.id))}&limit=1`,
+    `${CUSTOMER_ACCOUNTS_TABLE}?select=id,full_name,email,status,email_verified_at,created_at,updated_at&id=eq.${encodeURIComponent(String(user.id))}&limit=1`,
   );
   const account = Array.isArray(accountRows) ? accountRows[0] as Record<string, unknown> | undefined : undefined;
   if (!account || String(account.status ?? "") !== "active") {
@@ -6385,6 +6386,170 @@ async function handleCustomerArea(req: Request) {
     favorites,
     history,
     notification_preferences: notificationState.preferences,
+  });
+}
+
+function serializeCustomerExportSeries(serie: Record<string, unknown> | undefined) {
+  if (!serie) return null;
+  return {
+    series_id: String(serie.id ?? ""),
+    title: String(serie.title ?? "Serie"),
+    slug: String(serie.slug ?? ""),
+    access_type: isSeriesFree(serie) ? "free" : "paid",
+    price: Number(serie.price ?? 0) || 0,
+    currency: String(serie.currency ?? "BRL"),
+  };
+}
+
+async function handleCustomerDataExport(req: Request) {
+  let authenticated: Awaited<ReturnType<typeof validateSupabaseAccountToken>>;
+  try {
+    authenticated = await validateSupabaseAccountToken(req);
+  } catch (error) {
+    return json(req, {
+      error: error instanceof Error ? error.message : "Autenticacao invalida",
+      code: "account_auth_required",
+    }, 401);
+  }
+
+  const accountId = authenticated.accountId;
+  const link = await getCustomerTelegramLink(accountId);
+  const telegramUserId = String(link?.telegram_user_id ?? "");
+  const [consentRows, catalog, orders, progressRows, favoriteRows, notificationState, cartRows] = await Promise.all([
+    supabaseFetch(
+      `${CUSTOMER_ACCOUNT_CONSENTS_TABLE}?select=document_type,document_version,action,source,accepted_at&account_id=eq.${encodeURIComponent(accountId)}&order=accepted_at.desc&limit=200`,
+    ).catch(() => []),
+    telegramUserId ? getSeriesList(telegramUserId) : Promise.resolve([]),
+    telegramUserId ? getCustomerPaymentRows(telegramUserId).catch(() => []) : Promise.resolve([]),
+    telegramUserId ? getUserSeriesProgressRows(telegramUserId).catch(() => []) : Promise.resolve([]),
+    telegramUserId ? getUserFavoriteSeriesRows(telegramUserId).catch(() => []) : Promise.resolve([]),
+    telegramUserId
+      ? getNotificationPreferences(telegramUserId).catch(() => ({ row: null, preferences: serializeNotificationPreferences(null) }))
+      : Promise.resolve({ row: null, preferences: serializeNotificationPreferences(null) }),
+    telegramUserId
+      ? supabaseFetch(`${SHOPPING_CARTS_TABLE}?select=item_ids,coupon_code,updated_at&user_id=eq.${encodeURIComponent(telegramUserId)}&limit=1`).catch(() => [])
+      : Promise.resolve([]),
+  ]);
+  const catalogRows = catalog as Record<string, unknown>[];
+  const catalogById = new Map(catalogRows.map((serie) => [String(serie.id ?? ""), serie]));
+  const cartRow = Array.isArray(cartRows) && cartRows.length ? cartRows[0] as Record<string, unknown> : null;
+
+  const data = {
+    schema_version: 1,
+    generated_at: new Date().toISOString(),
+    account: {
+      account_id: accountId,
+      full_name: String(authenticated.account.full_name ?? ""),
+      email: String(authenticated.account.email ?? ""),
+      status: String(authenticated.account.status ?? "active"),
+      email_verified_at: authenticated.account.email_verified_at ?? null,
+      created_at: authenticated.account.created_at ?? null,
+      updated_at: authenticated.account.updated_at ?? null,
+    },
+    telegram_link: link
+      ? {
+        telegram_user_id: telegramUserId,
+        username: String(link.telegram_username ?? ""),
+        first_name: String(link.telegram_first_name ?? ""),
+        last_name: String(link.telegram_last_name ?? ""),
+        linked_at: link.linked_at ?? null,
+        last_verified_at: link.last_verified_at ?? null,
+      }
+      : null,
+    consents: Array.isArray(consentRows) ? consentRows : [],
+    library: catalogRows
+      .filter((serie) => serie.has_access === true && !isSeriesFree(serie))
+      .map((serie) => serializeCustomerExportSeries(serie))
+      .filter(Boolean),
+    orders: (orders as Record<string, unknown>[]).map(serializeCustomerOrder),
+    favorites: (favoriteRows as Record<string, unknown>[]).map((row) => ({
+      ...serializeCustomerExportSeries(catalogById.get(String(row.series_id ?? ""))),
+      favorited_at: row.created_at ?? null,
+      updated_at: row.updated_at ?? null,
+    })),
+    history: (progressRows as Record<string, unknown>[]).map((row) => ({
+      series_id: String(row.series_id ?? ""),
+      title: String(catalogById.get(String(row.series_id ?? ""))?.title ?? row.series_title ?? "Serie"),
+      last_position_seconds: Number(row.last_position_seconds ?? 0) || 0,
+      duration_seconds: Number(row.duration_seconds ?? 0) || 0,
+      completion_percent: Number(row.completion_percent ?? 0) || 0,
+      completed: row.completed === true,
+      last_opened_at: row.last_opened_at ?? null,
+    })),
+    notification_preferences: notificationState.preferences,
+    cart: {
+      item_ids: Array.isArray(cartRow?.item_ids) ? cartRow.item_ids.map(String) : [],
+      coupon_code: String(cartRow?.coupon_code ?? ""),
+      updated_at: cartRow?.updated_at ?? null,
+    },
+  };
+
+  return json(req, { ok: true, data });
+}
+
+async function handleCustomerAccountDelete(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  const confirmation = String(body.confirmation ?? "").trim();
+  const password = String(body.password ?? "");
+  if (confirmation !== "EXCLUIR MINHA CONTA") {
+    return json(req, { error: "Digite a frase de confirmacao exatamente como solicitado." }, 400);
+  }
+  if (password.length < 8 || password.length > 128) {
+    return json(req, { error: "Informe sua senha atual." }, 400);
+  }
+
+  let authenticated: Awaited<ReturnType<typeof validateSupabaseAccountToken>>;
+  try {
+    authenticated = await validateSupabaseAccountToken(req);
+  } catch (error) {
+    return json(req, {
+      error: error instanceof Error ? error.message : "Autenticacao invalida",
+      code: "account_auth_required",
+    }, 401);
+  }
+
+  const reauthentication = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: stringifyJson({
+      email: String(authenticated.account.email ?? ""),
+      password,
+    }),
+  });
+  const reauthenticationPayload = await reauthentication.json().catch(() => null) as Record<string, unknown> | null;
+  const reauthenticatedUser = reauthenticationPayload?.user as Record<string, unknown> | undefined;
+  if (!reauthentication.ok || String(reauthenticatedUser?.id ?? "") !== authenticated.accountId) {
+    return json(req, { error: "Senha atual invalida.", code: "account_reauthentication_failed" }, 401);
+  }
+
+  const deletion = await fetch(
+    `${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(authenticated.accountId)}`,
+    {
+      method: "DELETE",
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        accept: "application/json",
+      },
+    },
+  );
+  if (!deletion.ok) {
+    await deletion.text().catch(() => "");
+    return json(req, {
+      error: "Nao foi possivel excluir a conta agora. Tente novamente ou fale com o suporte.",
+      code: "account_delete_failed",
+    }, 500);
+  }
+
+  return json(req, {
+    ok: true,
+    account_deleted: true,
+    retained_records: ["payment_orders", "series_entitlements", "telegram_delivery_history"],
   });
 }
 
@@ -8091,6 +8256,7 @@ export {
   buildOwnerAnalyticsSnapshot,
   getCheckoutRecoverySkipReason,
   normalizeWebhookStatus,
+  serializeCustomerExportSeries,
   validateApprovedPaymentForOrder,
   validateTelegramStarsPaymentForOrder,
 };
@@ -8149,6 +8315,14 @@ if (import.meta.main) Deno.serve(async (req) => {
 
     if (action === "customer-area" && req.method === "POST") {
       return await handleCustomerArea(req);
+    }
+
+    if (action === "account-data-export" && req.method === "POST") {
+      return await handleCustomerDataExport(req);
+    }
+
+    if (action === "account-delete" && req.method === "POST") {
+      return await handleCustomerAccountDelete(req);
     }
 
     if (action === "notification-preferences" && req.method === "POST") {

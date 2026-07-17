@@ -44,6 +44,7 @@ const originalFetch = globalThis.fetch;
 
 try {
     let capturedSignup = null;
+    let deleteShouldFail = false;
     globalThis.fetch = async (url, init = {}) => {
         capturedSignup = { url: String(url), body: JSON.parse(String(init.body || '{}')) };
         return Response.json({ id: 'account-id', email: 'cliente@example.com' }, { status: 200 });
@@ -114,6 +115,13 @@ try {
             capturedEdgeRequest = { url: value, headers: init.headers, body: JSON.parse(String(init.body || '{}')) };
             return Response.json({ ok: true, cart: { item_ids: ['series-1'] } });
         }
+        if (value.includes('/functions/v1/bot-unificado/api?action=account-data-export')) {
+            return Response.json({ ok: true, data: { schema_version: 1, library: [] } });
+        }
+        if (value.includes('/functions/v1/bot-unificado/api?action=account-delete')) {
+            if (deleteShouldFail) return Response.json({ error: 'Senha atual inválida.' }, { status: 401 });
+            return Response.json({ ok: true, account_deleted: true });
+        }
         throw new Error(`URL inesperada no teste: ${value}`);
     };
     const proxyRequest = makeRequest({ operation: 'load' });
@@ -126,7 +134,37 @@ try {
     assert.equal(capturedEdgeRequest.headers.authorization, 'Bearer access-secret');
     assert.equal(JSON.stringify(proxyResponse.payload).includes('access-secret'), false);
 
-    console.log(JSON.stringify({ ok: true, checks: 23 }, null, 2));
+    const exportRequest = makeRequest({});
+    exportRequest.headers.cookie = 'sce_access=access-secret';
+    const exportResponse = makeResponse();
+    await run((request, response) => callAccountEdge(request, response, 'account-data-export'), exportRequest, exportResponse);
+    assert.equal(exportResponse.statusCode, 200);
+    assert.equal(exportResponse.payload.data.schema_version, 1);
+    assert.equal(JSON.stringify(exportResponse.payload).includes('access-secret'), false);
+
+    const deleteRequest = makeRequest({ password: 'senha-forte-123', confirmation: 'EXCLUIR MINHA CONTA' });
+    deleteRequest.headers.cookie = 'sce_access=access-secret; sce_refresh=refresh-secret';
+    const deleteResponse = makeResponse();
+    await run((request, response) => callAccountEdge(request, response, 'account-delete', {
+        clearSessionOnSuccess: true,
+    }), deleteRequest, deleteResponse);
+    assert.equal(deleteResponse.statusCode, 200);
+    assert.equal(deleteResponse.payload.account_deleted, true);
+    assert.equal(Array.isArray(deleteResponse.headers['set-cookie']), true);
+    assert.equal(deleteResponse.headers['set-cookie'].length, 3);
+    deleteResponse.headers['set-cookie'].forEach((cookie) => assert.match(cookie, /Max-Age=0/));
+
+    deleteShouldFail = true;
+    const failedDeleteRequest = makeRequest({ password: 'senha-incorreta', confirmation: 'EXCLUIR MINHA CONTA' });
+    failedDeleteRequest.headers.cookie = 'sce_access=access-secret; sce_refresh=refresh-secret';
+    const failedDeleteResponse = makeResponse();
+    await run((request, response) => callAccountEdge(request, response, 'account-delete', {
+        clearSessionOnSuccess: true,
+    }), failedDeleteRequest, failedDeleteResponse);
+    assert.equal(failedDeleteResponse.statusCode, 401);
+    assert.equal('set-cookie' in failedDeleteResponse.headers, false);
+
+    console.log(JSON.stringify({ ok: true, checks: 33 }, null, 2));
 } finally {
     globalThis.fetch = originalFetch;
 }

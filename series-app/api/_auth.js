@@ -359,7 +359,7 @@ async function handlePassword(req, res) {
     return sendJson(res, 200, { ok: true, message: 'Senha atualizada com sucesso.' });
 }
 
-async function callAccountEdge(req, res, action) {
+async function callAccountEdge(req, res, action, options = {}) {
     assertSameOrigin(req);
     const session = await resolveSession(req, res);
     if (!session) return sendJson(res, 401, { error: 'Entre na sua conta para continuar.', code: 'account_auth_required' });
@@ -376,6 +376,7 @@ async function callAccountEdge(req, res, action) {
         body: JSON.stringify(body),
     });
     const payload = await response.json().catch(() => ({}));
+    if (response.ok && options.clearSessionOnSuccess === true) clearSessionCookies(req, res);
     return sendJson(res, response.status, payload);
 }
 

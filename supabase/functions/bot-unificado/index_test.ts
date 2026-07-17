@@ -3,6 +3,7 @@ import {
   buildOwnerAnalyticsSnapshot,
   getCheckoutRecoverySkipReason,
   normalizeWebhookStatus,
+  serializeCustomerExportSeries,
   validateApprovedPaymentForOrder,
   validateTelegramStarsPaymentForOrder,
 } from "./index.ts";
@@ -27,6 +28,26 @@ const approvedPayment = {
   currency_id: "BRL",
   captured: true,
 };
+
+Deno.test("exportacao da conta omite referencias protegidas de midia", () => {
+  const exported = serializeCustomerExportSeries({
+    id: "serie-privada",
+    title: "Serie Protegida",
+    slug: "serie-protegida",
+    price: 5.9,
+    currency: "BRL",
+    is_free: false,
+    telegram_file_id: "file-id-secreto",
+    video_storage_path: "videos/privado.mp4",
+    video_url: "https://storage.example/privado.mp4",
+  }) as Record<string, unknown>;
+
+  assertEquals(exported.series_id, "serie-privada", "id da serie exportado");
+  assertEquals(exported.access_type, "paid", "tipo de acesso exportado");
+  assertEquals("telegram_file_id" in exported, false, "file id omitido");
+  assertEquals("video_storage_path" in exported, false, "caminho protegido omitido");
+  assertEquals("video_url" in exported, false, "url de video omitida");
+});
 
 Deno.test("SEO automatico usa dados reais e nao inventa campos opcionais", () => {
   const seo = buildAutomaticSeriesSeo({
