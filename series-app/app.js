@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260716-01';
+const BUILD_VERSION = '20260717-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -23,6 +23,7 @@ const APP_LAUNCH_SERIE_ID = new URLSearchParams(window.location.search).get('pla
     || '';
 const APP_LAUNCH_PAYMENT_ORDER_ID = new URLSearchParams(window.location.search).get('payment_order_id') || '';
 const APP_LAUNCH_CHECKOUT_RECOVERY = new URLSearchParams(window.location.search).get('checkout_recovery') === '1';
+const APP_LAUNCH_CART = new URLSearchParams(window.location.search).get('cart') === '1';
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
 const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 const PAYMENT_METHOD_STORAGE_KEY = 'checkout_payment_method';
@@ -148,6 +149,10 @@ function getSeriesResolvedSeo(serie = {}) {
 function buildTelegramSeriesLink(serie) {
     const seriesId = normalizeId(serie?.id);
     return `${TELEGRAM_BOT_LINK}${seriesId ? `?start=serie_${encodeURIComponent(seriesId)}` : ''}`;
+}
+
+function buildTelegramCartLink() {
+    return `${TELEGRAM_BOT_LINK}?start=cart`;
 }
 
 let allSeries = [];
@@ -318,6 +323,18 @@ function sameId(a, b) {
     return normalizeId(a) === normalizeId(b);
 }
 
+function hasLinkedWebAccount() {
+    return Boolean(
+        webAccountSession?.authenticated &&
+        webAccountSession?.email_verified &&
+        webAccountSession?.telegram_link?.telegram_user_id
+    );
+}
+
+function canSyncCustomerState() {
+    return Boolean((appContext.isTelegram && tg?.initData) || hasLinkedWebAccount());
+}
+
 function restoreFavoriteSeries() {
     try {
         const raw = JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY) || '[]');
@@ -392,19 +409,19 @@ function hydrateFavoriteSeriesFromCatalog(series) {
     saveFavoriteSeries();
 
     const pendingRemoteFavorites = localFavorites.filter((serieId) => !serverFavorites.includes(serieId));
-    if (pendingRemoteFavorites.length && userId && tg?.initData) {
+    if (pendingRemoteFavorites.length && canSyncCustomerState()) {
         void syncLocalFavoritesToBackend(pendingRemoteFavorites);
     }
 }
 
 async function syncLocalFavoritesToBackend(seriesIds = []) {
     const uniqueIds = Array.from(new Set((Array.isArray(seriesIds) ? seriesIds : []).map(normalizeId).filter(Boolean)));
-    if (!uniqueIds.length || !userId || !tg?.initData) return;
+    if (!uniqueIds.length || !canSyncCustomerState()) return;
 
     for (const serieId of uniqueIds) {
         try {
             await requestFavoriteSync({
-                init_data: tg.initData,
+                init_data: tg?.initData || '',
                 series_id: serieId,
                 is_favorite: true,
             });
@@ -436,11 +453,11 @@ async function toggleFavoriteSeries(serie) {
         openModal(serie);
     }
 
-    if (!userId || !tg?.initData) return;
+    if (!canSyncCustomerState()) return;
 
     try {
         await requestFavoriteSync({
-            init_data: tg.initData,
+            init_data: tg?.initData || '',
             series_id: serieId,
             is_favorite: nextFavoriteState,
         });
@@ -836,6 +853,10 @@ function requestWebCustomerArea() {
     return requestJson('/api/account/overview', {}, 20000);
 }
 
+async function requestWebAccountAction(endpoint, payload = {}, timeoutMs = 15000) {
+    return await requestJson(`/api/account/${endpoint}`, payload, timeoutMs);
+}
+
 async function requestWebAccountSession({ force = false } = {}) {
     if (!force && webAccountSession && Date.now() - webAccountSessionLoadedAt < 30000) {
         return webAccountSession;
@@ -873,11 +894,39 @@ async function requestWebAuth(path, payload = {}) {
 }
 
 function requestNotificationPreferences(operation = 'get', preferences = {}) {
+    if (!appContext.isTelegram && hasLinkedWebAccount()) {
+        return requestWebAccountAction('notifications', { operation, ...preferences });
+    }
     return requestJson(`${API_URL}?action=notification-preferences`, {
         init_data: tg?.initData || '',
         operation,
         ...preferences,
     }, 15000);
+}
+
+async function loadLinkedWebAccountState() {
+    if (appContext.isTelegram) return;
+    const session = await requestWebAccountSession({ force: true });
+    const linked = Boolean(session?.authenticated && session?.email_verified && session?.telegram_link?.telegram_user_id);
+    if (DOM.cartBtn) DOM.cartBtn.hidden = !linked;
+    updatePaymentMethodUI();
+    if (!linked) return;
+
+    try {
+        const overview = await requestWebCustomerArea();
+        customerAreaSnapshot = overview;
+        customerAreaLoadedAt = Date.now();
+        const remoteFavoriteIds = (Array.isArray(overview?.favorites) ? overview.favorites : [])
+            .map((serie) => normalizeId(serie?.id || serie?.series_id))
+            .filter(Boolean);
+        remoteFavoriteIds.forEach((serieId) => {
+            favoriteSeriesIds.add(serieId);
+            syncFavoriteStateToSeries(serieId, true);
+        });
+        saveFavoriteSeries();
+    } catch (error) {
+        debugLog('[ACCOUNT] Estado sincronizado indisponível:', error?.message || error);
+    }
 }
 
 function renderAccountAuth(mode = 'login', message = '') {
@@ -1265,7 +1314,7 @@ function renderCustomerArea(path, data) {
             </section>
             <section class="customer-section"><div class="customer-section-head"><div><span>Acesso rápido</span><h2>Últimas séries da biblioteca</h2></div><a href="/minha-biblioteca">Ver todas</a></div><div class="customer-series-grid">${library.slice(0, 3).map((serie) => renderCustomerSeriesCard(serie)).join('') || '<div class="customer-empty"><p>Suas séries compradas aparecerão aqui automaticamente.</p></div>'}</div></section>
             <section class="customer-section"><div class="customer-section-head"><div><span>Pedidos recentes</span><h2>Minhas compras</h2></div><a href="/minhas-compras">Ver todas</a></div><div class="customer-orders-list">${orders.slice(0, 3).map(renderCustomerOrder).join('') || '<div class="customer-empty"><p>Nenhum pedido registrado ainda.</p></div>'}</div></section>
-            ${appContext.isTelegram ? renderCustomerNotificationPreferences(notificationPreferences) : ''}
+            ${renderCustomerNotificationPreferences(notificationPreferences)}
         `;
     }
 
@@ -1976,6 +2025,9 @@ function getCheckoutButtonLabel() {
     if (isAwaitingPayment(activePaymentOrder)) {
         return '<i class="fas fa-credit-card"></i> Ver pagamento';
     }
+    if (!appContext.isTelegram && hasLinkedWebAccount()) {
+        return '<i class="fab fa-telegram"></i> Continuar no Telegram';
+    }
 
     switch (selectedPaymentMethod) {
         case 'pix_qr':
@@ -2052,15 +2104,16 @@ function setCheckoutLoading(isLoading) {
 }
 
 function updatePaymentMethodUI() {
+    const webHandoff = !appContext.isTelegram && hasLinkedWebAccount();
     DOM.paymentMethods?.forEach((button) => {
         const method = button.dataset.paymentMethod || '';
-        button.hidden = appContext.isTelegram ? method !== 'telegram_checkout' : method === 'telegram_checkout';
+        button.hidden = webHandoff || (appContext.isTelegram ? method !== 'telegram_checkout' : method === 'telegram_checkout');
         const active = method === selectedPaymentMethod;
         button.classList.toggle('active', active);
     });
 
     if (DOM.buyerEmailField) {
-        DOM.buyerEmailField.hidden = selectedPaymentMethod !== 'pix_qr';
+        DOM.buyerEmailField.hidden = webHandoff || selectedPaymentMethod !== 'pix_qr';
     }
 
     if (DOM.buyerEmailInput && buyerEmail) {
@@ -2414,6 +2467,12 @@ async function requestPaymentStatus(payload) {
 }
 
 async function requestCouponValidation(couponCode) {
+    if (!appContext.isTelegram && hasLinkedWebAccount()) {
+        return await requestWebAccountAction('coupon', {
+            coupon_code: couponCode,
+            items: sanitizeCheckoutItems(cart),
+        });
+    }
     return await requestJson(`${API_URL}?action=coupon-validate`, {
         init_data: tg?.initData || '',
         coupon_code: couponCode,
@@ -2422,6 +2481,9 @@ async function requestCouponValidation(couponCode) {
 }
 
 async function requestCartSync(operation, payload = {}) {
+    if (!appContext.isTelegram && hasLinkedWebAccount()) {
+        return await requestWebAccountAction('cart', { operation, ...payload });
+    }
     return await requestJson(`${API_URL}?action=cart-sync`, {
         init_data: tg?.initData || '',
         operation,
@@ -2444,6 +2506,9 @@ async function requestProgressSync(payload) {
 }
 
 async function requestFavoriteSync(payload) {
+    if (!appContext.isTelegram && hasLinkedWebAccount()) {
+        return await requestWebAccountAction('favorite', payload);
+    }
     return await fetchWithTimeout(withCacheBuster(`${API_URL}?action=favorite-sync`), {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -5225,6 +5290,7 @@ async function init() {
         const data = await fetchWithTimeout(withCacheBuster(url.toString()));
         allSeries = Array.isArray(data) ? data : [];
         trackAnalyticsEvent('catalog_loaded', { metadata: { item_count: allSeries.length } });
+        await loadLinkedWebAccountState();
         hydrateFavoriteSeriesFromCatalog(allSeries);
         await loadServerCart();
         debugLog(`[INIT] ${allSeries.length} éries carregadas`);
@@ -5263,6 +5329,9 @@ async function init() {
     }
 
     setupEventListeners();
+    if (APP_LAUNCH_CART && appContext.isTelegram) {
+        setTimeout(() => toggleCart(true), 150);
+    }
 }
 
 if (document.readyState === 'loading') {
@@ -5992,7 +6061,7 @@ function openModal(serie) {
     const btn = document.createElement('button');
     btn.className = free ? 'btn btn-free' : 'btn btn-primary';
 
-    if (!appContext.isTelegram && playbackMode !== 'missing') {
+    if (!appContext.isTelegram && playbackMode !== 'missing' && !hasLinkedWebAccount()) {
         btn.className = free ? 'btn btn-free' : 'btn btn-primary';
         btn.innerHTML = free
             ? '<i class="fab fa-telegram"></i> Assistir grátis no Telegram'
@@ -6014,7 +6083,7 @@ function openModal(serie) {
     
     btn.onclick = () => {
         closeModal();
-        if (!appContext.isTelegram && playbackMode !== 'missing') {
+        if (!appContext.isTelegram && playbackMode !== 'missing' && !hasLinkedWebAccount()) {
             openTelegramBotLink(buildTelegramSeriesLink(serie));
         } else if (ownerCanWatch) {
             void openPlayer(serie.id, serie.title || 'Reproduzir');
@@ -6138,7 +6207,7 @@ function setCartCouponStatus(message = '', type = '') {
 }
 
 function scheduleServerCartSave() {
-    if (!appContext.isTelegram || !tg?.initData) return;
+    if (!canSyncCustomerState()) return;
     clearTimeout(cartSyncTimer);
     cartSyncTimer = setTimeout(() => {
         requestCartSync('save', {
@@ -6149,7 +6218,7 @@ function scheduleServerCartSave() {
 }
 
 async function loadServerCart() {
-    if (!appContext.isTelegram || !tg?.initData) return;
+    if (!canSyncCustomerState()) return;
     try {
         const payload = await requestCartSync('load');
         const serverIds = Array.isArray(payload?.cart?.item_ids) ? payload.cart.item_ids.map(normalizeId) : [];
@@ -6170,7 +6239,7 @@ async function loadServerCart() {
 }
 
 async function applyCartCoupon() {
-    if (!appContext.isTelegram) {
+    if (!appContext.isTelegram && !hasLinkedWebAccount()) {
         showToast('Abra o Telegram para validar cupons.', 'info');
         return;
     }
@@ -6340,10 +6409,27 @@ function removeFromCart(id) {
     scheduleServerCartSave();
 }
 
-function checkout() {
+async function checkout() {
     if (!appContext.isTelegram) {
-        showToast('Abra o bot no Telegram para comprar com segurança.', 'info');
-        openTelegramBotLink(TELEGRAM_BOT_LINK);
+        if (!hasLinkedWebAccount()) {
+            showToast('Entre e vincule sua conta para levar o carrinho ao Telegram.', 'info');
+            openTelegramBotLink(TELEGRAM_BOT_LINK);
+            return;
+        }
+        if (!cart.length) return showToast('Carrinho vazio!', 'error');
+        setCheckoutLoading(true);
+        try {
+            await requestCartSync('save', {
+                item_ids: cart.map((item) => String(item.id || '')).filter(Boolean),
+                coupon_code: activeCoupon?.code || '',
+            });
+            showToast('Carrinho salvo. Conclua o pagamento no Telegram.', 'success');
+            openTelegramBotLink(buildTelegramCartLink());
+        } catch (error) {
+            showToast(error.message || 'Não foi possível preparar o carrinho.', 'error');
+        } finally {
+            setCheckoutLoading(false);
+        }
         return;
     }
     if (isAwaitingPayment(activePaymentOrder)) {

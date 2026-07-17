@@ -1238,6 +1238,12 @@ async function createPaymentOrderRecord(entry: {
   return order;
 }
 
+function buildCartLaunchUrl() {
+  const url = new URL(SERIES_WEBAPP_URL);
+  url.searchParams.set("cart", "1");
+  return url.toString();
+}
+
 function buildCheckoutRecoveryLaunchUrl(orderId: string) {
   const url = new URL(SERIES_WEBAPP_URL);
   url.searchParams.set("payment_order_id", orderId);
@@ -2389,9 +2395,13 @@ async function handleCouponValidate(req: Request) {
   if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
   let userId = "";
   try {
-    userId = (await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""))).userId;
+    userId = (await resolveCustomerIdentity(req, body)).userId;
   } catch (error) {
-    return json(req, { error: error instanceof Error ? error.message : "Dados do Telegram invalidos" }, 401);
+    const code = (error as Error & { code?: string })?.code || "account_auth_required";
+    return json(req, {
+      error: error instanceof Error ? error.message : "Autenticacao invalida",
+      code,
+    }, code === "telegram_link_required" ? 409 : 401);
   }
   try {
     const items = await resolveCanonicalCheckoutItems(body.items);
@@ -2409,9 +2419,13 @@ async function handleCartSync(req: Request) {
   if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
   let userId = "";
   try {
-    userId = (await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""))).userId;
+    userId = (await resolveCustomerIdentity(req, body)).userId;
   } catch (error) {
-    return json(req, { error: error instanceof Error ? error.message : "Dados do Telegram invalidos" }, 401);
+    const code = (error as Error & { code?: string })?.code || "account_auth_required";
+    return json(req, {
+      error: error instanceof Error ? error.message : "Autenticacao invalida",
+      code,
+    }, code === "telegram_link_required" ? 409 : 401);
   }
 
   const operation = String(body.operation ?? "load").trim().toLowerCase();
@@ -3886,6 +3900,17 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
           return json(req, { ok: true, action: "start_checkout_received" });
         }
       }
+    }
+    if (startPayload === "cart") {
+      await telegramRequest("sendMessage", {
+        chat_id: chatId,
+        text: "Seu carrinho esta salvo. Abra o Mini App para revisar os itens e concluir o pagamento.",
+        protect_content: true,
+        reply_markup: stringifyJson({
+          inline_keyboard: [[{ text: "Abrir carrinho", web_app: { url: buildCartLaunchUrl() } }]],
+        }),
+      });
+      return json(req, { ok: true, action: "start_cart_sent" });
     }
     if (startPayload === "continue") {
       await sendContinueWatchingMessage(chatId, String(chatId));
@@ -6104,11 +6129,13 @@ async function handleFavoriteSync(req: Request) {
 
   let userId = "";
   try {
-    const validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
-    userId = validated.userId;
+    userId = (await resolveCustomerIdentity(req, body)).userId;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return json(req, { error: message, code: "telegram_auth_required" }, 401);
+    const code = (error as Error & { code?: string })?.code || "account_auth_required";
+    return json(req, {
+      error: error instanceof Error ? error.message : "Autenticacao invalida",
+      code,
+    }, code === "telegram_link_required" ? 409 : 401);
   }
 
   const isFavorite = body.is_favorite === true || String(body.is_favorite ?? body.favorite ?? "").trim().toLowerCase() === "true";
@@ -6832,12 +6859,13 @@ async function handleNotificationPreferences(req: Request) {
 
   let userId = "";
   try {
-    userId = (await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""))).userId;
+    userId = (await resolveCustomerIdentity(req, body)).userId;
   } catch (error) {
+    const code = (error as Error & { code?: string })?.code || "account_auth_required";
     return json(req, {
-      error: error instanceof Error ? error.message : "Dados do Telegram invalidos",
-      code: "telegram_auth_required",
-    }, 401);
+      error: error instanceof Error ? error.message : "Autenticacao invalida",
+      code,
+    }, code === "telegram_link_required" ? 409 : 401);
   }
 
   const operation = String(body.operation ?? "get").trim().toLowerCase();

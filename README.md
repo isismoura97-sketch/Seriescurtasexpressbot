@@ -90,6 +90,10 @@ Fora do Telegram, `/minha-conta` oferece cadastro, confirmação de e-mail, logi
 
 As tabelas `customer_accounts`, `customer_account_consents` e `customer_telegram_links` usam RLS e não substituem os Telegram IDs já registrados em pedidos, acessos, favoritos ou progresso. Isso preserva compras existentes e permite que a conta web resolva a mesma biblioteca sem migração destrutiva.
 
+Quando a conta web já está confirmada e vinculada, favoritos, carrinho, cupom e preferências são lidos e gravados usando o mesmo Telegram ID. A usuária pode preparar o carrinho no navegador; ao finalizar, o sistema salva os itens no backend e abre o bot com `start=cart`. O Mini App restaura o carrinho e mantém a criação do pedido, a confirmação do pagamento e a entrega protegida dentro do Telegram.
+
+Os endpoints `/api/account/favorite`, `/api/account/cart`, `/api/account/coupon` e `/api/account/notifications` são proxies same-origin. Eles não recebem o Telegram ID do navegador como fonte de confiança: a identidade é resolvida no backend a partir da sessão Supabase ativa e do vínculo previamente validado.
+
 Variáveis necessárias nas funções da Vercel:
 
 - `SUPABASE_URL`

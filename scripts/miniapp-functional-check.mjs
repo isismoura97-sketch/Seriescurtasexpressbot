@@ -131,6 +131,8 @@ let notificationPreferencesState = {
   recovery_consented_at: null,
 };
 let checkoutRequestPayload = null;
+let webCartServerState = { item_ids: [], coupon_code: '' };
+const webFavoriteLog = [];
 let ownerCouponSavePayload = null;
 let ownerCouponActionPayload = null;
 const deliveryLog = [];
@@ -198,7 +200,8 @@ function listen(server) {
 }
 
 async function installRoutes(page, options = {}) {
-  const telegramEnabled = options.telegram !== false;
+    const telegramEnabled = options.telegram !== false;
+    const linkedWebAccount = options.webAccount === 'linked';
   await page.route('https://telegram.org/js/telegram-web-app.js', async (route) => {
     await route.fulfill({
       contentType: 'text/javascript',
@@ -218,6 +221,73 @@ async function installRoutes(page, options = {}) {
         };
       ` : 'window.Telegram = undefined;',
     });
+  });
+
+  await page.route(`http://127.0.0.1:${port}/api/**`, async (route) => {
+    const url = new URL(route.request().url());
+    const endpoint = url.pathname;
+    if (endpoint === '/api/auth/session') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify(linkedWebAccount ? {
+          ok: true,
+          authenticated: true,
+          email_verified: true,
+          account: { id: 'account-id', full_name: 'Cliente Web', email: 'cliente@example.com', status: 'active' },
+          telegram_link: { telegram_user_id: '123456789', telegram_username: 'clienteweb' },
+          consents: [],
+        } : { ok: true, authenticated: false }),
+      });
+      return;
+    }
+    if (!linkedWebAccount) {
+      await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'Entre na sua conta.' }) });
+      return;
+    }
+    if (endpoint === '/api/account/overview') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          account: { telegram_user_id: '123456789', name: 'Cliente Web', email: 'cliente@example.com', email_verified: true },
+          summary: { favorites_total: 1 },
+          library: [],
+          orders: [],
+          history: [],
+          favorites: [fixtureSeries.find((serie) => serie.id === 'direct-ok')],
+          notification_preferences: notificationPreferencesState,
+        }),
+      });
+      return;
+    }
+    if (endpoint === '/api/account/cart') {
+      const payload = route.request().postDataJSON?.() || {};
+      if (payload.operation === 'save') {
+        webCartServerState = {
+          item_ids: Array.isArray(payload.item_ids) ? payload.item_ids : [],
+          coupon_code: String(payload.coupon_code || ''),
+        };
+      }
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, cart: webCartServerState }) });
+      return;
+    }
+    if (endpoint === '/api/account/favorite') {
+      webFavoriteLog.push(route.request().postDataJSON?.() || {});
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+      return;
+    }
+    if (endpoint === '/api/account/coupon') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, coupon: { code: 'TESTE10', subtotal: 5.9, discountAmount: 0.59, total: 5.31 } }),
+      });
+      return;
+    }
+    if (endpoint === '/api/account/notifications') {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, preferences: notificationPreferencesState }) });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
   });
 
   await page.route('https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api**', async (route) => {
@@ -1151,6 +1221,37 @@ async function main() {
     }));
     await webPage.close();
 
+    const linkedWebPage = await browser.newPage();
+    linkedWebPage.on('pageerror', (err) => errors.push(`linked-web: ${err.message || err}`));
+    await linkedWebPage.addInitScript(() => {
+      window.open = (url) => {
+        window.__webOpenedUrl = String(url || '');
+        return null;
+      };
+    });
+    await installRoutes(linkedWebPage, { telegram: false, webAccount: 'linked' });
+    await linkedWebPage.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
+    await linkedWebPage.waitForSelector('#catalogGrid .card[data-id="paid-series"]', { timeout: 10000 });
+    await linkedWebPage.waitForSelector('#cartBtn:not([hidden])', { timeout: 10000 });
+    await linkedWebPage.locator('#catalogGrid .card[data-id="direct-ok"] .card-favorite-btn').click();
+    await linkedWebPage.locator('#catalogGrid .card[data-id="paid-series"]').click();
+    await linkedWebPage.locator('#modalActions button').first().click();
+    await linkedWebPage.waitForSelector('#cartDrawer.active', { timeout: 10000 });
+    await linkedWebPage.fill('#cartCouponInput', 'TESTE10');
+    await linkedWebPage.locator('#cartCouponBtn').click();
+    await linkedWebPage.waitForFunction(() => document.querySelector('#cartCouponStatus')?.textContent?.includes('TESTE10'));
+    const linkedWebCartBeforeCheckout = await linkedWebPage.evaluate(() => ({
+      cartVisible: document.querySelector('#cartBtn')?.hidden === false,
+      items: document.querySelectorAll('#cartItems .cart-item').length,
+      checkoutLabel: document.querySelector('#checkoutBtn')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+      paymentMethodsVisible: Array.from(document.querySelectorAll('[data-payment-method]')).filter((node) => !node.hidden).length,
+      coupon: document.querySelector('#cartCouponStatus')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+    }));
+    await linkedWebPage.locator('#checkoutBtn').click();
+    await linkedWebPage.waitForFunction(() => String(window.__webOpenedUrl || '').includes('start=cart'));
+    const linkedWebHandoff = await linkedWebPage.evaluate(() => window.__webOpenedUrl || '');
+    await linkedWebPage.close();
+
     const sitemapText = fs.readFileSync(path.join(appDir, 'sitemap.xml'), 'utf8');
     const robotsText = fs.readFileSync(path.join(appDir, 'robots.txt'), 'utf8');
     const generatedSeriesPageText = fs.readFileSync(path.join(appDir, 'series', 'a-prometida-do-principe-vampiro-legendado-pt-br', 'index.html'), 'utf8');
@@ -1158,7 +1259,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.starsActive || !initial.webMethodsHidden) failures.push('Telegram Stars not enforced inside Telegram');
-    if (!initial.appJs.includes('20260716-01')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260717-01')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1220,6 +1321,9 @@ async function main() {
     if (!webTelegramOpenState.includes('t.me/ShortNovelsBot') || deliveryLog.length !== webDeliveryCountBefore) failures.push('public Telegram handoff failed');
     if (!webContentState.title.includes('Política de privacidade') || webContentState.heading !== 'Política de privacidade' || !webContentState.catalogHidden) failures.push(`public content page failed: ${JSON.stringify(webContentState)}`);
     if (webCustomerState.path !== '/minha-conta' || webCustomerState.heading !== 'Entre na sua conta' || !webCustomerState.loginForm || !webCustomerState.registerAction.includes('Criar uma conta') || !webCustomerState.accountVisible) failures.push(`web account entry failed: ${JSON.stringify(webCustomerState)}`);
+    if (!linkedWebCartBeforeCheckout.cartVisible || linkedWebCartBeforeCheckout.items !== 1 || !linkedWebCartBeforeCheckout.checkoutLabel.includes('Continuar no Telegram') || linkedWebCartBeforeCheckout.paymentMethodsVisible !== 0 || !linkedWebCartBeforeCheckout.coupon.includes('TESTE10')) failures.push(`linked web cart failed: ${JSON.stringify(linkedWebCartBeforeCheckout)}`);
+    if (!linkedWebHandoff.includes('t.me/ShortNovelsBot?start=cart') || webCartServerState.item_ids[0] !== 'paid-series' || webCartServerState.coupon_code !== 'TESTE10') failures.push(`linked web handoff failed: ${linkedWebHandoff} ${JSON.stringify(webCartServerState)}`);
+    if (!webFavoriteLog.some((entry) => entry.series_id === 'direct-ok' && entry.is_favorite === false)) failures.push(`linked web favorite sync failed: ${JSON.stringify(webFavoriteLog)}`);
     if (!sitemapText.includes('/series/') || !sitemapText.includes('/blog/o-que-sao-series-curtas-verticais') || !robotsText.includes('Sitemap:')) failures.push('SEO files failed');
     if (!generatedSeriesPageText.includes('<title>A Prometida do Príncipe Vampiro') || !generatedSeriesPageText.includes('property="og:title"') || !generatedSeriesPageText.includes('"@type":"Movie"')) failures.push('pre-rendered series SEO failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);
@@ -1262,6 +1366,8 @@ async function main() {
         webTelegramOpenState,
         webContentState,
         webCustomerState,
+        linkedWebCartBeforeCheckout,
+        linkedWebHandoff,
       },
     };
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-17 - Carrinho e preferências sincronizados
+
+- Contas web confirmadas e vinculadas passaram a sincronizar favoritos, carrinho, cupons e preferências com o mesmo Telegram ID usado nas compras.
+- O carrinho pode ser preparado no navegador, mas pagamento e liberação continuam obrigatoriamente no fluxo autenticado do Telegram.
+- O bot reconhece o deep link `start=cart` e abre o Mini App diretamente com os itens persistidos.
+- Usuários sem conta vinculada permanecem no fluxo público anterior, sem bloqueio do catálogo nem alteração da entrega.
+- Novos testes cobrem proxy autenticado, ausência de tokens nas respostas e handoff completo entre web e Telegram.
+
 ## 2026-07-16 - Conta web e vínculo seguro com Telegram
 
 - Área da cliente passou a oferecer cadastro, confirmação de e-mail, login, recuperação e troca de senha também no navegador.

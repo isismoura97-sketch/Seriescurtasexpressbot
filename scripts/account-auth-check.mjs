@@ -5,7 +5,7 @@ process.env.SUPABASE_URL = 'https://example.supabase.co';
 process.env.SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_test';
 
 const require = createRequire(import.meta.url);
-const { handleLogin, handlePassword, handleRegister, run } = require('../series-app/api/_auth.js');
+const { callAccountEdge, handleLogin, handlePassword, handleRegister, run } = require('../series-app/api/_auth.js');
 
 function makeRequest(body, origin = 'https://series.example') {
     return {
@@ -104,7 +104,29 @@ try {
     await run(handlePassword, makeRequest({ password: 'nova-senha-forte-123' }), ordinarySessionPasswordResponse);
     assert.equal(ordinarySessionPasswordResponse.statusCode, 403);
 
-    console.log(JSON.stringify({ ok: true, checks: 18 }, null, 2));
+    let capturedEdgeRequest = null;
+    globalThis.fetch = async (url, init = {}) => {
+        const value = String(url);
+        if (value.includes('/auth/v1/user')) {
+            return Response.json({ id: 'account-id', email_confirmed_at: '2026-07-16T00:00:00Z' });
+        }
+        if (value.includes('/functions/v1/bot-unificado/api?action=cart-sync')) {
+            capturedEdgeRequest = { url: value, headers: init.headers, body: JSON.parse(String(init.body || '{}')) };
+            return Response.json({ ok: true, cart: { item_ids: ['series-1'] } });
+        }
+        throw new Error(`URL inesperada no teste: ${value}`);
+    };
+    const proxyRequest = makeRequest({ operation: 'load' });
+    proxyRequest.headers.cookie = 'sce_access=access-secret';
+    const proxyResponse = makeResponse();
+    await run((request, response) => callAccountEdge(request, response, 'cart-sync'), proxyRequest, proxyResponse);
+    assert.equal(proxyResponse.statusCode, 200);
+    assert.equal(proxyResponse.payload.cart.item_ids[0], 'series-1');
+    assert.equal(capturedEdgeRequest.body.operation, 'load');
+    assert.equal(capturedEdgeRequest.headers.authorization, 'Bearer access-secret');
+    assert.equal(JSON.stringify(proxyResponse.payload).includes('access-secret'), false);
+
+    console.log(JSON.stringify({ ok: true, checks: 23 }, null, 2));
 } finally {
     globalThis.fetch = originalFetch;
 }
