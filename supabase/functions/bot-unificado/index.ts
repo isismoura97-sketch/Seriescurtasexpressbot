@@ -134,6 +134,8 @@ const USER_SERIES_FAVORITES_TABLE = Deno.env.get("USER_SERIES_FAVORITES_TABLE") 
 const CUSTOMER_ACCOUNTS_TABLE = Deno.env.get("CUSTOMER_ACCOUNTS_TABLE") ?? "customer_accounts";
 const CUSTOMER_ACCOUNT_CONSENTS_TABLE = Deno.env.get("CUSTOMER_ACCOUNT_CONSENTS_TABLE") ?? "customer_account_consents";
 const CUSTOMER_TELEGRAM_LINKS_TABLE = Deno.env.get("CUSTOMER_TELEGRAM_LINKS_TABLE") ?? "customer_telegram_links";
+const REFERRAL_CODES_TABLE = Deno.env.get("REFERRAL_CODES_TABLE") ?? "referral_codes";
+const REFERRALS_TABLE = Deno.env.get("REFERRALS_TABLE") ?? "referrals";
 const ANALYTICS_EVENT_NAMES = new Set([
   "app_opened",
   "catalog_loaded",
@@ -159,6 +161,7 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "delivery_requested",
   "delivery_completed",
   "cart_abandoned",
+  "referral_attributed",
 ]);
 
 function corsHeaders(req: Request) {
@@ -2313,6 +2316,11 @@ function normalizeCouponCode(value: unknown) {
   return String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "").slice(0, 32);
 }
 
+function normalizeReferralCode(value: unknown) {
+  const code = String(value ?? "").trim().toUpperCase();
+  return /^[A-Z0-9]{8,16}$/.test(code) ? code : "";
+}
+
 async function validateCouponForCheckout(
   userId: string,
   couponInput: unknown,
@@ -3881,6 +3889,16 @@ async function handleTelegramUserMessage(req: Request, update: Record<string, un
       console.warn("[NOTIFICATIONS] Falha ao registrar inicio do bot:", error instanceof Error ? error.message : String(error));
     });
     const startPayload = text.replace(/^\/start(?:@\w+)?\s*/i, "").trim();
+    if (startPayload.startsWith("ref_")) {
+      const referralCode = startPayload.slice("ref_".length).trim();
+      if (senderUserId && referralCode) {
+        await recordReferralAttribution(senderUserId, referralCode, "telegram_deep_link").catch((error) => {
+          console.warn("[REFERRAL] Falha ao registrar indicacao:", error instanceof Error ? error.message : String(error));
+        });
+      }
+      await sendBotWelcomeMessageRich(chatId);
+      return json(req, { ok: true, action: "start_referral_received" });
+    }
     if (startPayload.startsWith("play_")) {
       const serieId = startPayload.slice("play_".length).trim();
       if (serieId) {
@@ -6245,6 +6263,186 @@ async function resolveCustomerIdentity(req: Request, body: Record<string, unknow
   };
 }
 
+function generateReferralCode() {
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+async function ensureReferralCode(userId: string) {
+  const normalizedUserId = String(userId ?? "").trim();
+  if (!/^\d{1,20}$/.test(normalizedUserId)) throw new Error("Usuario invalido para indicacao");
+
+  const existingRows = await supabaseFetch(
+    `${REFERRAL_CODES_TABLE}?select=id,user_id,code,active,created_at&user_id=eq.${encodeURIComponent(normalizedUserId)}&limit=1`,
+  );
+  const existing = Array.isArray(existingRows) ? existingRows[0] as Record<string, unknown> | undefined : undefined;
+  if (existing?.code) {
+    if (existing.active !== true) {
+      const reactivated = await supabaseRestRequest(
+        `${REFERRAL_CODES_TABLE}?id=eq.${encodeURIComponent(String(existing.id ?? ""))}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json", prefer: "return=representation" },
+          body: stringifyJson({ active: true, updated_at: new Date().toISOString() }),
+        },
+      );
+      return Array.isArray(reactivated) ? reactivated[0] as Record<string, unknown> : existing;
+    }
+    return existing;
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const created = await supabaseRestRequest(REFERRAL_CODES_TABLE, {
+        method: "POST",
+        headers: { "content-type": "application/json", prefer: "return=representation" },
+        body: stringifyJson({ user_id: normalizedUserId, code: generateReferralCode(), active: true }),
+      });
+      const row = Array.isArray(created) ? created[0] as Record<string, unknown> | undefined : created as Record<string, unknown>;
+      if (row?.code) return row;
+    } catch (error) {
+      const racedRows = await supabaseFetch(
+        `${REFERRAL_CODES_TABLE}?select=id,user_id,code,active,created_at&user_id=eq.${encodeURIComponent(normalizedUserId)}&limit=1`,
+      ).catch(() => []);
+      const raced = Array.isArray(racedRows) ? racedRows[0] as Record<string, unknown> | undefined : undefined;
+      if (raced?.code) return raced;
+      if (attempt === 4) throw error;
+    }
+  }
+
+  throw new Error("Nao foi possivel gerar o codigo de indicacao");
+}
+
+async function getReferralSummary(userId: string) {
+  const codeRow = await ensureReferralCode(userId);
+  const referralRows = await supabaseFetch(
+    `${REFERRALS_TABLE}?select=id,status,created_at,converted_at,reversed_at&referrer_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=500`,
+  ).catch(() => []);
+  const rows = Array.isArray(referralRows) ? referralRows as Record<string, unknown>[] : [];
+  const statusCounts = rows.reduce((counts, row) => {
+    const status = String(row.status ?? "pending").toLowerCase();
+    counts[status] = Number(counts[status] ?? 0) + 1;
+    return counts;
+  }, {} as Record<string, number>);
+  const code = normalizeReferralCode(codeRow.code);
+  const botUsername = TELEGRAM_BOT_USERNAME.replace(/^@/, "");
+  const botUrl = botUsername && code ? `https://t.me/${botUsername}?start=ref_${code}` : "";
+  const webUrl = code ? new URL(`/?ref=${encodeURIComponent(code)}`, SERIES_WEBAPP_URL).toString() : "";
+
+  return {
+    code,
+    bot_url: botUrl,
+    web_url: webUrl,
+    pending_total: statusCounts.pending ?? 0,
+    converted_total: statusCounts.converted ?? 0,
+    reversed_total: statusCounts.reversed ?? 0,
+    reward_enabled: false,
+  };
+}
+
+async function recordReferralAttribution(referredUserId: string, rawCode: unknown, source: string) {
+  const code = normalizeReferralCode(rawCode);
+  const normalizedUserId = String(referredUserId ?? "").trim();
+  if (!code || !/^\d{1,20}$/.test(normalizedUserId)) {
+    return { attributed: false, reason: "invalid_referral" };
+  }
+
+  const codeRows = await supabaseFetch(
+    `${REFERRAL_CODES_TABLE}?select=id,user_id,code,active&code=eq.${encodeURIComponent(code)}&active=eq.true&limit=1`,
+  );
+  const codeRow = Array.isArray(codeRows) ? codeRows[0] as Record<string, unknown> | undefined : undefined;
+  if (!codeRow?.id) return { attributed: false, reason: "referral_not_found" };
+
+  const referrerUserId = String(codeRow.user_id ?? "").trim();
+  if (!referrerUserId || referrerUserId === normalizedUserId) {
+    return { attributed: false, reason: "self_referral" };
+  }
+
+  const existingRows = await supabaseFetch(
+    `${REFERRALS_TABLE}?select=id,referrer_id,referred_user_id,status&referred_user_id=eq.${encodeURIComponent(normalizedUserId)}&limit=1`,
+  );
+  const existing = Array.isArray(existingRows) ? existingRows[0] as Record<string, unknown> | undefined : undefined;
+  if (existing) {
+    return {
+      attributed: String(existing.referrer_id ?? "") === referrerUserId,
+      reason: "already_attributed",
+      status: String(existing.status ?? "pending"),
+    };
+  }
+
+  const priorPurchases = await supabaseFetch(
+    `${PAYMENT_ORDERS_TABLE}?select=order_id&user_id=eq.${encodeURIComponent(normalizedUserId)}&status=eq.approved&limit=1`,
+  );
+  if (Array.isArray(priorPurchases) && priorPurchases.length > 0) {
+    return { attributed: false, reason: "existing_customer" };
+  }
+
+  const normalizedSource = source === "telegram_deep_link" ? source : source === "web_link" ? source : "shared_link";
+  try {
+    await supabaseRestRequest(REFERRALS_TABLE, {
+      method: "POST",
+      headers: { "content-type": "application/json", prefer: "return=minimal" },
+      body: stringifyJson({
+        referral_code_id: codeRow.id,
+        referrer_id: referrerUserId,
+        referred_user_id: normalizedUserId,
+        status: "pending",
+        source: normalizedSource,
+        rewarded: false,
+      }),
+    });
+    await recordAppEvent({
+      eventName: "referral_attributed",
+      userId: normalizedUserId,
+      metadata: { source: normalizedSource },
+    }).catch(() => null);
+    return { attributed: true, reason: "created", status: "pending" };
+  } catch (error) {
+    const racedRows = await supabaseFetch(
+      `${REFERRALS_TABLE}?select=referrer_id,status&referred_user_id=eq.${encodeURIComponent(normalizedUserId)}&limit=1`,
+    ).catch(() => []);
+    const raced = Array.isArray(racedRows) ? racedRows[0] as Record<string, unknown> | undefined : undefined;
+    if (raced) {
+      return {
+        attributed: String(raced.referrer_id ?? "") === referrerUserId,
+        reason: "already_attributed",
+        status: String(raced.status ?? "pending"),
+      };
+    }
+    throw error;
+  }
+}
+
+async function handleReferral(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+
+  let validated: Awaited<ReturnType<typeof resolveCustomerIdentity>>;
+  try {
+    validated = await resolveCustomerIdentity(req, body);
+  } catch (error) {
+    const code = (error as Error & { code?: string })?.code || "account_auth_required";
+    return json(req, { error: error instanceof Error ? error.message : "Autenticacao invalida", code }, code === "telegram_link_required" ? 409 : 401);
+  }
+
+  const operation = String(body.operation ?? "summary").trim().toLowerCase();
+  if (operation === "attribute") {
+    const source = appContextSource(body, req);
+    const result = await recordReferralAttribution(validated.userId, body.referral_code ?? body.code, source);
+    return json(req, { ok: true, ...result });
+  }
+  if (operation !== "summary") return json(req, { error: "Operacao de indicacao invalida" }, 400);
+
+  return json(req, { ok: true, referral: await getReferralSummary(validated.userId) });
+}
+
+function appContextSource(body: Record<string, unknown>, req: Request) {
+  if (String(body.init_data ?? body.initData ?? "")) return "telegram_deep_link";
+  const origin = String(req.headers.get("origin") ?? "");
+  return origin ? "web_link" : "shared_link";
+}
+
 async function handleAccountLinkTelegram(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
@@ -6319,12 +6517,13 @@ async function handleCustomerArea(req: Request) {
   }
 
   const userId = validated.userId;
-  const [catalog, orders, progressRows, favoriteRows, notificationState] = await Promise.all([
+  const [catalog, orders, progressRows, favoriteRows, notificationState, referralState] = await Promise.all([
     getSeriesList(userId),
     getCustomerPaymentRows(userId),
     getUserSeriesProgressRows(userId).catch(() => []),
     getUserFavoriteSeriesRows(userId).catch(() => []),
     getNotificationPreferences(userId).catch(() => ({ row: null, preferences: serializeNotificationPreferences(null) })),
+    getReferralSummary(userId).catch(() => null),
   ]);
 
   const catalogById = new Map(
@@ -6386,6 +6585,7 @@ async function handleCustomerArea(req: Request) {
     favorites,
     history,
     notification_preferences: notificationState.preferences,
+    referral: referralState,
   });
 }
 
@@ -6415,7 +6615,7 @@ async function handleCustomerDataExport(req: Request) {
   const accountId = authenticated.accountId;
   const link = await getCustomerTelegramLink(accountId);
   const telegramUserId = String(link?.telegram_user_id ?? "");
-  const [consentRows, catalog, orders, progressRows, favoriteRows, notificationState, cartRows] = await Promise.all([
+  const [consentRows, catalog, orders, progressRows, favoriteRows, notificationState, cartRows, referralState] = await Promise.all([
     supabaseFetch(
       `${CUSTOMER_ACCOUNT_CONSENTS_TABLE}?select=document_type,document_version,action,source,accepted_at&account_id=eq.${encodeURIComponent(accountId)}&order=accepted_at.desc&limit=200`,
     ).catch(() => []),
@@ -6429,13 +6629,14 @@ async function handleCustomerDataExport(req: Request) {
     telegramUserId
       ? supabaseFetch(`${SHOPPING_CARTS_TABLE}?select=item_ids,coupon_code,updated_at&user_id=eq.${encodeURIComponent(telegramUserId)}&limit=1`).catch(() => [])
       : Promise.resolve([]),
+    telegramUserId ? getReferralSummary(telegramUserId).catch(() => null) : Promise.resolve(null),
   ]);
   const catalogRows = catalog as Record<string, unknown>[];
   const catalogById = new Map(catalogRows.map((serie) => [String(serie.id ?? ""), serie]));
   const cartRow = Array.isArray(cartRows) && cartRows.length ? cartRows[0] as Record<string, unknown> : null;
 
   const data = {
-    schema_version: 1,
+    schema_version: 2,
     generated_at: new Date().toISOString(),
     account: {
       account_id: accountId,
@@ -6482,6 +6683,7 @@ async function handleCustomerDataExport(req: Request) {
       coupon_code: String(cartRow?.coupon_code ?? ""),
       updated_at: cartRow?.updated_at ?? null,
     },
+    referrals: referralState,
   };
 
   return json(req, { ok: true, data });
@@ -8255,6 +8457,7 @@ export {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
   getCheckoutRecoverySkipReason,
+  normalizeReferralCode,
   normalizeWebhookStatus,
   serializeCustomerExportSeries,
   validateApprovedPaymentForOrder,
@@ -8327,6 +8530,10 @@ if (import.meta.main) Deno.serve(async (req) => {
 
     if (action === "notification-preferences" && req.method === "POST") {
       return await handleNotificationPreferences(req);
+    }
+
+    if (action === "referral" && req.method === "POST") {
+      return await handleReferral(req);
     }
 
     if (action === "analytics-event" && req.method === "POST") {

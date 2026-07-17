@@ -13,18 +13,18 @@ Este documento registra a evolucao incremental solicitada para contas, entrega, 
 - CMS administrativo protegido por proprietaria, senha e validacao no backend.
 - Catalogo web publico sem liberacao de conteudo privado fora do fluxo autorizado.
 - Logs operacionais e funil com eventos idempotentes e consentimento para recuperacao de checkout.
+- Conta web vinculada ao Telegram, portabilidade e exclusao segura do login web.
+- Indicacoes com atribuicao unica e conversao somente por pagamento aprovado.
 
-## Proxima prioridade: conta web e sessao
+## Proxima prioridade: ledger de creditos e recompensa
 
-Objetivo: permitir que uma cliente use a plataforma fora do Telegram sem criar uma segunda identidade comercial desconectada.
+Objetivo: criar um historico contabil imutavel antes de ativar qualquer recompensa por indicacao.
 
-- Definir vinculacao segura entre conta web e Telegram ID.
-- Implementar e-mail verificado, recuperacao de senha e sessoes revogaveis.
-- Aplicar cookies seguros, expiracao, rotacao e protecao CSRF quando aplicavel.
-- Manter checkout e acesso pagos autorizados exclusivamente pelo backend.
-- Preparar migracao de favoritos e carrinho local sem duplicar registros.
-
-Esta etapa exige decisao de produto sobre vinculacao de identidade antes da migracao, pois uma estrategia incorreta pode separar compras ja existentes da conta da cliente.
+- Definir evento elegivel, valor, prazo e limite da recompensa.
+- Criar ledger de credito e debito sem depender apenas de um campo de saldo.
+- Reverter recompensa em estorno, chargeback ou fraude confirmada.
+- Impedir autoindicacao, repeticao de beneficio e saldo negativo indevido.
+- Manter a interface sem promessa de credito enquanto a regra estiver desativada.
 
 ## Prioridade seguinte: administracao e comunicacao
 

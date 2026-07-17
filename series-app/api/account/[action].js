@@ -10,6 +10,7 @@ const ACCOUNT_ACTIONS = Object.freeze({
     favorite: { edgeAction: 'favorite-sync' },
     notifications: { edgeAction: 'notification-preferences' },
     overview: { edgeAction: 'customer-area' },
+    referral: { edgeAction: 'referral' },
 });
 
 module.exports = (req, res) => {

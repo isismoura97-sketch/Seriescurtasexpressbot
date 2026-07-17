@@ -133,3 +133,17 @@ Implementado em 12/07/2026:
 Evolução concluída em 12/07/2026: o painel protegido agora permite criar, editar, ativar e encerrar campanhas. A interface configura desconto, período, limites e séries elegíveis, enquanto o backend continua sendo a única camada autorizada a gravar nas tabelas privadas.
 
 Trade-off: cupons são encerrados por desativação, e não excluídos. Essa decisão preserva o histórico financeiro e evita quebrar a relação entre pedido, desconto e campanha.
+
+# Sprint 6 - Base de indicações
+
+Implementado em 17/07/2026:
+
+- código individual não sequencial por Telegram ID validado;
+- atribuição única pelo link web ou deep link do bot;
+- bloqueio de autoindicação, troca de indicador e cliente com compra aprovada anterior;
+- conversão transacional quando o primeiro pedido muda para `approved`;
+- reversão em reembolso ou chargeback;
+- painel da cliente com números reais e compartilhamento do link;
+- tabelas privadas, RLS, privilégios mínimos e índices verificados pelos advisors.
+
+Trade-off: a etapa não concede créditos. O ledger financeiro e as regras de recompensa serão implementados separadamente, antes de qualquer valor aparecer para a cliente.

@@ -256,6 +256,7 @@ async function installRoutes(page, options = {}) {
           history: [],
           favorites: [fixtureSeries.find((serie) => serie.id === 'direct-ok')],
           notification_preferences: notificationPreferencesState,
+          referral: { code: 'AB12CD34', bot_url: 'https://t.me/ShortNovelsBot?start=ref_AB12CD34', web_url: `http://127.0.0.1:${port}/?ref=AB12CD34`, pending_total: 2, converted_total: 1, reversed_total: 0, reward_enabled: false },
         }),
       });
       return;
@@ -521,6 +522,7 @@ async function installRoutes(page, options = {}) {
             completed: false, last_opened_at: '2026-07-11T12:00:00Z', playback_mode: 'direct', available: true,
           }],
           notification_preferences: notificationPreferencesState,
+          referral: { code: 'AB12CD34', bot_url: 'https://t.me/ShortNovelsBot?start=ref_AB12CD34', web_url: `http://127.0.0.1:${port}/?ref=AB12CD34`, pending_total: 2, converted_total: 1, reversed_total: 0, reward_enabled: false },
         }),
       });
       return;
@@ -1118,6 +1120,15 @@ async function main() {
       cards: document.querySelectorAll('.customer-history-card').length,
       progressWidth: document.querySelector('.customer-progress span')?.style.width || '',
     }));
+    await page.locator('.customer-nav-link[href="/indicacoes"]').click();
+    await page.waitForFunction(() => location.pathname === '/indicacoes');
+    const customerReferralState = await page.evaluate(() => ({
+      path: location.pathname,
+      stats: Array.from(document.querySelectorAll('.customer-referral-stats strong')).map((node) => node.textContent?.trim() || ''),
+      shareUrl: document.querySelector('[data-referral-share]')?.dataset?.referralUrl || '',
+      rewardNotice: document.querySelector('.customer-referral-section')?.textContent?.includes('Não há recompensa financeira ativa') || false,
+      navActive: document.querySelector('.customer-nav-link.active')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+    }));
 
     await page.locator('#ownerBtn').click();
     await page.fill('#ownerPasswordInput', 'owner-test');
@@ -1277,7 +1288,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.starsActive || !initial.webMethodsHidden) failures.push('Telegram Stars not enforced inside Telegram');
-    if (!initial.appJs.includes('20260717-02')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260717-03')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1317,10 +1328,11 @@ async function main() {
     if (checkoutRequestPayload?.payment_method !== 'telegram_checkout') failures.push('Telegram checkout method not submitted');
     if (!paidCardAfterPayment.action.includes('Receber no Telegram')) failures.push(`paid card action after payment: ${paidCardAfterPayment.action}`);
     if (!paidAfterPayment.action.includes('Receber no Telegram') || paidAfterPayment.overlay || paidAfterPayment.modal || paidAfterPayment.playerError || deliveryLog.filter((entry) => entry.seriesId === 'paid-series').length !== 1) failures.push('paid series telegram delivery failed');
-    if (customerOverviewState.path !== '/minha-conta' || !customerOverviewState.title.includes('Isis') || customerOverviewState.summaryCards !== 4 || customerOverviewState.libraryCards !== 1 || !customerOverviewState.accountVisible || !customerOverviewState.preferenceForm || !customerOverviewState.recoveryPreferenceSaved) failures.push(`customer overview failed: ${JSON.stringify(customerOverviewState)}`);
+    if (customerOverviewState.path !== '/minha-conta' || !customerOverviewState.title.includes('Isis') || customerOverviewState.summaryCards !== 5 || customerOverviewState.libraryCards !== 1 || !customerOverviewState.accountVisible || !customerOverviewState.preferenceForm || !customerOverviewState.recoveryPreferenceSaved) failures.push(`customer overview failed: ${JSON.stringify(customerOverviewState)}`);
     if (customerLibraryState.path !== '/minha-biblioteca' || customerLibraryState.cards !== 1 || !customerLibraryState.action.includes('Receber no Telegram')) failures.push(`customer library failed: ${JSON.stringify(customerLibraryState)}`);
     if (customerOrdersState.path !== '/minhas-compras' || customerOrdersState.cards !== 1 || customerOrdersState.paid !== 'Pago') failures.push(`customer orders failed: ${JSON.stringify(customerOrdersState)}`);
     if (customerHistoryState.path !== '/historico' || customerHistoryState.cards !== 1 || customerHistoryState.progressWidth !== '42%') failures.push(`customer history failed: ${JSON.stringify(customerHistoryState)}`);
+    if (customerReferralState.path !== '/indicacoes' || customerReferralState.stats.join(',') !== '2,1,0' || !customerReferralState.shareUrl.includes('start=ref_AB12CD34') || !customerReferralState.rewardNotice || !customerReferralState.navActive.includes('Indicações')) failures.push(`customer referrals failed: ${JSON.stringify(customerReferralState)}`);
     if (!ownerState.visible
       || (!ownerState.text.includes('Área de gestão') && !ownerState.text.includes('Visão geral'))
       || !ownerState.text.includes('Conversão e abandono')
@@ -1373,6 +1385,7 @@ async function main() {
         customerLibraryState,
         customerOrdersState,
         customerHistoryState,
+        customerReferralState,
         ownerState,
         ownerCouponSavePayload,
         ownerCouponActionPayload,

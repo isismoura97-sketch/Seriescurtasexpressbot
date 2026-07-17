@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260717-02';
+const BUILD_VERSION = '20260717-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -24,6 +24,7 @@ const APP_LAUNCH_SERIE_ID = new URLSearchParams(window.location.search).get('pla
 const APP_LAUNCH_PAYMENT_ORDER_ID = new URLSearchParams(window.location.search).get('payment_order_id') || '';
 const APP_LAUNCH_CHECKOUT_RECOVERY = new URLSearchParams(window.location.search).get('checkout_recovery') === '1';
 const APP_LAUNCH_CART = new URLSearchParams(window.location.search).get('cart') === '1';
+const APP_LAUNCH_REFERRAL_CODE = normalizeReferralCode(new URLSearchParams(window.location.search).get('ref'));
 const API_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co/functions/v1/bot-unificado/api';
 const SUPABASE_PROJECT_URL = 'https://uyyeascxvnrkjtlygdoe.supabase.co';
 const PAYMENT_METHOD_STORAGE_KEY = 'checkout_payment_method';
@@ -33,6 +34,7 @@ const FAVORITES_STORAGE_KEY = 'series_favorites';
 const CART_UPDATED_AT_STORAGE_KEY = 'cart_updated_at';
 const CART_ABANDONMENT_REPORTED_AT_STORAGE_KEY = 'cart_abandonment_reported_at';
 const ANALYTICS_SESSION_STORAGE_KEY = 'analytics_session_id';
+const REFERRAL_STORAGE_KEY = 'pending_referral_code';
 const ANALYTICS_ENDPOINT = `${API_URL}?action=analytics-event`;
 const STATIC_PIX_QR_IMAGE_URL = `/assets/pix-qr.png?v=${BUILD_VERSION}`;
 const SUPPORT_INBOX_EMAIL = 'isismoura97@gmail.com';
@@ -46,6 +48,11 @@ function sanitizeUserId(raw) {
     const str = String(raw);
     if (/^\d{1,20}$/.test(str)) return str;
     return null;
+}
+
+function normalizeReferralCode(value) {
+    const code = String(value || '').trim().toUpperCase();
+    return /^[A-Z0-9]{8,16}$/.test(code) ? code : '';
 }
 
 function resolveTelegramContext() {
@@ -148,7 +155,7 @@ function getSeriesResolvedSeo(serie = {}) {
 
 function buildTelegramSeriesLink(serie) {
     const seriesId = normalizeId(serie?.id);
-    return `${TELEGRAM_BOT_LINK}${seriesId ? `?start=serie_${encodeURIComponent(seriesId)}` : ''}`;
+    return `${TELEGRAM_BOT_LINK}${seriesId ? `?start=play_${encodeURIComponent(seriesId)}` : ''}`;
 }
 
 function buildTelegramCartLink() {
@@ -841,7 +848,7 @@ function renderNotFoundPage() {
     setMetaContent('meta[name="robots"]', 'noindex,follow');
 }
 
-const CUSTOMER_ROUTES = new Set(['/minha-conta', '/minha-biblioteca', '/minhas-compras', '/historico', '/configuracoes']);
+const CUSTOMER_ROUTES = new Set(['/minha-conta', '/minha-biblioteca', '/minhas-compras', '/historico', '/indicacoes', '/configuracoes']);
 
 function requestTelegramCustomerArea() {
     return requestJson(`${API_URL}?action=customer-area`, {
@@ -855,6 +862,57 @@ function requestWebCustomerArea() {
 
 async function requestWebAccountAction(endpoint, payload = {}, timeoutMs = 15000) {
     return await requestJson(`/api/account/${endpoint}`, payload, timeoutMs);
+}
+
+function rememberReferralCode() {
+    if (!APP_LAUNCH_REFERRAL_CODE) return '';
+    try {
+        localStorage.setItem(REFERRAL_STORAGE_KEY, APP_LAUNCH_REFERRAL_CODE);
+    } catch (_) {
+        // A atribuicao continua disponivel nesta abertura mesmo sem armazenamento local.
+    }
+    return APP_LAUNCH_REFERRAL_CODE;
+}
+
+function getPendingReferralCode() {
+    if (APP_LAUNCH_REFERRAL_CODE) return APP_LAUNCH_REFERRAL_CODE;
+    try {
+        return normalizeReferralCode(localStorage.getItem(REFERRAL_STORAGE_KEY));
+    } catch (_) {
+        return '';
+    }
+}
+
+function clearPendingReferralCode() {
+    try {
+        localStorage.removeItem(REFERRAL_STORAGE_KEY);
+    } catch (_) {
+        // Sem efeito quando o navegador bloqueia armazenamento local.
+    }
+}
+
+async function syncPendingReferralAttribution() {
+    const code = getPendingReferralCode();
+    if (!code) return;
+    if (!appContext.isTelegram && !hasLinkedWebAccount()) return;
+
+    try {
+        const response = appContext.isTelegram
+            ? await requestJson(`${API_URL}?action=referral`, {
+                init_data: tg?.initData || '',
+                operation: 'attribute',
+                referral_code: code,
+            }, 15000)
+            : await requestWebAccountAction('referral', {
+                operation: 'attribute',
+                referral_code: code,
+            });
+        if (response?.attributed || ['already_attributed', 'existing_customer', 'self_referral', 'referral_not_found', 'invalid_referral'].includes(response?.reason)) {
+            clearPendingReferralCode();
+        }
+    } catch (error) {
+        debugLog('[REFERRAL] Atribuicao pendente:', error?.message || error);
+    }
 }
 
 async function requestWebAccountSession({ force = false } = {}) {
@@ -1134,6 +1192,7 @@ function renderCustomerNav(path) {
         ['/minhas-compras', 'Compras', 'fa-receipt'],
         ['/historico', 'Histórico', 'fa-clock-rotate-left'],
         ['/favoritos', 'Favoritos', 'fa-heart'],
+        ['/indicacoes', 'Indicações', 'fa-user-group'],
         ['/configuracoes', 'Configurações', 'fa-gear'],
     ];
     return `<nav class="customer-nav" aria-label="Área da cliente">${links.map(([href, label, icon]) => `
@@ -1211,6 +1270,35 @@ function renderCustomerNotificationPreferences(preferences = {}) {
     `;
 }
 
+function renderCustomerReferrals(referral = null) {
+    if (!referral?.code) {
+        return `
+            <section class="customer-section customer-referral-section">
+                <div class="customer-empty"><i class="fas fa-user-group"></i><h3>Indicações indisponíveis agora</h3><p>Tente novamente em alguns instantes.</p></div>
+            </section>
+        `;
+    }
+
+    const shareUrl = referral.bot_url || referral.web_url || '';
+    return `
+        <section class="customer-section customer-referral-section">
+            <div class="customer-section-head"><div><span>Convide com transparência</span><h2>Minhas indicações</h2></div><i class="fas fa-user-group" aria-hidden="true"></i></div>
+            <p>Compartilhe seu link. A indicação é confirmada somente quando a nova cliente conclui a primeira compra aprovada.</p>
+            <div class="customer-referral-stats">
+                <article><span>Aguardando compra</span><strong>${Number(referral.pending_total || 0)}</strong></article>
+                <article><span>Confirmadas</span><strong>${Number(referral.converted_total || 0)}</strong></article>
+                <article><span>Revertidas</span><strong>${Number(referral.reversed_total || 0)}</strong></article>
+            </div>
+            <label class="customer-referral-link"><span>Seu link individual</span><input type="text" value="${escapeAttr(shareUrl)}" readonly aria-label="Link individual de indicação"></label>
+            <div class="customer-referral-actions">
+                <button type="button" class="btn btn-primary" data-referral-share data-referral-url="${escapeAttr(shareUrl)}"><i class="fas fa-share-nodes"></i> Compartilhar</button>
+                <button type="button" class="btn btn-secondary" data-referral-copy data-referral-url="${escapeAttr(shareUrl)}"><i class="fas fa-copy"></i> Copiar link</button>
+            </div>
+            <p class="customer-data-note"><i class="fas fa-circle-info"></i> Não há recompensa financeira ativa neste momento. Nenhum crédito ou valor é prometido até que uma regra oficial seja publicada.</p>
+        </section>
+    `;
+}
+
 function renderCustomerDataControls() {
     if (!webAccountSession?.authenticated) {
         return `
@@ -1279,6 +1367,30 @@ function wireCustomerAreaActions() {
             history.pushState({ route: 'customer' }, '', link.getAttribute('href') || '/minha-conta');
             void applyPublicRoute();
         };
+    });
+
+    DOM.contentPage?.querySelector('[data-referral-copy]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const copied = await copyToClipboard(button?.dataset?.referralUrl || '');
+        showToast(copied ? 'Link de indicação copiado.' : 'Não foi possível copiar o link.', copied ? 'success' : 'error');
+    });
+    DOM.contentPage?.querySelector('[data-referral-share]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const url = button?.dataset?.referralUrl || '';
+        if (!url) return showToast('Link de indicação indisponível.', 'info');
+        const text = 'Conheça o catálogo do Séries Curtas Express.';
+        try {
+            if (navigator.share) {
+                await navigator.share({ title: 'Séries Curtas Express', text, url });
+                return;
+            }
+        } catch (error) {
+            if (error?.name === 'AbortError') return;
+        }
+        const telegramShareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+        if (appContext.isTelegram) return openTelegramBotLink(telegramShareUrl);
+        const copied = await copyToClipboard(`${text} ${url}`);
+        showToast(copied ? 'Link de indicação copiado.' : 'Não foi possível compartilhar.', copied ? 'success' : 'error');
     });
 
     const preferenceForm = DOM.contentPage?.querySelector('[data-notification-preferences-form]');
@@ -1411,6 +1523,7 @@ function renderCustomerArea(path, data) {
     const orders = Array.isArray(data?.orders) ? data.orders : [];
     const history = Array.isArray(data?.history) ? data.history : [];
     const notificationPreferences = data?.notification_preferences || {};
+    const referral = data?.referral || null;
     const firstName = String(account.name || 'Cliente').split(/\s+/)[0];
     let body = '';
 
@@ -1426,6 +1539,8 @@ function renderCustomerArea(path, data) {
                 ${item.available ? `<button type="button" class="btn btn-secondary" data-customer-series-id="${escapeAttr(String(item.series_id || ''))}">Abrir</button>` : ''}
             </article>
         `).join('') || '<div class="customer-empty"><i class="fas fa-clock-rotate-left"></i><h3>Seu histórico está vazio</h3><p>As séries abertas pelo Telegram aparecerão aqui.</p></div>'}</div></section>`;
+    } else if (path === '/indicacoes') {
+        body = renderCustomerReferrals(referral);
     } else if (path === '/configuracoes') {
         body = renderCustomerDataControls();
     } else {
@@ -1435,6 +1550,7 @@ function renderCustomerArea(path, data) {
                 <a href="/minhas-compras" class="customer-summary-card"><i class="fas fa-receipt"></i><span>Compras aprovadas</span><strong>${Number(summary.approved_orders_total || 0)}</strong></a>
                 <a href="/favoritos" class="customer-summary-card"><i class="fas fa-heart"></i><span>Favoritos</span><strong>${Number(summary.favorites_total || 0)}</strong></a>
                 <a href="/historico" class="customer-summary-card"><i class="fas fa-clock-rotate-left"></i><span>Histórico</span><strong>${Number(summary.history_total || 0)}</strong></a>
+                <a href="/indicacoes" class="customer-summary-card"><i class="fas fa-user-group"></i><span>Indicações confirmadas</span><strong>${Number(referral?.converted_total || 0)}</strong></a>
             </section>
             <section class="customer-section"><div class="customer-section-head"><div><span>Acesso rápido</span><h2>Últimas séries da biblioteca</h2></div><a href="/minha-biblioteca">Ver todas</a></div><div class="customer-series-grid">${library.slice(0, 3).map((serie) => renderCustomerSeriesCard(serie)).join('') || '<div class="customer-empty"><p>Suas séries compradas aparecerão aqui automaticamente.</p></div>'}</div></section>
             <section class="customer-section"><div class="customer-section-head"><div><span>Pedidos recentes</span><h2>Minhas compras</h2></div><a href="/minhas-compras">Ver todas</a></div><div class="customer-orders-list">${orders.slice(0, 3).map(renderCustomerOrder).join('') || '<div class="customer-empty"><p>Nenhum pedido registrado ainda.</p></div>'}</div></section>
@@ -5382,6 +5498,7 @@ function getPlaybackMode(serie) {
 // ==================== INICIALIZAÇÃO ====================
 async function init() {
     resolveTelegramContext();
+    rememberReferralCode();
     await consumeSupabaseAuthCallback();
     configurePaymentMethodsForContext();
     trackStaleCartAbandonment();
@@ -5415,6 +5532,7 @@ async function init() {
         allSeries = Array.isArray(data) ? data : [];
         trackAnalyticsEvent('catalog_loaded', { metadata: { item_count: allSeries.length } });
         await loadLinkedWebAccountState();
+        await syncPendingReferralAttribution();
         hydrateFavoriteSeriesFromCatalog(allSeries);
         await loadServerCart();
         debugLog(`[INIT] ${allSeries.length} éries carregadas`);

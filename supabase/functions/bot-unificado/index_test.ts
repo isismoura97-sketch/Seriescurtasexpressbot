@@ -2,6 +2,7 @@ import {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
   getCheckoutRecoverySkipReason,
+  normalizeReferralCode,
   normalizeWebhookStatus,
   serializeCustomerExportSeries,
   validateApprovedPaymentForOrder,
@@ -28,6 +29,13 @@ const approvedPayment = {
   currency_id: "BRL",
   captured: true,
 };
+
+Deno.test("codigo de indicacao aceita somente formato seguro", () => {
+  assertEquals(normalizeReferralCode(" ab12cd34 "), "AB12CD34", "codigo normalizado");
+  assertEquals(normalizeReferralCode("curto"), "", "codigo curto bloqueado");
+  assertEquals(normalizeReferralCode("ABCD-1234"), "", "separador bloqueado");
+  assertEquals(normalizeReferralCode("<script>"), "", "conteudo inseguro bloqueado");
+});
 
 Deno.test("exportacao da conta omite referencias protegidas de midia", () => {
   const exported = serializeCustomerExportSeries({

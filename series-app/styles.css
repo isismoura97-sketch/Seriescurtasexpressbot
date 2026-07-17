@@ -2601,6 +2601,79 @@ body.light-mode .modal-title {
     color: var(--primary);
 }
 
+.customer-referral-section {
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 100% 0%, rgba(255, 215, 0, 0.12), transparent 34%),
+        linear-gradient(145deg, rgba(24, 36, 65, 0.96), rgba(12, 22, 42, 0.98));
+}
+
+.customer-referral-section > p {
+    max-width: 760px;
+    color: var(--text-secondary);
+    line-height: 1.65;
+}
+
+.customer-referral-section > .customer-section-head > i {
+    color: var(--primary);
+    font-size: 1.45rem;
+}
+
+.customer-referral-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin: 22px 0;
+}
+
+.customer-referral-stats article {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid rgba(255, 215, 0, 0.13);
+    border-radius: 16px;
+    background: rgba(7, 17, 35, 0.58);
+}
+
+.customer-referral-stats span {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+}
+
+.customer-referral-stats strong {
+    color: var(--primary);
+    font-size: clamp(1.55rem, 4vw, 2.25rem);
+}
+
+.customer-referral-link {
+    display: grid;
+    gap: 8px;
+}
+
+.customer-referral-link span {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.customer-referral-link input {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    border: 1px solid rgba(255, 215, 0, 0.2);
+    border-radius: 12px;
+    color: var(--text-primary);
+    background: rgba(5, 13, 28, 0.78);
+}
+
+.customer-referral-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+}
+
 .content-page {
     min-height: 72vh;
     padding: 130px 4% 64px;
@@ -4965,6 +5038,15 @@ body.light-mode .cart-item {
     .customer-preference-options {
         grid-template-columns: 1fr;
     }
+
+    .customer-referral-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .customer-referral-actions .btn {
+        width: 100%;
+    }
+
     .hero {
         flex-direction: column;
         text-align: center;

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-17 - Indicações com atribuição real
+
+- A área da cliente ganhou `/indicacoes` com código individual, link compartilhável e contadores de indicações pendentes, confirmadas e revertidas.
+- Links do bot usam `start=ref_CODIGO`; links web preservam a indicação até existir uma identidade Telegram validada.
+- Autoindicação, código inválido, troca de indicador e atribuição depois da primeira compra aprovada são bloqueados no backend.
+- A conversão acontece no banco somente quando `payment_orders.status` muda para `approved`; reembolso ou chargeback revertem a conversão.
+- A tabela legada `referrals` foi reaproveitada sem apagar histórico, com nova tabela privada de códigos, RLS, privilégios mínimos e índices.
+- Nenhum crédito ou recompensa financeira é criado nesta etapa. A interface informa isso claramente para não prometer benefício inexistente.
+- Deep links de séries foram corrigidos de `serie_` para `play_`, alinhando o Mini App ao comando que o bot realmente processa.
+- Testes cobrem formato do código, página da cliente, contadores, compartilhamento e regressão completa de pagamento e entrega.
+
 ## 2026-07-17 - Portabilidade e exclusão segura da conta
 
 - A área da cliente ganhou uma página de configurações para exportar os próprios dados em JSON.
