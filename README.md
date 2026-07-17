@@ -20,7 +20,7 @@ Aplicação web estática para o catálogo "Séries Curtas Express", com integra
 
 1. Abra a pasta `series-app`.
 2. Sirva os arquivos estáticos com qualquer servidor local.
-3. Abra a página em um navegador comum para consultar o catálogo público ou dentro do Telegram para compras, entrega e recursos vinculados à conta.
+3. Abra a página em um navegador comum para consultar o catálogo e usar a conta web, ou dentro do Telegram para compras, entrega e vínculo dos acessos existentes.
 
 Exemplo com Python:
 
@@ -84,7 +84,18 @@ Quando aberto pelo Telegram, o Mini App disponibiliza:
 - `/historico` com progresso real registrado;
 - `/favoritos` com os favoritos já sincronizados.
 
-O endpoint `action=customer-area` valida o `initData` no backend e consulta somente registros ligados ao Telegram ID autenticado. A biblioteca não confia no frontend: apenas compras aprovadas retornam com acesso. Fora do Telegram, essas rotas exibem um convite seguro para abrir o bot, sem expor dados privados.
+O endpoint `action=customer-area` aceita duas identidades validadas pelo backend: o `initData` assinado do Telegram ou uma sessão Supabase vinculada previamente ao mesmo Telegram ID. A biblioteca não confia no frontend: apenas compras aprovadas retornam com acesso.
+
+Fora do Telegram, `/minha-conta` oferece cadastro, confirmação de e-mail, login e recuperação de senha. Access token e refresh token ficam em cookies `HttpOnly`, `Secure` e `SameSite=Lax`; não são gravados no `localStorage` nem devolvidos no JSON da API. O vínculo é um-para-um e só ocorre dentro do Mini App após validar simultaneamente a sessão da conta, o e-mail confirmado e o `initData` do Telegram.
+
+As tabelas `customer_accounts`, `customer_account_consents` e `customer_telegram_links` usam RLS e não substituem os Telegram IDs já registrados em pedidos, acessos, favoritos ou progresso. Isso preserva compras existentes e permite que a conta web resolva a mesma biblioteca sem migração destrutiva.
+
+Variáveis necessárias nas funções da Vercel:
+
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+
+O `SUPABASE_SERVICE_ROLE_KEY` continua restrito ao Supabase e aos processos administrativos. Ele não é necessário nem deve ser configurado no frontend.
 
 ## Backend Supabase
 

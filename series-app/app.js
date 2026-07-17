@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260715-03';
+const BUILD_VERSION = '20260716-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -193,6 +193,8 @@ let ownerSessionAuthorized = false;
 let supportRequestPending = false;
 let customerAreaSnapshot = null;
 let customerAreaLoadedAt = 0;
+let webAccountSession = null;
+let webAccountSessionLoadedAt = 0;
 const ownerOrderRetryInFlightIds = new Set();
 
 function getAnalyticsSessionId() {
@@ -772,12 +774,12 @@ const STATIC_CONTENT_PAGES = {
     '/termos': {
         title: 'Termos de uso',
         description: 'Termos de uso do catálogo Séries Curtas Express.',
-        body: '<p class="content-page-kicker">Informações legais</p><h1>Termos de uso</h1><h2>Acesso ao serviço</h2><p>O catálogo pode ser consultado publicamente. Compras, entregas e recursos vinculados à conta exigem acesso pelo Telegram.</p><h2>Conteúdo e disponibilidade</h2><p>A disponibilidade das séries pode mudar por motivos técnicos, editoriais ou de licenciamento. O preço é informado antes da confirmação da compra.</p><h2>Suporte</h2><p>Em caso de falha de pagamento ou entrega, envie uma solicitação pelo suporte com os dados do pedido.</p>',
+        body: '<p class="content-page-kicker">Informações legais</p><h1>Termos de uso</h1><h2>Acesso ao serviço</h2><p>O catálogo pode ser consultado publicamente. A conta web permite acompanhar biblioteca e compras após a confirmação do e-mail e o vínculo seguro com o Telegram. Compras e entregas continuam seguindo o fluxo autenticado do Telegram.</p><h2>Conteúdo e disponibilidade</h2><p>A disponibilidade das séries pode mudar por motivos técnicos, editoriais ou de licenciamento. O preço é informado antes da confirmação da compra.</p><h2>Suporte</h2><p>Em caso de falha de pagamento ou entrega, envie uma solicitação pelo suporte com os dados do pedido.</p>',
     },
     '/privacidade': {
         title: 'Política de privacidade',
         description: 'Como o Séries Curtas Express utiliza dados necessários para operar o serviço.',
-        body: '<p class="content-page-kicker">Privacidade</p><h1>Política de privacidade</h1><h2>Dados utilizados</h2><p>Quando aberto pelo Telegram, o serviço utiliza o identificador validado da conta para registrar favoritos, progresso, compras e entregas. No navegador, favoritos podem permanecer somente neste dispositivo.</p><h2>Pagamentos</h2><p>Dados de pagamento são processados pelo Mercado Pago. O sistema registra apenas os dados necessários para acompanhar o pedido e confirmar a entrega.</p><h2>Contato</h2><p>Solicitações relacionadas a dados e privacidade podem ser enviadas para <a href="mailto:${SUPPORT_INBOX_EMAIL}">${SUPPORT_INBOX_EMAIL}</a>.</p>',
+        body: '<p class="content-page-kicker">Privacidade</p><h1>Política de privacidade</h1><h2>Dados utilizados</h2><p>A conta web utiliza nome, e-mail, registros de consentimento e um vínculo validado com o Telegram. O identificador Telegram é usado para reunir favoritos, progresso, compras e entregas existentes. Senhas são processadas pelo Supabase Auth e não são armazenadas pela aplicação.</p><h2>Sessão e segurança</h2><p>A sessão web fica em cookies protegidos e não é salva no armazenamento local do navegador. Favoritos locais podem permanecer neste dispositivo quando não houver conta vinculada.</p><h2>Pagamentos</h2><p>Dados de pagamento são processados pelo Mercado Pago. O sistema registra apenas os dados necessários para acompanhar o pedido e confirmar a entrega.</p><h2>Contato</h2><p>Solicitações relacionadas a dados e privacidade podem ser enviadas para <a href="mailto:${SUPPORT_INBOX_EMAIL}">${SUPPORT_INBOX_EMAIL}</a>.</p>',
     },
     '/blog': {
         title: 'Blog',
@@ -824,10 +826,50 @@ function renderNotFoundPage() {
 
 const CUSTOMER_ROUTES = new Set(['/minha-conta', '/minha-biblioteca', '/minhas-compras', '/historico']);
 
-function requestCustomerArea() {
+function requestTelegramCustomerArea() {
     return requestJson(`${API_URL}?action=customer-area`, {
         init_data: tg?.initData || '',
     }, 20000);
+}
+
+function requestWebCustomerArea() {
+    return requestJson('/api/account/overview', {}, 20000);
+}
+
+async function requestWebAccountSession({ force = false } = {}) {
+    if (!force && webAccountSession && Date.now() - webAccountSessionLoadedAt < 30000) {
+        return webAccountSession;
+    }
+    try {
+        const response = await fetch('/api/auth/session', {
+            method: 'GET',
+            cache: 'no-store',
+            credentials: 'same-origin',
+            headers: { accept: 'application/json' },
+        });
+        const payload = await response.json().catch(() => ({}));
+        webAccountSession = response.ok ? payload : { authenticated: false };
+    } catch {
+        webAccountSession = { authenticated: false };
+    }
+    webAccountSessionLoadedAt = Date.now();
+    return webAccountSession;
+}
+
+async function requestWebAuth(path, payload = {}) {
+    const response = await fetch(`/api/auth/${path}`, {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error || 'Não foi possível concluir esta ação.');
+    return data;
 }
 
 function requestNotificationPreferences(operation = 'get', preferences = {}) {
@@ -836,6 +878,191 @@ function requestNotificationPreferences(operation = 'get', preferences = {}) {
         operation,
         ...preferences,
     }, 15000);
+}
+
+function renderAccountAuth(mode = 'login', message = '') {
+    if (!DOM.contentPage) return;
+    const isRegister = mode === 'register';
+    const isRecover = mode === 'recover';
+    const isPassword = mode === 'password';
+    const title = isRegister
+        ? 'Crie sua conta'
+        : isRecover
+            ? 'Recupere sua senha'
+            : isPassword
+                ? 'Defina uma nova senha'
+                : 'Entre na sua conta';
+    const description = isRegister
+        ? 'Use seu e-mail para acessar compras e biblioteca também fora do Telegram.'
+        : isRecover
+            ? 'Enviaremos instruções se o e-mail estiver cadastrado.'
+            : isPassword
+                ? 'Escolha uma nova senha segura para continuar.'
+                : 'Acesse sua biblioteca e acompanhe suas compras.';
+
+    let fields = `
+        <label><span>E-mail</span><input type="email" name="email" autocomplete="email" required maxlength="320"></label>
+        <label><span>Senha</span><input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="128"></label>
+    `;
+    if (isRegister) {
+        fields = `
+            <label><span>Nome completo</span><input type="text" name="full_name" autocomplete="name" required minlength="2" maxlength="120"></label>
+            <label><span>E-mail</span><input type="email" name="email" autocomplete="email" required maxlength="320"></label>
+            <label><span>Senha</span><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+            <label><span>Confirme a senha</span><input type="password" name="password_confirmation" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+            <label class="account-consent"><input type="checkbox" name="terms_accepted" required><span>Li e aceito os <a href="/termos">Termos de Uso</a>.</span></label>
+            <label class="account-consent"><input type="checkbox" name="privacy_accepted" required><span>Li e aceito a <a href="/privacidade">Política de Privacidade</a>.</span></label>
+        `;
+    } else if (isRecover) {
+        fields = '<label><span>E-mail</span><input type="email" name="email" autocomplete="email" required maxlength="320"></label>';
+    } else if (isPassword) {
+        fields = `
+            <label><span>Nova senha</span><input type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+            <label><span>Confirme a nova senha</span><input type="password" name="password_confirmation" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+        `;
+    }
+
+    DOM.contentPage.innerHTML = `
+        <section class="account-auth-shell">
+            <div class="account-auth-brand"><i class="fas fa-play-circle"></i><span>Séries Express</span></div>
+            <article class="account-auth-card">
+                <span class="content-page-kicker">Área da cliente</span>
+                <h1>${escapeHtml(title)}</h1>
+                <p>${escapeHtml(description)}</p>
+                ${message ? `<div class="account-auth-message" role="status">${escapeHtml(message)}</div>` : ''}
+                <form class="account-auth-form" data-account-auth-form data-mode="${escapeAttr(mode)}">
+                    ${fields}
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas ${isRegister ? 'fa-user-plus' : isRecover ? 'fa-envelope' : isPassword ? 'fa-key' : 'fa-right-to-bracket'}"></i>
+                        ${isRegister ? 'Criar conta' : isRecover ? 'Enviar instruções' : isPassword ? 'Salvar nova senha' : 'Entrar'}
+                    </button>
+                    <div class="account-auth-status" data-account-auth-status aria-live="polite"></div>
+                </form>
+                <div class="account-auth-switch">
+                    ${isRegister
+                        ? '<button type="button" data-account-mode="login">Já tenho uma conta</button>'
+                        : isRecover || isPassword
+                            ? '<button type="button" data-account-mode="login">Voltar para o acesso</button>'
+                            : '<button type="button" data-account-mode="register">Criar uma conta</button><button type="button" data-account-mode="recover">Esqueci minha senha</button>'}
+                </div>
+            </article>
+            <aside class="account-auth-aside">
+                <i class="fab fa-telegram"></i>
+                <strong>Seu acesso continua no Telegram</strong>
+                <p>Depois de confirmar o e-mail, abra esta conta dentro do Mini App para vincular compras e favoritos existentes.</p>
+            </aside>
+        </section>
+    `;
+    wireAccountAuthActions();
+}
+
+function wireAccountAuthActions() {
+    DOM.contentPage?.querySelectorAll('[data-account-mode]').forEach((button) => {
+        button.addEventListener('click', () => renderAccountAuth(button.dataset.accountMode || 'login'));
+    });
+    const form = DOM.contentPage?.querySelector('[data-account-auth-form]');
+    form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const mode = String(form.dataset.mode || 'login');
+        const formData = new FormData(form);
+        const password = String(formData.get('password') || '');
+        const confirmation = String(formData.get('password_confirmation') || '');
+        const status = form.querySelector('[data-account-auth-status]');
+        const submit = form.querySelector('button[type="submit"]');
+        if (confirmation && password !== confirmation) {
+            if (status) status.textContent = 'As senhas não coincidem.';
+            return;
+        }
+        if (submit instanceof HTMLButtonElement) submit.disabled = true;
+        if (status) status.textContent = 'Processando...';
+        try {
+            let result;
+            if (mode === 'register') {
+                result = await requestWebAuth('register', {
+                    full_name: formData.get('full_name'),
+                    email: formData.get('email'),
+                    password,
+                    terms_accepted: formData.get('terms_accepted') === 'on',
+                    privacy_accepted: formData.get('privacy_accepted') === 'on',
+                });
+                if (result.requires_email_verification) {
+                    renderAccountAuth('login', result.message || 'Confirme seu e-mail para entrar.');
+                    return;
+                }
+            } else if (mode === 'recover') {
+                result = await requestWebAuth('recover', { email: formData.get('email') });
+                renderAccountAuth('login', result.message || 'Confira seu e-mail.');
+                return;
+            } else if (mode === 'password') {
+                result = await requestWebAuth('password', { password });
+                const cleanUrl = new URL('/minha-conta', window.location.origin);
+                history.replaceState({ route: 'customer' }, '', cleanUrl.pathname);
+                webAccountSession = null;
+                renderAccountAuth('login', result.message || 'Senha atualizada. Entre novamente.');
+                await requestWebAuth('logout', {}).catch(() => null);
+                return;
+            } else {
+                result = await requestWebAuth('login', { email: formData.get('email'), password });
+            }
+            webAccountSession = result?.authenticated ? result : null;
+            webAccountSessionLoadedAt = Date.now();
+            customerAreaSnapshot = null;
+            await openCustomerRoute('/minha-conta');
+        } catch (error) {
+            if (status) status.textContent = error.message || 'Não foi possível concluir esta ação.';
+        } finally {
+            if (submit instanceof HTMLButtonElement) submit.disabled = false;
+        }
+    });
+}
+
+function renderAccountLinkRequired(session) {
+    if (!DOM.contentPage) return;
+    const account = session?.account || {};
+    DOM.contentPage.innerHTML = `
+        <article class="content-page-card account-link-card">
+            <span class="content-page-kicker">Conta criada</span>
+            <h1>Vincule seu Telegram</h1>
+            <p>Olá, ${escapeHtml(String(account.full_name || 'Cliente').split(/\s+/)[0])}. Abra o Mini App pelo bot usando esta mesma conta para reunir sua biblioteca, compras, favoritos e progresso.</p>
+            <div class="content-page-actions">
+                <button type="button" class="btn btn-primary" data-customer-open-telegram><i class="fab fa-telegram"></i> Abrir no Telegram</button>
+                <button type="button" class="btn btn-secondary" data-account-logout><i class="fas fa-right-from-bracket"></i> Sair</button>
+            </div>
+            <p class="account-link-note"><i class="fas fa-shield-halved"></i> O vínculo só é concluído após validar o e-mail e os dados assinados pelo Telegram.</p>
+        </article>
+    `;
+    DOM.contentPage.querySelector('[data-customer-open-telegram]')?.addEventListener('click', () => openTelegramBotLink(TELEGRAM_BOT_LINK));
+    DOM.contentPage.querySelector('[data-account-logout]')?.addEventListener('click', logoutWebAccount);
+}
+
+async function logoutWebAccount() {
+    await requestWebAuth('logout', {}).catch(() => null);
+    webAccountSession = { authenticated: false };
+    webAccountSessionLoadedAt = Date.now();
+    customerAreaSnapshot = null;
+    renderAccountAuth('login', 'Você saiu da sua conta.');
+}
+
+async function consumeSupabaseAuthCallback() {
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    if (!accessToken || !refreshToken) return false;
+    history.replaceState(history.state, '', `${window.location.pathname}${window.location.search}`);
+    try {
+        await requestWebAuth('session', {
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            expires_in: Number(params.get('expires_in') || 3600),
+            type: params.get('type') || '',
+        });
+        webAccountSession = null;
+        webAccountSessionLoadedAt = 0;
+        return true;
+    } catch (error) {
+        showToast(error.message || 'O link de autenticação expirou.', 'error');
+        return false;
+    }
 }
 
 function getCustomerOrderStatusMeta(status) {
@@ -944,6 +1171,8 @@ function wireCustomerAreaActions() {
             return deliverSeriesToTelegram(serie);
         };
     });
+    DOM.contentPage?.querySelector('[data-account-logout]')?.addEventListener('click', logoutWebAccount);
+    DOM.contentPage?.querySelector('[data-account-create]')?.addEventListener('click', () => renderAccountAuth('register'));
     DOM.contentPage?.querySelectorAll('a[href^="/"]').forEach((link) => {
         if (!(link instanceof HTMLAnchorElement)) return;
         link.onclick = (event) => {
@@ -1036,13 +1265,23 @@ function renderCustomerArea(path, data) {
             </section>
             <section class="customer-section"><div class="customer-section-head"><div><span>Acesso rápido</span><h2>Últimas séries da biblioteca</h2></div><a href="/minha-biblioteca">Ver todas</a></div><div class="customer-series-grid">${library.slice(0, 3).map((serie) => renderCustomerSeriesCard(serie)).join('') || '<div class="customer-empty"><p>Suas séries compradas aparecerão aqui automaticamente.</p></div>'}</div></section>
             <section class="customer-section"><div class="customer-section-head"><div><span>Pedidos recentes</span><h2>Minhas compras</h2></div><a href="/minhas-compras">Ver todas</a></div><div class="customer-orders-list">${orders.slice(0, 3).map(renderCustomerOrder).join('') || '<div class="customer-empty"><p>Nenhum pedido registrado ainda.</p></div>'}</div></section>
-            ${renderCustomerNotificationPreferences(notificationPreferences)}
+            ${appContext.isTelegram ? renderCustomerNotificationPreferences(notificationPreferences) : ''}
         `;
     }
 
+    const accountDetail = account.email
+        ? `${escapeHtml(account.email)}${account.email_verified ? ' • E-mail confirmado' : ''}`
+        : account.username
+            ? `@${escapeHtml(account.username)}`
+            : 'Seus acessos estão vinculados ao Telegram.';
+    const webAccountAction = webAccountSession?.authenticated
+        ? '<button type="button" class="btn btn-secondary customer-logout-btn" data-account-logout><i class="fas fa-right-from-bracket"></i> Sair</button>'
+        : appContext.isTelegram
+            ? '<button type="button" class="btn btn-secondary customer-account-create" data-account-create><i class="fas fa-shield-halved"></i> Proteger acesso na web</button>'
+            : '';
     DOM.contentPage.innerHTML = `
         <div class="customer-shell">
-            <header class="customer-hero"><div class="customer-avatar"><i class="fas fa-user"></i></div><div><span>Área da cliente</span><h1>Olá, ${escapeHtml(firstName)}</h1><p>${account.username ? `@${escapeHtml(account.username)}` : 'Seus acessos estão vinculados ao Telegram.'}</p></div></header>
+            <header class="customer-hero"><div class="customer-avatar"><i class="fas fa-user"></i></div><div><span>Área da cliente</span><h1>Olá, ${escapeHtml(firstName)}</h1><p>${accountDetail}</p></div>${webAccountAction}</header>
             ${renderCustomerNav(path)}
             ${body}
         </div>
@@ -1055,16 +1294,41 @@ async function openCustomerRoute(path) {
     setCatalogPageVisibility(false);
     setMetaContent('meta[name="robots"]', 'noindex,nofollow');
     document.title = 'Minha conta — Séries Curtas Express';
-    if (!appContext.isTelegram) {
-        DOM.contentPage.innerHTML = '<article class="content-page-card content-page-empty"><p class="content-page-kicker">Área da cliente</p><h1>Abra pelo Telegram</h1><p>Compras, biblioteca e histórico ficam vinculados com segurança à sua conta do Telegram.</p><button type="button" class="btn btn-primary" data-customer-open-telegram><i class="fab fa-telegram"></i> Abrir no Telegram</button></article>';
-        DOM.contentPage.querySelector('[data-customer-open-telegram]')?.addEventListener('click', () => openTelegramBotLink(TELEGRAM_BOT_LINK));
-        return;
-    }
-
     DOM.contentPage.innerHTML = '<div class="customer-loading"><i class="fas fa-spinner fa-spin"></i><strong>Carregando sua conta...</strong></div>';
     try {
+        const session = await requestWebAccountSession();
+        if (new URLSearchParams(window.location.search).get('auth') === 'recovery' && session?.authenticated) {
+            renderAccountAuth('password');
+            return;
+        }
+
+        if (!appContext.isTelegram) {
+            if (!session?.authenticated) {
+                renderAccountAuth('login');
+                return;
+            }
+            if (!session?.email_verified) {
+                renderAccountAuth('login', 'Confirme seu e-mail antes de continuar.');
+                return;
+            }
+            if (!session?.telegram_link?.telegram_user_id) {
+                renderAccountLinkRequired(session);
+                return;
+            }
+        } else if (session?.authenticated && session?.email_verified && !session?.telegram_link?.telegram_user_id) {
+            try {
+                await requestWebAuth('link-telegram', { init_data: tg?.initData || '' });
+                webAccountSession = await requestWebAccountSession({ force: true });
+                showToast('Conta vinculada ao Telegram com segurança.', 'success');
+            } catch (error) {
+                showToast(error.message || 'Não foi possível vincular a conta agora.', 'info');
+            }
+        }
+
         if (!customerAreaSnapshot || Date.now() - customerAreaLoadedAt > 30000) {
-            customerAreaSnapshot = await requestCustomerArea();
+            customerAreaSnapshot = appContext.isTelegram
+                ? await requestTelegramCustomerArea()
+                : await requestWebCustomerArea();
             customerAreaLoadedAt = Date.now();
         }
         renderCustomerArea(path, customerAreaSnapshot);
@@ -4929,6 +5193,7 @@ function getPlaybackMode(serie) {
 // ==================== INICIALIZAÇÃO ====================
 async function init() {
     resolveTelegramContext();
+    await consumeSupabaseAuthCallback();
     configurePaymentMethodsForContext();
     trackStaleCartAbandonment();
     trackAnalyticsEvent('app_opened');
@@ -4946,7 +5211,7 @@ async function init() {
     updatePaymentMethodUI();
     updateOwnerVisibility();
     if (DOM.openTelegramBtn) DOM.openTelegramBtn.hidden = appContext.isTelegram;
-    if (DOM.accountBtn) DOM.accountBtn.hidden = !appContext.isTelegram;
+    if (DOM.accountBtn) DOM.accountBtn.hidden = false;
     if (DOM.cartBtn) DOM.cartBtn.hidden = !appContext.isTelegram;
     if (DOM.currentYear) DOM.currentYear.textContent = String(new Date().getFullYear());
     renderCatalogSkeleton();

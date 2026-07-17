@@ -1141,11 +1141,13 @@ async function main() {
       catalogHidden: document.querySelector('#catalogSection')?.hidden === true,
     }));
     await webPage.goto(`http://127.0.0.1:${port}/minha-conta`, { waitUntil: 'domcontentloaded' });
-    await webPage.waitForSelector('[data-customer-open-telegram]', { timeout: 10000 });
+    await webPage.waitForSelector('.account-auth-card', { timeout: 10000 });
     const webCustomerState = await webPage.evaluate(() => ({
       path: location.pathname,
       heading: document.querySelector('#contentPage h1')?.textContent?.trim() || '',
-      telegramAction: document.querySelector('[data-customer-open-telegram]')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+      loginForm: Boolean(document.querySelector('[data-account-auth-form][data-mode="login"]')),
+      registerAction: document.querySelector('[data-account-mode="register"]')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+      accountVisible: document.querySelector('#accountBtn')?.hidden === false,
     }));
     await webPage.close();
 
@@ -1156,7 +1158,7 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.starsActive || !initial.webMethodsHidden) failures.push('Telegram Stars not enforced inside Telegram');
-    if (!initial.appJs.includes('20260715-03')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260716-01')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
@@ -1217,7 +1219,7 @@ async function main() {
     if (!webPaidState.path.includes('/series/serie-paga') || !webPaidState.action.includes('Comprar por R$ 5,90')) failures.push(`public paid details failed: ${JSON.stringify(webPaidState)}`);
     if (!webTelegramOpenState.includes('t.me/ShortNovelsBot') || deliveryLog.length !== webDeliveryCountBefore) failures.push('public Telegram handoff failed');
     if (!webContentState.title.includes('Política de privacidade') || webContentState.heading !== 'Política de privacidade' || !webContentState.catalogHidden) failures.push(`public content page failed: ${JSON.stringify(webContentState)}`);
-    if (webCustomerState.path !== '/minha-conta' || webCustomerState.heading !== 'Abra pelo Telegram' || !webCustomerState.telegramAction.includes('Abrir no Telegram')) failures.push(`web customer fallback failed: ${JSON.stringify(webCustomerState)}`);
+    if (webCustomerState.path !== '/minha-conta' || webCustomerState.heading !== 'Entre na sua conta' || !webCustomerState.loginForm || !webCustomerState.registerAction.includes('Criar uma conta') || !webCustomerState.accountVisible) failures.push(`web account entry failed: ${JSON.stringify(webCustomerState)}`);
     if (!sitemapText.includes('/series/') || !sitemapText.includes('/blog/o-que-sao-series-curtas-verticais') || !robotsText.includes('Sitemap:')) failures.push('SEO files failed');
     if (!generatedSeriesPageText.includes('<title>A Prometida do Príncipe Vampiro') || !generatedSeriesPageText.includes('property="og:title"') || !generatedSeriesPageText.includes('"@type":"Movie"')) failures.push('pre-rendered series SEO failed');
     if (errors.length) failures.push(`console errors: ${errors.join(' | ')}`);

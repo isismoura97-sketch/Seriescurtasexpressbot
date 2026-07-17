@@ -42,12 +42,16 @@ jobs:
           for file in series-app/*.js scripts/*.mjs; do
             node --check "$file"
           done
+          find series-app/api -type f -name '*.js' -exec node --check {} \;
 
       - name: Type-check Supabase function
         run: deno check supabase/functions/bot-unificado/index.ts
 
       - name: Test payment reconciliation
         run: deno test --allow-env supabase/functions/bot-unificado/index_test.ts
+
+      - name: Test account session security
+        run: node scripts/account-auth-check.mjs
 
   smoke:
     name: Smoke test do Mini App

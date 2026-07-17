@@ -131,6 +131,8 @@ const EPISODE_VIDEO_FILE_ID_COLUMNS = (Deno.env.get("EPISODE_VIDEO_FILE_ID_COLUM
   .filter(Boolean);
 const USER_SERIES_PROGRESS_TABLE = Deno.env.get("USER_SERIES_PROGRESS_TABLE") ?? "user_series_progress";
 const USER_SERIES_FAVORITES_TABLE = Deno.env.get("USER_SERIES_FAVORITES_TABLE") ?? "user_series_favorites";
+const CUSTOMER_ACCOUNTS_TABLE = Deno.env.get("CUSTOMER_ACCOUNTS_TABLE") ?? "customer_accounts";
+const CUSTOMER_TELEGRAM_LINKS_TABLE = Deno.env.get("CUSTOMER_TELEGRAM_LINKS_TABLE") ?? "customer_telegram_links";
 const ANALYTICS_EVENT_NAMES = new Set([
   "app_opened",
   "catalog_loaded",
@@ -6151,21 +6153,141 @@ async function getCustomerPaymentRows(userId: string) {
   return Array.isArray(data) ? data as Record<string, unknown>[] : [];
 }
 
+async function validateSupabaseAccountToken(req: Request) {
+  const authorization = String(req.headers.get("authorization") ?? "").trim();
+  if (!authorization.toLowerCase().startsWith("bearer ")) {
+    throw new Error("Autenticacao da conta ausente");
+  }
+
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    method: "GET",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      authorization,
+      accept: "application/json",
+    },
+  });
+  const user = await response.json().catch(() => null) as Record<string, unknown> | null;
+  if (!response.ok || !user?.id) {
+    throw new Error("Sessao da conta invalida ou expirada");
+  }
+
+  const accountRows = await supabaseFetch(
+    `${CUSTOMER_ACCOUNTS_TABLE}?select=id,full_name,email,status,email_verified_at&id=eq.${encodeURIComponent(String(user.id))}&limit=1`,
+  );
+  const account = Array.isArray(accountRows) ? accountRows[0] as Record<string, unknown> | undefined : undefined;
+  if (!account || String(account.status ?? "") !== "active") {
+    throw new Error("Conta indisponivel");
+  }
+
+  return { accountId: String(user.id), user, account };
+}
+
+async function getCustomerTelegramLink(accountId: string) {
+  const rows = await supabaseFetch(
+    `${CUSTOMER_TELEGRAM_LINKS_TABLE}?select=account_id,telegram_user_id,telegram_username,telegram_first_name,telegram_last_name,linked_at,last_verified_at&account_id=eq.${encodeURIComponent(accountId)}&limit=1`,
+  );
+  return Array.isArray(rows) ? rows[0] as Record<string, unknown> | undefined : undefined;
+}
+
+async function resolveCustomerIdentity(req: Request, body: Record<string, unknown>) {
+  const initData = String(body.init_data ?? body.initData ?? "");
+  if (initData) {
+    const validated = await validateWebAppInitData(initData) as { userId: string; user: Record<string, unknown> };
+    return { ...validated, account: null };
+  }
+
+  const authenticated = await validateSupabaseAccountToken(req);
+  const link = await getCustomerTelegramLink(authenticated.accountId);
+  if (!link?.telegram_user_id) {
+    const error = new Error("Vincule sua conta ao Telegram para acessar compras e biblioteca");
+    (error as Error & { code?: string }).code = "telegram_link_required";
+    throw error;
+  }
+
+  return {
+    userId: String(link.telegram_user_id),
+    user: {
+      id: String(link.telegram_user_id),
+      username: String(link.telegram_username ?? ""),
+      first_name: String(link.telegram_first_name ?? authenticated.account.full_name ?? "Cliente"),
+      last_name: String(link.telegram_last_name ?? ""),
+    },
+    account: authenticated.account,
+  };
+}
+
+async function handleAccountLinkTelegram(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+
+  let authenticated: Awaited<ReturnType<typeof validateSupabaseAccountToken>>;
+  let telegram: Awaited<ReturnType<typeof validateWebAppInitData>>;
+  try {
+    authenticated = await validateSupabaseAccountToken(req);
+    if (!authenticated.user.email_confirmed_at) {
+      return json(req, { error: "Confirme seu e-mail antes de vincular o Telegram", code: "email_verification_required" }, 403);
+    }
+    telegram = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
+  } catch (error) {
+    return json(req, {
+      error: error instanceof Error ? error.message : "Nao foi possivel validar a conta",
+      code: "account_link_denied",
+    }, 401);
+  }
+
+  const existingLink = await getCustomerTelegramLink(authenticated.accountId);
+  if (existingLink?.telegram_user_id && String(existingLink.telegram_user_id) !== telegram.userId) {
+    return json(req, {
+      error: "Esta conta ja esta vinculada a outro Telegram. Fale com o suporte para alterar.",
+      code: "account_already_linked",
+    }, 409);
+  }
+
+  const telegramUser = telegram.user as Record<string, unknown>;
+  try {
+    const rows = await supabaseRestRequest(CUSTOMER_TELEGRAM_LINKS_TABLE, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        prefer: "resolution=merge-duplicates,return=representation",
+      },
+      body: JSON.stringify({
+        account_id: authenticated.accountId,
+        telegram_user_id: telegram.userId,
+        telegram_username: String(telegramUser.username ?? "").slice(0, 64) || null,
+        telegram_first_name: String(telegramUser.first_name ?? "").slice(0, 128) || null,
+        telegram_last_name: String(telegramUser.last_name ?? "").slice(0, 128) || null,
+        last_verified_at: new Date().toISOString(),
+      }),
+    });
+    const link = Array.isArray(rows) ? rows[0] : rows;
+    return json(req, { ok: true, linked: true, telegram_link: link });
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    if (message.includes("duplicate") || message.includes("unique")) {
+      return json(req, {
+        error: "Este Telegram ja esta vinculado a outra conta.",
+        code: "telegram_already_linked",
+      }, 409);
+    }
+    throw error;
+  }
+}
+
 async function handleCustomerArea(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
 
-  let validated: { userId: string; user: Record<string, unknown> };
+  let validated: { userId: string; user: Record<string, unknown>; account?: Record<string, unknown> | null };
   try {
-    validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? "")) as {
-      userId: string;
-      user: Record<string, unknown>;
-    };
+    validated = await resolveCustomerIdentity(req, body);
   } catch (error) {
+    const code = (error as Error & { code?: string })?.code || "account_auth_required";
     return json(req, {
-      error: error instanceof Error ? error.message : "Dados do Telegram invalidos",
-      code: "telegram_auth_required",
-    }, 401);
+      error: error instanceof Error ? error.message : "Autenticacao invalida",
+      code,
+    }, code === "telegram_link_required" ? 409 : 401);
   }
 
   const userId = validated.userId;
@@ -6215,8 +6337,11 @@ async function handleCustomerArea(req: Request) {
   return json(req, {
     ok: true,
     account: {
+      account_id: String(validated.account?.id ?? ""),
       telegram_user_id: userId,
-      name: displayName || "Cliente",
+      name: String(validated.account?.full_name ?? displayName ?? "Cliente"),
+      email: String(validated.account?.email ?? ""),
+      email_verified: Boolean(validated.account?.email_verified_at),
       username: String(validated.user.username ?? ""),
       language_code: String(validated.user.language_code ?? ""),
     },
@@ -7988,6 +8113,10 @@ if (import.meta.main) Deno.serve(async (req) => {
 
     if (action === "favorite-sync") {
       return await handleFavoriteSync(req);
+    }
+
+    if (action === "account-link-telegram" && req.method === "POST") {
+      return await handleAccountLinkTelegram(req);
     }
 
     if (action === "customer-area" && req.method === "POST") {

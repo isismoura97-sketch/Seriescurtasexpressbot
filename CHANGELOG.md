@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-16 - Conta web e vínculo seguro com Telegram
+
+- Área da cliente passou a oferecer cadastro, confirmação de e-mail, login, recuperação e troca de senha também no navegador.
+- Sessões web usam endpoints same-origin e cookies `HttpOnly`, `Secure` e `SameSite=Lax`, sem tokens no `localStorage` ou nas respostas JSON.
+- Contas, consentimentos e vínculos Telegram foram separados em tabelas com RLS e privilégios mínimos.
+- Vínculo exige conta ativa, e-mail confirmado, sessão Supabase válida e `initData` assinado pelo Telegram.
+- Compras, acessos, favoritos, progresso, pagamento e entrega existentes continuam identificados pelo mesmo Telegram ID, sem migração destrutiva.
+- Testes automatizados cobrem cookies, isolamento de origem, ausência de vazamento de tokens e regressões do Mini App.
+
 ## 2026-07-15 - SEO automatico orientado pelo catalogo
 
 - Cadastro da serie passou a gerar slug, titulo, descricao, canonical, Open Graph, Twitter Card e Schema.org automaticamente.
