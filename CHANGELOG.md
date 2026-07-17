@@ -9,6 +9,7 @@
 - Pedidos, comprovantes, acessos e registros de entrega associados ao Telegram permanecem preservados para suporte, obrigações financeiras e continuidade das compras.
 - Novos testes cobrem sanitização da exportação, proxies autenticados e limpeza dos cookies somente após exclusão bem-sucedida.
 - Os endpoints de conta compartilham uma única função dinâmica com lista explícita de rotas, mantendo o projeto dentro do limite do plano Hobby da Vercel.
+- A rota dinâmica é resolvida antes do fallback público, evitando que chamadas `POST /api/account/*` sejam tratadas como `index.html`.
 
 ## 2026-07-17 - Carrinho e preferências sincronizados
 

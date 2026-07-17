@@ -16,6 +16,10 @@
       "headers": { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" },
       "continue": true
     },
+    {
+      "src": "/api/account/([^/]+)",
+      "dest": "/api/account/[action]?action=$1"
+    },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
