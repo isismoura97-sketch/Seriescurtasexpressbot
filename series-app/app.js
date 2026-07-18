@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260717-03';
+const BUILD_VERSION = '20260718-01';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -202,11 +202,16 @@ let ownerSeriesSearchTerm = '';
 let ownerSeriesFilterMode = 'all';
 let ownerCouponEditCode = '';
 let ownerSessionAuthorized = false;
+let ownerAISuggestionState = null;
+let ownerAIPreviousValues = null;
 let supportRequestPending = false;
 let customerAreaSnapshot = null;
 let customerAreaLoadedAt = 0;
 let webAccountSession = null;
 let webAccountSessionLoadedAt = 0;
+let aiPublicConfig = null;
+let aiSearchResultIds = null;
+let aiSearchPending = false;
 const ownerOrderRetryInFlightIds = new Set();
 
 function getAnalyticsSessionId() {
@@ -587,6 +592,14 @@ const DOM = {
     telegramRow: document.getElementById('telegramRow'),
     telegramRowCount: document.getElementById('telegramRowCount'),
     searchInput: document.getElementById('searchInput'),
+    aiDiscovery: document.getElementById('aiDiscovery'),
+    aiDiscoveryTitle: document.getElementById('aiDiscoveryTitle'),
+    aiDiscoveryWelcome: document.getElementById('aiDiscoveryWelcome'),
+    aiSearchForm: document.getElementById('aiSearchForm'),
+    aiSearchInput: document.getElementById('aiSearchInput'),
+    aiSearchButton: document.getElementById('aiSearchButton'),
+    aiSearchFeedback: document.getElementById('aiSearchFeedback'),
+    aiSearchReset: document.getElementById('aiSearchReset'),
     toastContainer: document.getElementById('toastContainer'),
     header: document.getElementById('header'),
     hero: document.querySelector('.hero'),
@@ -803,7 +816,7 @@ const STATIC_CONTENT_PAGES = {
     '/privacidade': {
         title: 'Política de privacidade',
         description: 'Como o Séries Curtas Express utiliza dados necessários para operar o serviço.',
-        body: '<p class="content-page-kicker">Privacidade</p><h1>Política de privacidade</h1><h2>Dados utilizados</h2><p>A conta web utiliza nome, e-mail, registros de consentimento e um vínculo validado com o Telegram. O identificador Telegram é usado para reunir favoritos, progresso, compras e entregas existentes. Senhas são processadas pelo Supabase Auth e não são armazenadas pela aplicação.</p><h2>Sessão e segurança</h2><p>A sessão web fica em cookies protegidos e não é salva no armazenamento local do navegador. Favoritos locais podem permanecer neste dispositivo quando não houver conta vinculada.</p><h2>Portabilidade e exclusão</h2><p>Na página Configurações, a pessoa pode exportar os dados associados à conta e excluir o login web após confirmar a senha atual. A exportação não contém arquivos de vídeo, URLs protegidas ou identificadores internos de mídia. Pedidos, comprovantes, acessos e registros de entrega podem ser preservados quando necessários para cumprir obrigações financeiras, prestar suporte e manter conteúdos adquiridos no Telegram.</p><h2>Pagamentos</h2><p>Dados de pagamento são processados pelo Mercado Pago. O sistema registra apenas os dados necessários para acompanhar o pedido e confirmar a entrega.</p><h2>Contato</h2><p>Solicitações relacionadas a dados e privacidade podem ser enviadas para <a href="mailto:${SUPPORT_INBOX_EMAIL}">${SUPPORT_INBOX_EMAIL}</a>.</p>',
+        body: '<p class="content-page-kicker">Privacidade</p><h1>Política de privacidade</h1><h2>Dados utilizados</h2><p>A conta web utiliza nome, e-mail, registros de consentimento e um vínculo validado com o Telegram. O identificador Telegram é usado para reunir favoritos, progresso, compras e entregas existentes. Senhas são processadas pelo Supabase Auth e não são armazenadas pela aplicação.</p><h2>Assistente de IA</h2><p>Quando uma funcionalidade identificada como Express IA estiver ativada e for utilizada, somente o contexto mínimo necessário é enviado a um serviço externo de inteligência artificial. Senhas, tokens, dados financeiros, e-mails de clientes e referências privadas de mídia não são enviados. As perguntas e respostas integrais não são armazenadas nos registros de consumo, e os dados não são usados pela aplicação para treinar modelos sem autorização.</p><h2>Sessão e segurança</h2><p>A sessão web fica em cookies protegidos e não é salva no armazenamento local do navegador. Favoritos locais podem permanecer neste dispositivo quando não houver conta vinculada.</p><h2>Portabilidade e exclusão</h2><p>Na página Configurações, a pessoa pode exportar os dados associados à conta e excluir o login web após confirmar a senha atual. A exportação não contém arquivos de vídeo, URLs protegidas ou identificadores internos de mídia. Pedidos, comprovantes, acessos e registros de entrega podem ser preservados quando necessários para cumprir obrigações financeiras, prestar suporte e manter conteúdos adquiridos no Telegram.</p><h2>Pagamentos</h2><p>Dados de pagamento são processados pelo Mercado Pago. O sistema registra apenas os dados necessários para acompanhar o pedido e confirmar a entrega.</p><h2>Contato</h2><p>Solicitações relacionadas a dados e privacidade podem ser enviadas para <a href="mailto:${SUPPORT_INBOX_EMAIL}">${SUPPORT_INBOX_EMAIL}</a>.</p>',
     },
     '/blog': {
         title: 'Blog',
@@ -3015,6 +3028,35 @@ async function requestOwnerCouponAction(code, operation) {
     }, 30000);
 }
 
+async function requestOwnerAISettings(operation = 'get', settings = null) {
+    return await requestJson(`${API_URL}?action=owner-ai-settings`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        operation,
+        ...(settings ? { settings } : {}),
+    }, 25000);
+}
+
+async function requestOwnerAIGenerate(task, data, seriesId = '') {
+    return await requestJson(`${API_URL}?action=owner-ai-generate`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        task,
+        data,
+        series_id: seriesId,
+    }, 45000);
+}
+
+async function requestOwnerAIReview(historyId, operation, appliedContent = null) {
+    return await requestJson(`${API_URL}?action=owner-ai-review`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        history_id: historyId,
+        operation,
+        applied_content: appliedContent,
+    }, 20000);
+}
+
 function isOwnerUser() {
     return ownerSessionAuthorized;
 }
@@ -3549,6 +3591,13 @@ function wireOwnerDashboardControls() {
         button.onclick = () => retryOwnerOrderDelivery(button.dataset.ownerOrderRetry || '', button);
     });
 
+    const aiSettingsForm = document.getElementById('ownerAISettingsForm');
+    if (aiSettingsForm instanceof HTMLFormElement) aiSettingsForm.onsubmit = submitOwnerAISettings;
+    document.querySelectorAll('[data-owner-ai-task]').forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) return;
+        button.onclick = () => runOwnerAIGeneration(button.dataset.ownerAiTask || 'generate_seo', button);
+    });
+
     const couponForm = document.getElementById('ownerCouponForm');
     if (couponForm instanceof HTMLFormElement) {
         couponForm.onsubmit = submitOwnerCoupon;
@@ -3709,6 +3758,8 @@ function syncOwnerCoverPreviewFromFile(file) {
 }
 
 function updateOwnerFormMode(serie = null) {
+    ownerAISuggestionState = null;
+    ownerAIPreviousValues = null;
     ownerSeriesEditId = serie?.id ? String(serie.id) : '';
 
     const form = document.getElementById('ownerSeriesForm');
@@ -4574,6 +4625,317 @@ async function runOwnerCouponAction(code, operation, button) {
     }
 }
 
+function renderOwnerAIManagement(ai = {}) {
+    const settings = ai?.settings || {};
+    const usage = ai?.usage || {};
+    const enabled = Boolean(settings.ai_enabled);
+    const editorialEnabled = Boolean(settings.ai_editorial_enabled);
+    const searchEnabled = Boolean(settings.ai_search_enabled);
+    const providerConfigured = Boolean(settings.provider_configured);
+    return `
+        <section class="owner-section owner-ai-management">
+            <div class="owner-section-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-wand-magic-sparkles"></i> Express IA</span>
+                    <h3>Assistente controlável e segura</h3>
+                    <p>As sugestões nunca são publicadas automaticamente. Desligue tudo por aqui sem afetar catálogo, pedidos ou entregas.</p>
+                </div>
+                <span class="owner-ai-state ${enabled ? 'active' : ''}">${enabled ? 'Ativada' : 'Desativada'}</span>
+            </div>
+            <div class="owner-ai-summary">
+                <div><span>Provedor</span><strong>${escapeHtml(settings.provider || 'openai')}</strong></div>
+                <div><span>Modelo</span><strong>${escapeHtml(settings.model || '-')}</strong></div>
+                <div><span>Requisições em 30 dias</span><strong>${escapeHtml(String(usage.requests_total || 0))}</strong></div>
+                <div><span>Tempo médio</span><strong>${escapeHtml(String(usage.average_latency_ms || 0))} ms</strong></div>
+                <div><span>Custo estimado</span><strong>${Number(usage.estimated_cost_cents || 0) > 0 ? `${escapeHtml(String(usage.estimated_cost_cents))} centavos` : 'Não configurado'}</strong></div>
+                <div><span>Conexão do provedor</span><strong>${providerConfigured ? 'Configurada' : 'Pendente'}</strong></div>
+            </div>
+            <form class="owner-ai-settings-form" id="ownerAISettingsForm">
+                <div class="owner-upload-grid">
+                    <label class="payment-field"><span>Nome da assistente</span><input type="text" name="assistant_name" maxlength="60" value="${escapeAttr(settings.assistant_name || 'Express IA')}"></label>
+                    <label class="payment-field"><span>Modelo</span><input type="text" name="model" maxlength="100" value="${escapeAttr(settings.model || 'gpt-5.6-luna')}"></label>
+                    <label class="payment-field owner-upload-span-2"><span>Descrição da assistente</span><textarea name="description" maxlength="240" rows="2">${escapeHtml(settings.description || '')}</textarea></label>
+                    <label class="payment-field owner-upload-span-2"><span>Avatar da assistente (URL HTTPS)</span><input type="url" name="avatar_url" maxlength="500" inputmode="url" placeholder="https://..." value="${escapeAttr(settings.avatar_url || '')}"></label>
+                    <label class="payment-field owner-upload-span-2"><span>Mensagem de boas-vindas</span><textarea name="welcome_message" maxlength="240" rows="2">${escapeHtml(settings.welcome_message || '')}</textarea></label>
+                    <label class="payment-field owner-upload-span-2"><span>Tom de voz</span><input type="text" name="tone" maxlength="120" value="${escapeAttr(settings.tone || '')}"></label>
+                    <label class="payment-field"><span>Limite diário por usuário</span><input type="number" name="daily_request_limit_per_user" min="1" max="1000" step="1" value="${escapeAttr(String(settings.daily_request_limit_per_user || 10))}"></label>
+                    <label class="payment-field"><span>Limite diário da proprietária</span><input type="number" name="daily_request_limit_per_admin" min="1" max="5000" step="1" value="${escapeAttr(String(settings.daily_request_limit_per_admin || 100))}"></label>
+                    <label class="payment-field"><span>Orçamento mensal (R$)</span><input type="number" name="monthly_budget_brl" min="0" max="1000000" step="0.01" placeholder="Ex.: 20,00" value="${settings.monthly_budget_cents == null ? '' : escapeAttr((Number(settings.monthly_budget_cents) / 100).toFixed(2))}"></label>
+                    <label class="payment-field"><span>Máximo de tokens por resposta</span><input type="number" name="max_output_tokens" min="100" max="8000" step="50" value="${escapeAttr(String(settings.max_output_tokens || 1200))}"></label>
+                </div>
+                <div class="owner-editor-flags owner-ai-flags">
+                    <label class="owner-upload-toggle"><input type="checkbox" name="ai_enabled" ${enabled ? 'checked' : ''}><span>Ativar IA</span></label>
+                    <label class="owner-upload-toggle"><input type="checkbox" name="ai_editorial_enabled" ${editorialEnabled ? 'checked' : ''}><span>Assistente editorial</span></label>
+                    <label class="owner-upload-toggle"><input type="checkbox" name="ai_search_enabled" ${searchEnabled ? 'checked' : ''}><span>Busca conversacional</span></label>
+                </div>
+                <div class="owner-ai-settings-actions">
+                    <button class="btn btn-primary" type="submit"><i class="fas fa-floppy-disk"></i> Salvar configuração</button>
+                    <span class="owner-status" id="ownerAISettingsStatus"></span>
+                </div>
+            </form>
+        </section>
+    `;
+}
+
+function renderOwnerAIEditor(aiSettings = {}) {
+    const active = Boolean(aiSettings.ai_enabled && aiSettings.ai_editorial_enabled);
+    return `
+        <section class="owner-form-group owner-ai-editor">
+            <div class="owner-form-group-head">
+                <div>
+                    <strong>Assistente de conteúdo</strong>
+                    <span>Gere um rascunho usando somente os dados preenchidos. Nada será salvo sem sua revisão.</span>
+                </div>
+                <span class="owner-ai-state ${active ? 'active' : ''}">${active ? 'Disponível' : 'Desativada'}</span>
+            </div>
+            <div class="owner-ai-task-grid">
+                <label class="payment-field owner-ai-style"><span>Estilo da sinopse</span><select id="ownerAIStyle"><option value="sem spoilers">Sem spoilers</option><option value="curta">Curta</option><option value="detalhada">Detalhada</option><option value="emocional">Emocional</option><option value="misteriosa">Misteriosa</option><option value="direta">Direta</option><option value="promocional">Promocional</option></select></label>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="generate_seo" ${active ? '' : 'disabled'}>Gerar SEO</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="improve_short_synopsis" ${active ? '' : 'disabled'}>Melhorar resumo</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="improve_full_synopsis" ${active ? '' : 'disabled'}>Melhorar sinopse</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="suggest_tags" ${active ? '' : 'disabled'}>Sugerir tags</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="suggest_categories" ${active ? '' : 'disabled'}>Sugerir categorias</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="generate_telegram_copy" ${active ? '' : 'disabled'}>Texto para Telegram</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="generate_share_copy" ${active ? '' : 'disabled'}>Texto para compartilhar</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="suggest_alternate_title" ${active ? '' : 'disabled'}>Título alternativo</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="generate_promotional_call" ${active ? '' : 'disabled'}>Chamada promocional</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="generate_variations" ${active ? '' : 'disabled'}>Gerar variações</button>
+                <button type="button" class="btn btn-secondary" data-owner-ai-task="review_spelling" ${active ? '' : 'disabled'}>Revisar ortografia</button>
+            </div>
+            <p class="owner-ai-review-note"><i class="fas fa-circle-info"></i> Revise as informações antes de publicar.</p>
+            <div class="owner-ai-suggestion" id="ownerAISuggestion" hidden aria-live="polite"></div>
+        </section>
+    `;
+}
+
+function collectOwnerAISettings(form) {
+    const readChecked = (name) => form.elements.namedItem(name) instanceof HTMLInputElement && form.elements.namedItem(name).checked;
+    const readValue = (name) => String(form.elements.namedItem(name)?.value || '').trim();
+    const readInteger = (name, fallback) => {
+        const value = Number(readValue(name));
+        return Number.isFinite(value) ? Math.round(value) : fallback;
+    };
+    const monthlyBudget = Number(readValue('monthly_budget_brl').replace(',', '.'));
+    return {
+        ai_enabled: readChecked('ai_enabled'),
+        ai_editorial_enabled: readChecked('ai_editorial_enabled'),
+        ai_search_enabled: readChecked('ai_search_enabled'),
+        assistant_name: readValue('assistant_name'),
+        model: readValue('model'),
+        description: readValue('description'),
+        avatar_url: readValue('avatar_url') || null,
+        welcome_message: readValue('welcome_message'),
+        tone: readValue('tone'),
+        daily_request_limit_per_user: readInteger('daily_request_limit_per_user', 10),
+        daily_request_limit_per_admin: readInteger('daily_request_limit_per_admin', 100),
+        monthly_budget_cents: Number.isFinite(monthlyBudget) && readValue('monthly_budget_brl') !== ''
+            ? Math.max(0, Math.round(monthlyBudget * 100))
+            : null,
+        max_output_tokens: readInteger('max_output_tokens', 1200),
+    };
+}
+
+async function submitOwnerAISettings(event) {
+    event?.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) return;
+    const button = form.querySelector('button[type="submit"]');
+    const status = document.getElementById('ownerAISettingsStatus');
+    try {
+        if (button instanceof HTMLButtonElement) button.disabled = true;
+        if (status) status.textContent = 'Salvando...';
+        const result = await requestOwnerAISettings('save', collectOwnerAISettings(form));
+        if (ownerDashboardSnapshot) {
+            ownerDashboardSnapshot.ai = result?.ai || ownerDashboardSnapshot.ai;
+            renderOwnerDashboard(ownerDashboardSnapshot);
+        }
+        await loadAIStatus();
+        showToast('Configuração da Express IA atualizada.', 'success');
+    } catch (error) {
+        if (status) status.textContent = error?.message || 'Não foi possível salvar.';
+        showToast(error?.message || 'Não foi possível atualizar a Express IA.', 'error');
+    } finally {
+        if (button instanceof HTMLButtonElement && button.isConnected) button.disabled = false;
+    }
+}
+
+function getOwnerAIFormData() {
+    const form = document.getElementById('ownerSeriesForm');
+    if (!(form instanceof HTMLFormElement)) return {};
+    const draft = buildOwnerSeriesDraftFromForm(form);
+    return {
+        ...draft,
+        title: String(form.elements.namedItem('title')?.value || ''),
+        description: String(form.elements.namedItem('description')?.value || ''),
+        short_description: String(form.elements.namedItem('short_description')?.value || ''),
+        alternate_title: String(form.elements.namedItem('alternate_title')?.value || ''),
+        tags: String(form.elements.namedItem('tags')?.value || '').split(',').map((item) => item.trim()).filter(Boolean),
+        style: String(document.getElementById('ownerAIStyle')?.value || 'sem spoilers'),
+    };
+}
+
+function renderOwnerAISuggestion(result) {
+    const container = document.getElementById('ownerAISuggestion');
+    if (!container) return;
+    const fields = result?.suggestion?.fields || {};
+    const entries = [
+        ['Título SEO', fields.seo_title],
+        ['Descrição SEO', fields.seo_description],
+        ['Título social', fields.og_title],
+        ['Descrição social', fields.og_description],
+        ['Resumo curto', fields.short_description],
+        ['Sinopse', fields.description],
+        ['Título alternativo', fields.alternate_title],
+        ['Tags', Array.isArray(fields.tags) ? fields.tags.join(', ') : ''],
+        ['Categorias', Array.isArray(fields.categories) ? fields.categories.join(', ') : ''],
+        ['Texto para Telegram', fields.telegram_copy],
+        ['Texto para compartilhar', fields.share_copy],
+        ...(Array.isArray(fields.variations) ? fields.variations.map((value, index) => [`Variação ${index + 1}`, value]) : []),
+    ].filter(([, value]) => String(value || '').trim());
+    const notes = Array.isArray(result?.suggestion?.notes) ? result.suggestion.notes : [];
+    const applicableFields = getApplicableOwnerAIFields(fields);
+    const hasApplicableFields = Object.values(applicableFields).some((value) => String(value || '').trim());
+    const copyText = getOwnerAISuggestionCopyText(fields);
+    container.hidden = false;
+    container.innerHTML = `
+        <div class="owner-ai-suggestion-head">
+            <div><span class="owner-eyebrow">Rascunho para revisão</span><strong>Compare e escolha o que deseja aplicar</strong></div>
+            <span class="owner-ai-mode">${result?.mode === 'provider' ? 'Express IA' : result?.mode === 'cached' ? 'Sugestão reutilizada' : 'Modelo seguro'}</span>
+        </div>
+        <div class="owner-ai-suggestion-list">
+            ${entries.map(([label, value]) => `<article><span>${escapeHtml(label)}</span><p>${escapeHtml(String(value))}</p></article>`).join('') || '<p>Nenhuma alteração foi sugerida para os dados atuais.</p>'}
+        </div>
+        ${notes.length ? `<ul>${notes.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}</ul>` : ''}
+        ${result?.warning ? `<p class="owner-ai-warning">${escapeHtml(result.warning)}</p>` : ''}
+        <div class="owner-ai-suggestion-actions">
+            ${hasApplicableFields ? '<button type="button" class="btn btn-primary" data-owner-ai-apply><i class="fas fa-check"></i> Aplicar sugestão</button>' : ''}
+            ${copyText ? '<button type="button" class="btn btn-primary" data-owner-ai-copy><i class="fas fa-copy"></i> Copiar texto</button>' : ''}
+            <button type="button" class="btn btn-secondary" data-owner-ai-regenerate><i class="fas fa-arrow-rotate-right"></i> Gerar novamente</button>
+            <button type="button" class="btn btn-secondary" data-owner-ai-discard><i class="fas fa-xmark"></i> Descartar</button>
+            <button type="button" class="btn btn-secondary" data-owner-ai-restore ${ownerAIPreviousValues ? '' : 'hidden'}><i class="fas fa-clock-rotate-left"></i> Restaurar anterior</button>
+        </div>
+    `;
+    container.querySelector('[data-owner-ai-apply]')?.addEventListener('click', applyOwnerAISuggestion);
+    container.querySelector('[data-owner-ai-copy]')?.addEventListener('click', copyOwnerAISuggestion);
+    container.querySelector('[data-owner-ai-regenerate]')?.addEventListener('click', () => runOwnerAIGeneration(ownerAISuggestionState?.task || 'generate_seo'));
+    container.querySelector('[data-owner-ai-discard]')?.addEventListener('click', discardOwnerAISuggestion);
+    container.querySelector('[data-owner-ai-restore]')?.addEventListener('click', restoreOwnerAIValues);
+}
+
+function getOwnerAISuggestionCopyText(fields = {}) {
+    if (String(fields.telegram_copy || '').trim()) return String(fields.telegram_copy).trim();
+    if (String(fields.share_copy || '').trim()) return String(fields.share_copy).trim();
+    if (Array.isArray(fields.variations)) return fields.variations.map((value) => String(value || '').trim()).filter(Boolean).join('\n\n');
+    return '';
+}
+
+async function copyOwnerAISuggestion() {
+    const text = getOwnerAISuggestionCopyText(ownerAISuggestionState?.suggestion?.fields || {});
+    const copied = await copyToClipboard(text);
+    showToast(copied ? 'Texto copiado. Revise antes de publicar.' : 'Não foi possível copiar o texto.', copied ? 'success' : 'error');
+}
+
+async function runOwnerAIGeneration(task, button = null) {
+    const data = getOwnerAIFormData();
+    if (!String(data.title || '').trim()) {
+        showToast('Informe o título antes de pedir uma sugestão.', 'error');
+        document.querySelector('#ownerSeriesForm [name="title"]')?.focus();
+        return;
+    }
+    const previousLabel = button instanceof HTMLButtonElement ? button.innerHTML : '';
+    try {
+        if (button instanceof HTMLButtonElement) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando...';
+        }
+        const result = await requestOwnerAIGenerate(task, data, ownerSeriesEditId);
+        ownerAISuggestionState = { ...result, task };
+        renderOwnerAISuggestion(result);
+        document.getElementById('ownerAISuggestion')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (error) {
+        showToast(error?.message || 'Não foi possível gerar a sugestão.', 'error');
+    } finally {
+        if (button instanceof HTMLButtonElement && button.isConnected) {
+            button.disabled = false;
+            button.innerHTML = previousLabel;
+        }
+    }
+}
+
+function getApplicableOwnerAIFields(fields = {}) {
+    return {
+        seo_title: fields.seo_title,
+        seo_description: fields.seo_description,
+        og_title: fields.og_title,
+        og_description: fields.og_description,
+        short_description: fields.short_description,
+        description: fields.description,
+        alternate_title: fields.alternate_title,
+        tags: Array.isArray(fields.tags) ? fields.tags.join(', ') : '',
+        category: Array.isArray(fields.categories) ? fields.categories.join(', ') : '',
+    };
+}
+
+async function applyOwnerAISuggestion() {
+    const form = document.getElementById('ownerSeriesForm');
+    const result = ownerAISuggestionState;
+    if (!(form instanceof HTMLFormElement) || !result?.suggestion?.fields) return;
+    const values = getApplicableOwnerAIFields(result.suggestion.fields);
+    const previous = {};
+    const applied = {};
+    Object.entries(values).forEach(([name, value]) => {
+        if (!String(value || '').trim()) return;
+        const field = form.elements.namedItem(name);
+        if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) return;
+        previous[name] = field.value;
+        applied[name] = String(value);
+    });
+    try {
+        await requestOwnerAIReview(result.history_id, 'applied', applied);
+        ownerAIPreviousValues = previous;
+        Object.entries(applied).forEach(([name, value]) => {
+            const field = form.elements.namedItem(name);
+            if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
+                field.value = value;
+                field.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+        ownerAISuggestionState = null;
+        document.getElementById('ownerAISuggestion')?.setAttribute('hidden', '');
+        syncOwnerSeoPreview();
+        showToast('Sugestão aplicada ao formulário. Revise e salve quando estiver pronta.', 'success');
+    } catch (error) {
+        showToast(error?.message || 'Não foi possível aplicar a sugestão.', 'error');
+    }
+}
+
+async function discardOwnerAISuggestion() {
+    const result = ownerAISuggestionState;
+    try {
+        if (result?.history_id) await requestOwnerAIReview(result.history_id, 'rejected');
+    } catch (_) {
+        // O descarte local continua seguro mesmo se o registro remoto falhar.
+    }
+    ownerAISuggestionState = null;
+    const container = document.getElementById('ownerAISuggestion');
+    if (container) container.hidden = true;
+}
+
+function restoreOwnerAIValues() {
+    const form = document.getElementById('ownerSeriesForm');
+    if (!(form instanceof HTMLFormElement) || !ownerAIPreviousValues) return;
+    Object.entries(ownerAIPreviousValues).forEach(([name, value]) => {
+        const field = form.elements.namedItem(name);
+        if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) {
+            field.value = String(value || '');
+            field.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    });
+    ownerAIPreviousValues = null;
+    syncOwnerSeoPreview();
+    showToast('Conteúdo anterior restaurado no formulário.', 'success');
+}
+
 function renderOwnerDashboard(data) {
     if (!DOM.ownerDashboard) return;
 
@@ -4582,6 +4944,8 @@ function renderOwnerDashboard(data) {
     const payments = data?.payments || {};
     const analytics = data?.analytics || {};
     const coupons = data?.coupons || {};
+    const ai = data?.ai || {};
+    const aiSettings = ai?.settings || {};
     const funnel = analytics.funnel || {};
     const conversionRates = analytics.conversion_rates || {};
     const analyticsChannels = analytics.channels && typeof analytics.channels === 'object' ? analytics.channels : {};
@@ -4848,6 +5212,7 @@ function renderOwnerDashboard(data) {
                 </button>
             </div>
         </section>
+        ${renderOwnerAIManagement(ai)}
         <section class="owner-section owner-orders-section owner-orders-priority-section">
             <div class="owner-section-head">
                 <div>
@@ -4930,6 +5295,7 @@ function renderOwnerDashboard(data) {
                                 </label>
                             </div>
                         </section>
+                        ${renderOwnerAIEditor(aiSettings)}
                         <section class="owner-form-group">
                             <div class="owner-form-group-head">
                                 <strong>SEO e compartilhamento</strong>
@@ -5535,7 +5901,8 @@ async function init() {
         await syncPendingReferralAttribution();
         hydrateFavoriteSeriesFromCatalog(allSeries);
         await loadServerCart();
-        debugLog(`[INIT] ${allSeries.length} éries carregadas`);
+        await loadAIStatus();
+        debugLog(`[INIT] ${allSeries.length} séries carregadas`);
 
         renderNetflixRow(allSeries);
         refreshCatalog();
@@ -5599,6 +5966,8 @@ function setupEventListeners() {
     DOM.supportCloseBtn?.addEventListener('click', closeSupportForm);
     DOM.supportCancelBtn?.addEventListener('click', closeSupportForm);
     DOM.supportForm?.addEventListener('submit', submitSupportRequest);
+    DOM.aiSearchForm?.addEventListener('submit', submitAISearch);
+    DOM.aiSearchReset?.addEventListener('click', resetAISearch);
     DOM.supportOverlay?.addEventListener('click', (e) => {
         if (e.target.id === 'supportOverlay') closeSupportForm();
     });
@@ -5869,6 +6238,10 @@ function renderCatalogSkeleton(count = 6) {
 
 function getVisibleSeries() {
     let filtered = allSeries.slice();
+
+    if (aiSearchResultIds instanceof Set) {
+        filtered = filtered.filter((serie) => aiSearchResultIds.has(normalizeId(serie.id)));
+    }
 
     if (currentCategory === 'favorites') {
         filtered = filtered.filter((s) => isFavoriteSeries(s.id));
@@ -6741,6 +7114,79 @@ async function checkout() {
     });
 }
 
+async function loadAIStatus() {
+    try {
+        const data = await fetchWithTimeout(withCacheBuster(`${API_URL}?action=ai-status`), {}, 10000);
+        aiPublicConfig = data?.ai || null;
+    } catch (_) {
+        aiPublicConfig = null;
+    }
+    const enabled = Boolean(aiPublicConfig?.ai_enabled && aiPublicConfig?.ai_search_enabled);
+    if (DOM.aiDiscovery) DOM.aiDiscovery.hidden = !enabled;
+    if (enabled) {
+        if (DOM.aiDiscoveryTitle) DOM.aiDiscoveryTitle.textContent = `Pergunte à ${aiPublicConfig.assistant_name || 'Express IA'}`;
+        if (DOM.aiDiscoveryWelcome) DOM.aiDiscoveryWelcome.textContent = aiPublicConfig.welcome_message || 'Descreva o que deseja assistir.';
+    }
+}
+
+function setAISearchFeedback(message = '', type = 'info') {
+    if (!DOM.aiSearchFeedback) return;
+    DOM.aiSearchFeedback.hidden = !message;
+    DOM.aiSearchFeedback.className = `ai-search-feedback ${type}`;
+    DOM.aiSearchFeedback.textContent = message;
+}
+
+function resetAISearch() {
+    aiSearchResultIds = null;
+    if (DOM.aiSearchInput) DOM.aiSearchInput.value = '';
+    if (DOM.aiSearchReset) DOM.aiSearchReset.hidden = true;
+    setAISearchFeedback();
+    refreshCatalog();
+}
+
+async function submitAISearch(event) {
+    event?.preventDefault();
+    if (aiSearchPending) return;
+    const query = String(DOM.aiSearchInput?.value || '').replace(/\s+/g, ' ').trim();
+    if (query.length < 3) {
+        setAISearchFeedback('Conte um pouco mais sobre o que deseja assistir.', 'error');
+        DOM.aiSearchInput?.focus();
+        return;
+    }
+
+    aiSearchPending = true;
+    if (DOM.aiSearchButton) {
+        DOM.aiSearchButton.disabled = true;
+        DOM.aiSearchButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
+    }
+    setAISearchFeedback('Consultando somente títulos disponíveis no catálogo...', 'loading');
+    try {
+        const data = await requestJson(`${API_URL}?action=ai-search`, {
+            query,
+            init_data: tg?.initData || '',
+            session_id: getAnalyticsSessionId(),
+        }, 45000);
+        aiSearchResultIds = new Set((Array.isArray(data?.series_ids) ? data.series_ids : []).map(normalizeId).filter(Boolean));
+        currentCategory = 'all';
+        currentSearchTerm = '';
+        document.querySelectorAll('.category-chip').forEach((chip) => chip.classList.toggle('active', chip.dataset.category === 'all'));
+        [DOM.searchInput, DOM.headerSearchInput].forEach((input) => { if (input) input.value = ''; });
+        setAISearchFeedback(data?.explanation || 'Busca concluída.', aiSearchResultIds.size ? 'success' : 'empty');
+        if (DOM.aiSearchReset) DOM.aiSearchReset.hidden = false;
+        refreshCatalog();
+        DOM.catalogGrid?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (error) {
+        aiSearchResultIds = null;
+        setAISearchFeedback(error?.message || 'A busca inteligente está temporariamente indisponível. Use a busca normal acima.', 'error');
+    } finally {
+        aiSearchPending = false;
+        if (DOM.aiSearchButton) {
+            DOM.aiSearchButton.disabled = false;
+            DOM.aiSearchButton.innerHTML = '<i class="fas fa-wand-magic-sparkles"></i> Perguntar à Express IA';
+        }
+    }
+}
+
 // ==================== FILTROS ====================
 function normalizeSearchText(value) {
     return String(value || '')
@@ -6787,6 +7233,8 @@ function seriesMatchesCategory(serie, category) {
 }
 
 function filterCategory(category, options = {}) {
+    aiSearchResultIds = null;
+    if (DOM.aiSearchReset) DOM.aiSearchReset.hidden = true;
     currentCategory = (category || 'all').trim().toLowerCase();
     document.querySelectorAll('.category-chip').forEach((chip) => {
         chip.classList.toggle('active', (chip.dataset.category || 'all') === currentCategory);
@@ -6804,6 +7252,8 @@ function filterCategory(category, options = {}) {
 }
 
 function searchSeries(term, options = {}) {
+    aiSearchResultIds = null;
+    if (DOM.aiSearchReset) DOM.aiSearchReset.hidden = true;
     currentSearchTerm = (term || '').trim().toLowerCase();
     [DOM.searchInput, DOM.headerSearchInput].forEach((input) => {
         if (input && input.value !== term) input.value = term;

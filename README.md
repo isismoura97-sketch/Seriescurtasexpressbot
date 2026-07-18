@@ -14,6 +14,7 @@ Aplicação web estática para o catálogo "Séries Curtas Express", com integra
 - `docs/PAYMENTS_AND_ENTITLEMENTS.md` - canais de pagamento, conciliação, acessos e operação
 - `docs/FUNNEL_ANALYTICS.md` - eventos, idempotência e métricas reais do funil
 - `docs/DELIVERY_SECURITY_OPERATIONS_ROADMAP.md` - estado atual e próximas etapas de contas, segurança e operação
+- `docs/AI_ASSISTANT.md` - arquitetura, segurança, custos e ativação gradual da Express IA
 - `CHANGELOG.md` - histórico de mudanças relevantes
 
 ## Execução local
@@ -73,6 +74,14 @@ node scripts/generate-seo-files.mjs
 - `openExternalLink`
 
 O frontend nunca usa o modo web para liberar conteúdo pago. Compra, entrega, progresso remoto e área da proprietária continuam dependendo de `initData` validado pela Edge Function.
+
+## Express IA
+
+A camada opcional de IA foi implementada de forma isolada na Edge Function. Ela oferece sugestões editoriais com revisão humana e uma busca conversacional que só pode retornar títulos publicados pelo backend. A busca tradicional permanece disponível e nenhuma regra de pagamento, acesso, publicação ou entrega é delegada ao modelo.
+
+Todas as flags começam desligadas. A chave do provedor existe somente como segredo `AI_API_KEY` no Supabase; ela nunca é enviada ao navegador nem salva no banco. Sem chave, com limite atingido ou diante de erro do provedor, o sistema usa templates e filtros determinísticos.
+
+Consulte [docs/AI_ASSISTANT.md](docs/AI_ASSISTANT.md) antes de aplicar a migração ou ativar qualquer flag.
 
 ## Área da cliente
 

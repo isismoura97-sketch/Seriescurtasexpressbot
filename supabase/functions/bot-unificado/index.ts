@@ -1,3 +1,19 @@
+import {
+  buildFallbackEditorial,
+  buildFallbackSearchIntent,
+  DEFAULT_AI_SETTINGS,
+  filterCatalogByIntent,
+  hashAIValue,
+  normalizeAISettings,
+  normalizeSearchText as normalizeAISearchText,
+  sanitizeAIContext,
+  validateEditorialSuggestion,
+  validateSearchIntent,
+} from "./ai/core.ts";
+import { getAIPrompt } from "./ai/prompts.ts";
+import { createAIProvider } from "./ai/provider.ts";
+import type { AITask, AISettings, EditorialSuggestion, SearchIntent } from "./ai/types.ts";
+
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -136,6 +152,13 @@ const CUSTOMER_ACCOUNT_CONSENTS_TABLE = Deno.env.get("CUSTOMER_ACCOUNT_CONSENTS_
 const CUSTOMER_TELEGRAM_LINKS_TABLE = Deno.env.get("CUSTOMER_TELEGRAM_LINKS_TABLE") ?? "customer_telegram_links";
 const REFERRAL_CODES_TABLE = Deno.env.get("REFERRAL_CODES_TABLE") ?? "referral_codes";
 const REFERRALS_TABLE = Deno.env.get("REFERRALS_TABLE") ?? "referrals";
+const AI_SETTINGS_TABLE = Deno.env.get("AI_SETTINGS_TABLE") ?? "ai_settings";
+const AI_USAGE_LOGS_TABLE = Deno.env.get("AI_USAGE_LOGS_TABLE") ?? "ai_usage_logs";
+const AI_RESPONSE_CACHE_TABLE = Deno.env.get("AI_RESPONSE_CACHE_TABLE") ?? "ai_response_cache";
+const AI_EDITORIAL_HISTORY_TABLE = Deno.env.get("AI_EDITORIAL_HISTORY_TABLE") ?? "ai_editorial_history";
+const AI_API_KEY = Deno.env.get("AI_API_KEY") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
+const AI_INPUT_COST_PER_MILLION_CENTS = Math.max(0, Number(Deno.env.get("AI_INPUT_COST_PER_MILLION_CENTS") ?? "0") || 0);
+const AI_OUTPUT_COST_PER_MILLION_CENTS = Math.max(0, Number(Deno.env.get("AI_OUTPUT_COST_PER_MILLION_CENTS") ?? "0") || 0);
 const ANALYTICS_EVENT_NAMES = new Set([
   "app_opened",
   "catalog_loaded",
@@ -162,6 +185,9 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "delivery_completed",
   "cart_abandoned",
   "referral_attributed",
+  "ai_search_started",
+  "ai_search_completed",
+  "ai_editorial_generated",
 ]);
 
 function corsHeaders(req: Request) {
@@ -7254,6 +7280,569 @@ async function handleNotificationPreferences(req: Request) {
   return json(req, { ok: true, preferences: serializeNotificationPreferences(saved) });
 }
 
+const AI_EDITORIAL_TASKS = new Set<AITask>([
+  "generate_seo",
+  "improve_short_synopsis",
+  "improve_full_synopsis",
+  "suggest_tags",
+  "suggest_categories",
+  "generate_telegram_copy",
+  "generate_share_copy",
+  "suggest_alternate_title",
+  "generate_promotional_call",
+  "review_spelling",
+  "generate_variations",
+]);
+
+function envBoolean(name: string, fallback: boolean) {
+  const value = Deno.env.get(name);
+  if (value == null || value.trim() === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+async function getAISettings(): Promise<AISettings> {
+  let settings = DEFAULT_AI_SETTINGS;
+  try {
+    const rows = await supabaseFetch(`${AI_SETTINGS_TABLE}?select=*&singleton=eq.true&limit=1`);
+    settings = normalizeAISettings(Array.isArray(rows) ? rows[0] : null);
+  } catch (error) {
+    console.warn("[AI] Configuração persistida indisponível; usando padrão seguro:", error instanceof Error ? error.message : String(error));
+  }
+
+  return normalizeAISettings({
+    ...settings,
+    ai_enabled: envBoolean("AI_ENABLED", settings.ai_enabled),
+    ai_editorial_enabled: envBoolean("AI_EDITORIAL_ENABLED", settings.ai_editorial_enabled),
+    ai_search_enabled: envBoolean("AI_SEARCH_ENABLED", settings.ai_search_enabled),
+    ai_support_enabled: envBoolean("AI_SUPPORT_ENABLED", settings.ai_support_enabled),
+    ai_streaming_enabled: envBoolean("AI_STREAMING_ENABLED", settings.ai_streaming_enabled),
+    provider: Deno.env.get("AI_PROVIDER") || settings.provider,
+    model: Deno.env.get("AI_MODEL") || settings.model,
+    max_output_tokens: Deno.env.get("AI_MAX_OUTPUT_TOKENS") || settings.max_output_tokens,
+    request_timeout_ms: Deno.env.get("AI_REQUEST_TIMEOUT") || settings.request_timeout_ms,
+    daily_request_limit_per_user: Deno.env.get("AI_DAILY_REQUEST_LIMIT_PER_USER") || settings.daily_request_limit_per_user,
+    daily_request_limit_per_admin: Deno.env.get("AI_DAILY_REQUEST_LIMIT_PER_ADMIN") || settings.daily_request_limit_per_admin,
+    monthly_budget_cents: Deno.env.get("AI_MONTHLY_BUDGET_CENTS") || settings.monthly_budget_cents,
+    max_input_characters: Deno.env.get("AI_MAX_INPUT_CHARACTERS") || settings.max_input_characters,
+  });
+}
+
+function serializeAISettings(settings: AISettings, includeLimits = false) {
+  return {
+    ai_enabled: settings.ai_enabled,
+    ai_editorial_enabled: settings.ai_editorial_enabled,
+    ai_search_enabled: settings.ai_search_enabled,
+    ai_support_enabled: settings.ai_support_enabled,
+    ai_streaming_enabled: settings.ai_streaming_enabled,
+    provider: settings.provider,
+    model: settings.model,
+    assistant_name: settings.assistant_name,
+    welcome_message: settings.welcome_message,
+    tone: settings.tone,
+    description: settings.description,
+    avatar_url: settings.avatar_url,
+    provider_configured: Boolean(AI_API_KEY),
+    ...(includeLimits ? {
+      daily_request_limit_per_user: settings.daily_request_limit_per_user,
+      daily_request_limit_per_admin: settings.daily_request_limit_per_admin,
+      monthly_budget_cents: settings.monthly_budget_cents,
+      max_input_characters: settings.max_input_characters,
+      max_output_tokens: settings.max_output_tokens,
+      request_timeout_ms: settings.request_timeout_ms,
+      cache_ttl_seconds: settings.cache_ttl_seconds,
+    } : {}),
+  };
+}
+
+function getAIErrorCode(error: unknown) {
+  const value = error instanceof Error ? error.message : String(error || "ai_unknown_error");
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "ai_unknown_error";
+}
+
+function estimateAICostCents(inputTokens: number | null, outputTokens: number | null) {
+  if (!AI_INPUT_COST_PER_MILLION_CENTS && !AI_OUTPUT_COST_PER_MILLION_CENTS) return null;
+  return Number((
+    ((inputTokens || 0) * AI_INPUT_COST_PER_MILLION_CENTS / 1_000_000)
+    + ((outputTokens || 0) * AI_OUTPUT_COST_PER_MILLION_CENTS / 1_000_000)
+  ).toFixed(6));
+}
+
+async function logAIUsage(entry: {
+  userId?: string;
+  userRole: "anonymous" | "user" | "owner" | "system";
+  task: string;
+  settings: AISettings;
+  promptVersion: string;
+  status: "success" | "failed" | "blocked" | "cached" | "fallback";
+  latencyMs?: number;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cacheHit?: boolean;
+  inputHash?: string;
+  errorCode?: string;
+}) {
+  try {
+    await supabaseRestRequest(AI_USAGE_LOGS_TABLE, {
+      method: "POST",
+      headers: { "content-type": "application/json", prefer: "return=minimal" },
+      body: stringifyJson([{
+        user_id: entry.userId || null,
+        user_role: entry.userRole,
+        task: entry.task,
+        provider: entry.settings.provider,
+        model: entry.settings.model,
+        prompt_version: entry.promptVersion,
+        input_tokens: entry.inputTokens ?? null,
+        output_tokens: entry.outputTokens ?? null,
+        estimated_cost_cents: estimateAICostCents(entry.inputTokens ?? null, entry.outputTokens ?? null),
+        status: entry.status,
+        latency_ms: entry.latencyMs ?? null,
+        cache_hit: entry.cacheHit === true,
+        input_hash: entry.inputHash || null,
+        error_code: entry.errorCode || null,
+      }]),
+    });
+  } catch (error) {
+    console.warn("[AI] Falha ao registrar consumo:", error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function getAIMonthlySpendCents() {
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const rows = await supabaseFetch(
+    `${AI_USAGE_LOGS_TABLE}?select=estimated_cost_cents&created_at=gte.${encodeURIComponent(monthStart.toISOString())}&limit=10000`,
+  ).catch(() => []);
+  return (Array.isArray(rows) ? rows : []).reduce((sum, row) => (
+    sum + (Number((row as Record<string, unknown>).estimated_cost_cents ?? 0) || 0)
+  ), 0);
+}
+
+async function assertAIRateLimit(settings: AISettings, userId: string, isOwner: boolean) {
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+  const limit = isOwner ? settings.daily_request_limit_per_admin : settings.daily_request_limit_per_user;
+  const rows = await supabaseFetch(
+    `${AI_USAGE_LOGS_TABLE}?select=id&user_id=eq.${encodeURIComponent(userId)}&created_at=gte.${encodeURIComponent(start.toISOString())}&status=in.(success,cached,fallback)&limit=${limit + 1}`,
+  ).catch(() => []);
+  if (Array.isArray(rows) && rows.length >= limit) throw new Error("ai_daily_limit_reached");
+  if (settings.monthly_budget_cents != null && await getAIMonthlySpendCents() >= settings.monthly_budget_cents) {
+    throw new Error("ai_monthly_budget_reached");
+  }
+}
+
+async function getAICachedResponse(cacheKey: string) {
+  const rows = await supabaseFetch(
+    `${AI_RESPONSE_CACHE_TABLE}?select=response&cache_key=eq.${encodeURIComponent(cacheKey)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&limit=1`,
+  ).catch(() => []);
+  if (!Array.isArray(rows) || !rows.length) return null;
+  void supabaseRestRequest(`${AI_RESPONSE_CACHE_TABLE}?cache_key=eq.${encodeURIComponent(cacheKey)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", prefer: "return=minimal" },
+    body: stringifyJson({ last_hit_at: new Date().toISOString() }),
+  }).catch(() => null);
+  const response = (rows[0] as Record<string, unknown>).response;
+  return response && typeof response === "object" ? response as Record<string, unknown> : null;
+}
+
+async function setAICachedResponse(cacheKey: string, task: AITask, response: Record<string, unknown>, settings: AISettings, promptVersion: string) {
+  await supabaseRestRequest(`${AI_RESPONSE_CACHE_TABLE}?on_conflict=cache_key`, {
+    method: "POST",
+    headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates,return=minimal" },
+    body: stringifyJson([{
+      cache_key: cacheKey,
+      task,
+      response,
+      prompt_version: promptVersion,
+      provider: settings.provider,
+      model: settings.model,
+      expires_at: new Date(Date.now() + settings.cache_ttl_seconds * 1000).toISOString(),
+    }]),
+  });
+}
+
+async function runStructuredAI(options: {
+  task: AITask;
+  data: Record<string, unknown>;
+  settings: AISettings;
+  userId: string;
+  userRole: "anonymous" | "user" | "owner";
+  cacheable: boolean;
+  fallback: () => Record<string, unknown>;
+  validate: (value: unknown) => Record<string, unknown>;
+}) {
+  const prompt = getAIPrompt(options.task, options.settings.tone);
+  const safeData = sanitizeAIContext(options.data, options.settings.max_input_characters);
+  const inputHash = await hashAIValue({ task: options.task, data: safeData, prompt: prompt.version, model: options.settings.model });
+  const startedAt = Date.now();
+
+  try {
+    await assertAIRateLimit(options.settings, options.userId, options.userRole === "owner");
+  } catch (error) {
+    await logAIUsage({
+      userId: options.userId,
+      userRole: options.userRole,
+      task: options.task,
+      settings: options.settings,
+      promptVersion: prompt.version,
+      status: "blocked",
+      inputHash,
+      errorCode: getAIErrorCode(error),
+    });
+    throw error;
+  }
+
+  if (options.cacheable) {
+    const cached = await getAICachedResponse(inputHash);
+    if (cached) {
+      const validated = options.validate(cached);
+      await logAIUsage({
+        userId: options.userId,
+        userRole: options.userRole,
+        task: options.task,
+        settings: options.settings,
+        promptVersion: prompt.version,
+        status: "cached",
+        latencyMs: Date.now() - startedAt,
+        cacheHit: true,
+        inputHash,
+      });
+      return { data: validated, mode: "cached", promptVersion: prompt.version };
+    }
+  }
+
+  if (!AI_API_KEY) {
+    const fallback = options.validate(options.fallback());
+    await logAIUsage({
+      userId: options.userId,
+      userRole: options.userRole,
+      task: options.task,
+      settings: options.settings,
+      promptVersion: prompt.version,
+      status: "fallback",
+      latencyMs: Date.now() - startedAt,
+      inputHash,
+      errorCode: "ai_provider_not_configured",
+    });
+    return { data: fallback, mode: "fallback", promptVersion: prompt.version };
+  }
+
+  try {
+    const provider = createAIProvider(options.settings.provider, AI_API_KEY);
+    let result = null;
+    let validated: Record<string, unknown> | null = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        result = await provider.generateStructured({
+          task: options.task,
+          model: options.settings.model,
+          instructions: attempt === 0
+            ? prompt.instructions
+            : `${prompt.instructions}\nA resposta anterior foi inválida. Retorne somente o JSON exigido pelo schema.`,
+          data: safeData,
+          schemaName: prompt.name,
+          schema: prompt.schema,
+          maxOutputTokens: options.settings.max_output_tokens,
+          timeoutMs: options.settings.request_timeout_ms,
+        });
+        validated = options.validate(result.data);
+        break;
+      } catch (error) {
+        const code = getAIErrorCode(error);
+        const canRetry = attempt === 0 && ["ai_provider_invalid_json", "ai_provider_empty_response"].includes(code);
+        if (!canRetry) throw error;
+      }
+    }
+    if (!result || !validated) throw new Error("ai_provider_invalid_response");
+    if (options.cacheable) await setAICachedResponse(inputHash, options.task, validated, options.settings, prompt.version).catch(() => null);
+    await logAIUsage({
+      userId: options.userId,
+      userRole: options.userRole,
+      task: options.task,
+      settings: options.settings,
+      promptVersion: prompt.version,
+      status: "success",
+      latencyMs: Date.now() - startedAt,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      inputHash,
+    });
+    return { data: validated, mode: "provider", promptVersion: prompt.version };
+  } catch (error) {
+    const fallback = options.validate(options.fallback());
+    await logAIUsage({
+      userId: options.userId,
+      userRole: options.userRole,
+      task: options.task,
+      settings: options.settings,
+      promptVersion: prompt.version,
+      status: "fallback",
+      latencyMs: Date.now() - startedAt,
+      inputHash,
+      errorCode: getAIErrorCode(error),
+    });
+    return { data: fallback, mode: "fallback", promptVersion: prompt.version };
+  }
+}
+
+async function getAIDashboard() {
+  const settings = await getAISettings();
+  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const rows = await supabaseFetch(
+    `${AI_USAGE_LOGS_TABLE}?select=task,status,estimated_cost_cents,latency_ms,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`,
+  ).catch(() => []);
+  const usage = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
+  const byStatus: Record<string, number> = {};
+  const byTask: Record<string, number> = {};
+  let latencyTotal = 0;
+  let latencyCount = 0;
+  let estimatedCostCents = 0;
+  for (const row of usage) {
+    const status = String(row.status || "unknown");
+    const task = String(row.task || "unknown");
+    byStatus[status] = (byStatus[status] || 0) + 1;
+    byTask[task] = (byTask[task] || 0) + 1;
+    estimatedCostCents += Number(row.estimated_cost_cents || 0) || 0;
+    if (Number.isFinite(Number(row.latency_ms))) {
+      latencyTotal += Number(row.latency_ms);
+      latencyCount += 1;
+    }
+  }
+  return {
+    settings: serializeAISettings(settings, true),
+    usage: {
+      period_days: 30,
+      requests_total: usage.length,
+      estimated_cost_cents: Number(estimatedCostCents.toFixed(4)),
+      average_latency_ms: latencyCount ? Math.round(latencyTotal / latencyCount) : 0,
+      by_status: byStatus,
+      by_task: byTask,
+    },
+  };
+}
+
+async function handleAIStatus(req: Request) {
+  const settings = await getAISettings();
+  return json(req, { ok: true, ai: serializeAISettings(settings) });
+}
+
+function getCatalogAIDimensions(series: Record<string, unknown>[]) {
+  const collect = (values: unknown[]) => Array.from(new Set(values.flatMap((value) => {
+    if (Array.isArray(value)) return value.map(String);
+    return String(value ?? "").split(/[,/;|]/);
+  }).map((value) => value.trim()).filter(Boolean))).slice(0, 200);
+  return {
+    genres: collect(series.flatMap((item) => [item.genres, item.genre, item.category])),
+    tags: collect(series.map((item) => item.tags)),
+    languages: collect(series.flatMap((item) => [item.language, item.subtitle_language])),
+    titles: series.map((item) => String(item.title ?? "").trim()).filter(Boolean),
+  };
+}
+
+function buildAISearchExplanation(results: Record<string, unknown>[], intent: SearchIntent, usedFallback: boolean) {
+  if (!results.length) return "Não encontrei títulos publicados que correspondam a esse pedido. Tente termos mais amplos.";
+  const filters = [
+    ...intent.filters.genres,
+    ...intent.filters.tags,
+    intent.filters.isFree === true ? "gratuitas" : intent.filters.isFree === false ? "pagas" : "",
+    intent.filters.language,
+  ].filter(Boolean).slice(0, 4);
+  const suffix = usedFallback ? " A busca tradicional segura foi usada como apoio." : "";
+  return `Encontrei ${results.length} ${results.length === 1 ? "opção" : "opções"}${filters.length ? ` para ${filters.join(", ")}` : " no catálogo"}.${suffix}`;
+}
+
+async function handleAISearch(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  const query = String(body.query ?? "").replace(/\s+/g, " ").trim();
+  if (query.length < 3 || query.length > 500) return json(req, { error: "Escreva uma busca entre 3 e 500 caracteres" }, 400);
+
+  let userId = `session:${String(body.session_id ?? "anonymous").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "anonymous"}`;
+  const initData = String(body.init_data ?? body.initData ?? "");
+  if (initData) {
+    try {
+      userId = (await validateWebAppInitData(initData)).userId;
+    } catch {
+      return json(req, { error: "Sessao do Telegram invalida" }, 401);
+    }
+  }
+
+  const settings = await getAISettings();
+  void recordAppEvent({
+    eventName: "ai_search_started",
+    userId,
+    eventSource: "backend",
+    salesChannel: initData ? "telegram" : "web",
+    metadata: { query_length: query.length, ai_enabled: settings.ai_enabled && settings.ai_search_enabled },
+  });
+  const series = await getSeriesList(userId);
+  const records = series as Record<string, unknown>[];
+  const allowed = getCatalogAIDimensions(records);
+  const fallbackIntent = buildFallbackSearchIntent(query, allowed);
+  let intent = fallbackIntent;
+  let mode = "fallback";
+
+  if (settings.ai_enabled && settings.ai_search_enabled) {
+    const result = await runStructuredAI({
+      task: "extract_search_filters",
+      data: {
+        query,
+        available_genres: allowed.genres,
+        available_tags: allowed.tags,
+        available_languages: allowed.languages,
+        title: allowed.titles,
+      },
+      settings,
+      userId,
+      userRole: initData ? "user" : "anonymous",
+      cacheable: true,
+      fallback: () => fallbackIntent as unknown as Record<string, unknown>,
+      validate: (value) => validateSearchIntent(value, allowed) as unknown as Record<string, unknown>,
+    });
+    intent = result.data as unknown as SearchIntent;
+    mode = result.mode;
+  }
+
+  const results = filterCatalogByIntent(records, intent);
+  void recordAppEvent({
+    eventName: "ai_search_completed",
+    userId,
+    eventSource: "backend",
+    salesChannel: initData ? "telegram" : "web",
+    metadata: { result_count: results.length, mode, ai_enabled: settings.ai_enabled && settings.ai_search_enabled },
+  });
+  return json(req, {
+    ok: true,
+    enabled: settings.ai_enabled && settings.ai_search_enabled,
+    mode,
+    assistant_name: settings.assistant_name,
+    explanation: buildAISearchExplanation(results, intent, mode === "fallback"),
+    filters: intent.filters,
+    series_ids: results.map((item) => String(item.id ?? "")).filter(Boolean),
+  });
+}
+
+async function handleOwnerAISettings(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
+  if (String(body.operation ?? "get") !== "save") return json(req, { ok: true, ai: await getAIDashboard() });
+
+  const current = await getAISettings();
+  const candidate = normalizeAISettings({ ...current, ...(body.settings && typeof body.settings === "object" ? body.settings : {}) });
+  const avatar = candidate.avatar_url;
+  if (avatar && !/^https:\/\//i.test(avatar)) return json(req, { error: "O avatar precisa usar HTTPS" }, 400);
+  if (candidate.ai_enabled && candidate.monthly_budget_cents == null) {
+    return json(req, { error: "Defina um orçamento mensal antes de ativar a IA" }, 400);
+  }
+  if (candidate.ai_enabled && AI_API_KEY && (!AI_INPUT_COST_PER_MILLION_CENTS || !AI_OUTPUT_COST_PER_MILLION_CENTS)) {
+    return json(req, { error: "Configure as tarifas de entrada e saída antes de ativar o provedor" }, 400);
+  }
+  await supabaseRestRequest(`${AI_SETTINGS_TABLE}?singleton=eq.true`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", prefer: "return=minimal" },
+    body: stringifyJson({ ...candidate, singleton: true, updated_by: access.userId }),
+  });
+  return json(req, { ok: true, ai: await getAIDashboard() });
+}
+
+async function handleOwnerAIGenerate(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
+  const task = String(body.task ?? "") as AITask;
+  if (!AI_EDITORIAL_TASKS.has(task)) return json(req, { error: "Tarefa editorial invalida" }, 400);
+
+  const settings = await getAISettings();
+  if (!settings.ai_enabled || !settings.ai_editorial_enabled) {
+    return json(req, { error: "A assistente editorial esta desativada", code: "ai_editorial_disabled" }, 503);
+  }
+  const seriesId = String(body.series_id ?? "").trim();
+  const stored = seriesId ? await getSeriesById(seriesId) : null;
+  const draft = body.data && typeof body.data === "object" ? body.data as Record<string, unknown> : {};
+  const data = sanitizeAIContext({ ...(stored || {}), ...draft }, settings.max_input_characters);
+  if (!String(data.title ?? "").trim()) return json(req, { error: "Informe o titulo antes de gerar uma sugestao" }, 400);
+
+  try {
+    const result = await runStructuredAI({
+      task,
+      data,
+      settings,
+      userId: access.userId,
+      userRole: "owner",
+      cacheable: true,
+      fallback: () => buildFallbackEditorial(task, data) as unknown as Record<string, unknown>,
+      validate: (value) => validateEditorialSuggestion(value) as unknown as Record<string, unknown>,
+    });
+    const suggestion = result.data as unknown as EditorialSuggestion;
+    const rows = await supabaseRestRequest(AI_EDITORIAL_HISTORY_TABLE, {
+      method: "POST",
+      headers: { "content-type": "application/json", prefer: "return=representation" },
+      body: stringifyJson([{
+        series_id: seriesId || null,
+        actor_user_id: access.userId,
+        task,
+        original_content: data,
+        suggested_content: suggestion,
+        provider: settings.provider,
+        model: settings.model,
+        prompt_version: result.promptVersion,
+      }]),
+    });
+    const historyId = Array.isArray(rows) ? String(rows[0]?.id ?? "") : "";
+    void recordAppEvent({
+      eventName: "ai_editorial_generated",
+      userId: access.userId,
+      seriesId: seriesId || undefined,
+      eventSource: "backend",
+      metadata: { task, mode: result.mode },
+    });
+    return json(req, {
+      ok: true,
+      suggestion,
+      history_id: historyId,
+      mode: result.mode,
+      prompt_version: result.promptVersion,
+      warning: result.mode === "fallback" ? "A geração inteligente estava indisponível; foi usado um modelo determinístico seguro." : null,
+    });
+  } catch (error) {
+    const code = getAIErrorCode(error);
+    const status = code.includes("limit") || code.includes("budget") ? 429 : 502;
+    return json(req, { error: code.includes("limit") ? "O limite de uso da IA foi atingido. Tente novamente mais tarde." : "Não foi possível gerar a sugestão agora.", code }, status);
+  }
+}
+
+async function handleOwnerAIReview(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
+  const historyId = String(body.history_id ?? "").trim();
+  const operation = String(body.operation ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(historyId) || !["applied", "rejected"].includes(operation)) {
+    return json(req, { error: "Revisao editorial invalida" }, 400);
+  }
+  const rows = await supabaseFetch(
+    `${AI_EDITORIAL_HISTORY_TABLE}?select=id,actor_user_id,status&id=eq.${encodeURIComponent(historyId)}&limit=1`,
+  );
+  const history = Array.isArray(rows) ? rows[0] as Record<string, unknown> : null;
+  if (!history || String(history.actor_user_id ?? "") !== access.userId || history.status !== "generated") {
+    return json(req, { error: "Sugestao editorial indisponivel" }, 404);
+  }
+  const appliedContent = operation === "applied" && body.applied_content && typeof body.applied_content === "object"
+    ? sanitizeAIContext(body.applied_content, 8000)
+    : null;
+  await supabaseRestRequest(`${AI_EDITORIAL_HISTORY_TABLE}?id=eq.${encodeURIComponent(historyId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", prefer: "return=minimal" },
+    body: stringifyJson({ status: operation, applied_content: appliedContent, reviewed_at: new Date().toISOString() }),
+  });
+  return json(req, { ok: true, status: operation });
+}
+
 function serializeOwnerCoupon(
   row: Record<string, unknown>,
   redemptions: Record<string, unknown>[],
@@ -7323,12 +7912,13 @@ async function getOwnerCouponDashboard() {
 }
 
 async function buildOwnerDashboardPayload(userId: string) {
-  const [series, episodes, payments, analytics, coupons] = await Promise.all([
+  const [series, episodes, payments, analytics, coupons, ai] = await Promise.all([
     getSeriesList("", true) as Promise<Record<string, unknown>[]>,
     getEpisodesList().catch(() => [] as Record<string, unknown>[]),
     getOwnerPaymentRows(),
     getOwnerAnalytics(),
     getOwnerCouponDashboard(),
+    getAIDashboard(),
   ]);
 
   const sortedSeries = sortByCreatedAtDesc(series);
@@ -7373,6 +7963,7 @@ async function buildOwnerDashboardPayload(userId: string) {
     },
     analytics,
     coupons,
+    ai,
     series_items: sortedSeries.map((row) => serializeOwnerSeries(row)),
     recent_series: sortedSeries.slice(0, 8).map((row) => serializeOwnerSeries(row)),
   };
@@ -8492,6 +9083,14 @@ if (import.meta.main) Deno.serve(async (req) => {
       return await handleSeriesSlugResolve(req, url);
     }
 
+    if (action === "ai-status" && req.method === "GET") {
+      return await handleAIStatus(req);
+    }
+
+    if (action === "ai-search" && req.method === "POST") {
+      return await handleAISearch(req);
+    }
+
     if (action === "support-submit" && req.method === "POST") {
       return await handleSupportSubmitV2(req);
     }
@@ -8574,6 +9173,18 @@ if (import.meta.main) Deno.serve(async (req) => {
 
     if (action === "owner-dashboard" && req.method === "POST") {
       return await handleOwnerDashboard(req);
+    }
+
+    if (action === "owner-ai-settings" && req.method === "POST") {
+      return await handleOwnerAISettings(req);
+    }
+
+    if (action === "owner-ai-generate" && req.method === "POST") {
+      return await handleOwnerAIGenerate(req);
+    }
+
+    if (action === "owner-ai-review" && req.method === "POST") {
+      return await handleOwnerAIReview(req);
     }
 
     if (action === "owner-coupon-save" && req.method === "POST") {

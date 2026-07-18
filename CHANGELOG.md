@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-18 - Express IA isolada e desativada por padrão
+
+- Criada uma camada backend de IA com adapter de provedor, prompts versionados, saída estruturada e chave restrita aos segredos do Supabase.
+- A área da proprietária ganhou sugestões de SEO, sinopses, tags, categorias e textos promocionais, sempre com comparação e aprovação humana antes de alterar o formulário.
+- A busca conversacional opcional extrai filtros validados e retorna somente séries reais do catálogo; a busca tradicional continua sendo o fallback.
+- Feature flags, limites por usuário, orçamento mensal, timeout, cache, logs mínimos de consumo e auditoria de configurações foram preparados em migração não destrutiva.
+- Senhas, tokens, e-mails de clientes, dados financeiros e referências privadas de mídia são removidos do contexto; prompts e respostas integrais não são gravados nos logs de uso.
+- Pagamentos, autenticação, biblioteca, publicação, acesso e entrega pelo Telegram não foram alterados nem delegados à IA.
+
 ## 2026-07-17 - Indicações com atribuição real
 
 - A área da cliente ganhou `/indicacoes` com código individual, link compartilhável e contadores de indicações pendentes, confirmadas e revertidas.

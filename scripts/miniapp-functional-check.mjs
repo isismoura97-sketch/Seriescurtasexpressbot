@@ -303,6 +303,26 @@ async function installRoutes(page, options = {}) {
     const url = new URL(route.request().url());
     const action = url.searchParams.get('action');
 
+    if (action === 'ai-status') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          ai: {
+            ai_enabled: false,
+            ai_editorial_enabled: false,
+            ai_search_enabled: false,
+            ai_support_enabled: false,
+            ai_streaming_enabled: false,
+            assistant_name: 'Express IA',
+            welcome_message: 'Encontre uma série de acordo com o que deseja assistir.',
+            provider_configured: false,
+          },
+        }),
+      });
+      return;
+    }
+
     if (action === 'series') {
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(fixtureSeries) });
       return;
@@ -931,6 +951,7 @@ async function main() {
       supportButton: Boolean(document.querySelector('#supportBtn')),
       supportOverlay: Boolean(document.querySelector('#supportOverlay')),
       supportForm: Boolean(document.querySelector('#supportForm')),
+      aiDiscoveryHidden: Boolean(document.querySelector('#aiDiscovery')?.hidden),
       coverFallbacks: [
         document.querySelector('#catalogGrid .card[data-id="814e3fba-38ce-47d5-b554-9e6b26c6eb58"] img')?.getAttribute('src') || '',
         document.querySelector('#catalogGrid .card[data-id="e9ea003f-36fd-4fa7-bb3b-6a8cef7fee15"] img')?.getAttribute('src') || '',
@@ -1149,6 +1170,8 @@ async function main() {
       couponForm: Boolean(document.querySelector('#ownerCouponForm')),
       couponCards: document.querySelectorAll('.owner-coupon-card').length,
       couponText: document.querySelector('.owner-coupon-section')?.textContent?.replace(/\s+/g, ' ').trim() || '',
+      aiSettingsForm: Boolean(document.querySelector('#ownerAISettingsForm')),
+      aiTaskButtons: document.querySelectorAll('[data-owner-ai-task]').length,
     }));
 
     await page.fill('#ownerCouponForm [name="code"]', 'novo15');
@@ -1288,10 +1311,11 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.starsActive || !initial.webMethodsHidden) failures.push('Telegram Stars not enforced inside Telegram');
-    if (!initial.appJs.includes('20260717-03')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260718-01')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
+    if (!initial.aiDiscoveryHidden) failures.push('disabled AI discovery should remain hidden');
     if (!initial.groupTitles.includes('Séries Gratuitas') || !initial.groupTitles.includes('Séries Pagas')) failures.push(`catalog groups missing: ${initial.groupTitles.join(', ')}`);
     if (!initial.groupCounts.includes('8 títulos') || !initial.groupCounts.includes('1 título')) failures.push(`catalog group counts unexpected: ${initial.groupCounts.join(', ')}`);
     if (!initial.paidCardAction.includes('Ver detalhes')) failures.push(`paid card action before payment: ${initial.paidCardAction}`);
@@ -1340,6 +1364,7 @@ async function main() {
       || !ownerState.text.includes('Conversão por canal')) failures.push('owner area failed');
     if (!ownerState.seoField || !ownerState.seoGenerateButton || !ownerState.seoRestoreButton || ownerState.seoPreviewCount < 2 || !ownerState.seoSitemapChecked || !ownerState.statusField || !ownerState.deliveryField || ownerState.editorialButtons < 2 || ownerState.statusPills < 2) failures.push(`owner CMS lifecycle failed: ${JSON.stringify(ownerState)}`);
     if (!ownerState.couponForm || ownerState.couponCards !== 1 || !ownerState.couponText.includes('CLIENTE10')) failures.push(`owner coupon UI failed: ${JSON.stringify(ownerState)}`);
+    if (!ownerState.aiSettingsForm || ownerState.aiTaskButtons < 11) failures.push(`owner AI controls failed: ${JSON.stringify(ownerState)}`);
     if (ownerCouponSavePayload?.code !== 'NOVO15' || ownerCouponSavePayload?.discount_type !== 'percentage' || Number(ownerCouponSavePayload?.discount_value) !== 15 || Number(ownerCouponSavePayload?.usage_limit) !== 50 || ownerCouponSavePayload?.eligible_series_ids?.[0] !== 'paid-owner-series') failures.push(`owner coupon save failed: ${JSON.stringify(ownerCouponSavePayload)}`);
     if (ownerCouponActionPayload?.code !== 'CLIENTE10' || ownerCouponActionPayload?.operation !== 'deactivate') failures.push(`owner coupon action failed: ${JSON.stringify(ownerCouponActionPayload)}`);
     if (!migratedOwnerState.visible || (!migratedOwnerState.text.includes('Prontas2') && !migratedOwnerState.text.includes('Em fila0'))) failures.push('owner migration failed');

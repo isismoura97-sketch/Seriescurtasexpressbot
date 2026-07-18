@@ -33,7 +33,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
 
     <!-- CSS Principal -->
-    <link rel="stylesheet" href="/styles.css?v=20260717-03">
+    <link rel="stylesheet" href="/styles.css?v=20260718-01">
 
     <!-- Content Security Policy -->
     <meta http-equiv="Content-Security-Policy"
@@ -80,7 +80,7 @@
             </div>
 
             <div class="loading-player" id="playerLoading">
-                <img class="player-loading-logo" src="/assets/logo-welcome.png?v=20260717-03" alt="Séries Express">
+                <img class="player-loading-logo" src="/assets/logo-welcome.png?v=20260718-01" alt="Séries Express">
                 <div class="spinner"></div>
                 <div class="player-loading-title" id="playerLoadingTitle">Preparando reprodução</div>
                 <div class="player-loading-subtitle" id="playerLoadingSubtitle">Carregando vídeo dentro do Mini App...</div>
@@ -395,6 +395,25 @@
                 <input type="search" id="searchInput" placeholder="Buscar séries, gêneros ou temas..." aria-label="Buscar séries, gêneros ou temas" autocomplete="off">
             </div>
 
+            <section class="ai-discovery" id="aiDiscovery" hidden aria-labelledby="aiDiscoveryTitle">
+                <div class="ai-discovery-copy">
+                    <span class="ai-kicker"><i class="fas fa-sparkles"></i> Assistente de IA</span>
+                    <h2 id="aiDiscoveryTitle">O que você quer assistir?</h2>
+                    <p id="aiDiscoveryWelcome">Descreva o clima, o tema ou o tipo de história que procura.</p>
+                </div>
+                <form class="ai-search-form" id="aiSearchForm">
+                    <label class="sr-only" for="aiSearchInput">Perguntar à Express IA</label>
+                    <input id="aiSearchInput" type="search" maxlength="500" autocomplete="off" placeholder="Ex.: Quero uma série curta de romance com vampiro.">
+                    <button class="btn btn-primary" id="aiSearchButton" type="submit">
+                        <i class="fas fa-wand-magic-sparkles"></i> Perguntar à Express IA
+                    </button>
+                </form>
+                <div class="ai-search-feedback" id="aiSearchFeedback" hidden aria-live="polite"></div>
+                <button class="ai-search-reset" id="aiSearchReset" type="button" hidden>
+                    <i class="fas fa-arrow-rotate-left"></i> Voltar ao catálogo completo
+                </button>
+            </section>
+
             <div class="categories">
                 <button class="category-chip active" data-category="all">Todas</button>
                 <button class="category-chip" data-category="favorites">Favoritas</button>
@@ -430,7 +449,7 @@
     </footer>
 
     <!-- Script Principal -->
-    <script defer src="/app.min.js?v=20260717-03"></script>
+    <script defer src="/app.min.js?v=20260718-01"></script>
 
     <!-- Vercel Speed Insights -->
     <script defer src="/_vercel/speed-insights/script.js"></script>
