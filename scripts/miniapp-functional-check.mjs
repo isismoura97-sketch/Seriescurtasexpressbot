@@ -32,6 +32,8 @@ const fixtureSeries = [
     title: 'Direto Funcional',
     description: 'Video direto de teste.',
     category: 'Drama',
+    categories: ['Drama', 'LGBTQIA+'],
+    is_lgbtqia_content: true,
     price: 0,
     cover_url: svgCover('Direto', '#1A2744'),
     video_url: 'https://example.com/direct-ok.mp4',
@@ -931,7 +933,7 @@ async function main() {
     await page.waitForSelector('#catalogGrid .card', { timeout: 10000 });
 
     const initial = await page.evaluate(() => ({
-      cards: document.querySelectorAll('#catalogGrid .card').length,
+      cards: new Set([...document.querySelectorAll('#catalogGrid .card')].map((node) => node.dataset.id)).size,
       groupTitles: [...document.querySelectorAll('#catalogGrid .catalog-group-title')].map((node) => node.textContent?.trim() || ''),
       groupCounts: [...document.querySelectorAll('#catalogGrid .catalog-group-count')].map((node) => node.textContent?.trim() || ''),
       paidCardAction: document.querySelector('#catalogGrid .card[data-id="paid-series"] .card-cart-btn')?.textContent?.replace(/\s+/g, ' ').trim() || '',
@@ -958,7 +960,7 @@ async function main() {
       ],
     }));
 
-    await page.locator('#catalogGrid .card[data-id="direct-ok"]').click();
+    await page.locator('#catalogGrid .card[data-id="direct-ok"]').first().click();
     await waitForNodeCondition(() => deliveryLog.length >= 1);
     const directDeliveryState = await page.evaluate(() => ({
       overlay: document.querySelector('#playerOverlay')?.classList.contains('active'),
@@ -1226,16 +1228,25 @@ async function main() {
     await webPage.waitForTimeout(350);
     const webSearchState = await webPage.evaluate(() => ({
       path: `${location.pathname}${location.search}`,
-      cards: document.querySelectorAll('#catalogGrid .card').length,
+      cards: new Set([...document.querySelectorAll('#catalogGrid .card')].map((node) => node.dataset.id)).size,
     }));
     await webPage.fill('#headerSearchInput', '');
     await webPage.waitForTimeout(350);
-    await webPage.locator('#catalogGrid .card[data-id="direct-ok"] .card-favorite-btn').click();
+    await webPage.locator('#catalogGrid .card[data-id="direct-ok"] .card-favorite-btn').first().click();
     await webPage.locator('.category-chip[data-category="favorites"]').click();
     const webFavoritesState = await webPage.evaluate(() => ({
       path: location.pathname,
       cards: document.querySelectorAll('#catalogGrid .card').length,
       favoriteActive: document.querySelector('#catalogGrid .card[data-id="direct-ok"] .card-favorite-btn')?.classList.contains('active'),
+    }));
+    await webPage.goto(`http://127.0.0.1:${port}/categoria/lgbtqia`, { waitUntil: 'domcontentloaded' });
+    await webPage.waitForSelector('#catalogGrid .card[data-id="direct-ok"]', { timeout: 10000 });
+    const webLgbtqiaState = await webPage.evaluate(() => ({
+      path: location.pathname,
+      title: document.title,
+      cards: document.querySelectorAll('#catalogGrid .card').length,
+      section: Array.from(document.querySelectorAll('.catalog-group-title')).some((node) => node.textContent?.includes('LGBTQIA+')),
+      canonical: document.querySelector('link[rel="canonical"]')?.getAttribute('href') || '',
     }));
     await webPage.locator('.category-chip[data-category="all"]').click();
     await webPage.locator('#catalogGrid .card[data-id="paid-series"]').click();
@@ -1285,7 +1296,7 @@ async function main() {
     await linkedWebPage.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
     await linkedWebPage.waitForSelector('#catalogGrid .card[data-id="paid-series"]', { timeout: 10000 });
     await linkedWebPage.waitForSelector('#cartBtn:not([hidden])', { timeout: 10000 });
-    await linkedWebPage.locator('#catalogGrid .card[data-id="direct-ok"] .card-favorite-btn').click();
+    await linkedWebPage.locator('#catalogGrid .card[data-id="direct-ok"] .card-favorite-btn').first().click();
     await linkedWebPage.locator('#catalogGrid .card[data-id="paid-series"]').click();
     await linkedWebPage.locator('#modalActions button').first().click();
     await linkedWebPage.waitForSelector('#cartDrawer.active', { timeout: 10000 });
@@ -1311,17 +1322,19 @@ async function main() {
     const failures = [];
     if (initial.cards !== fixtureSeries.length) failures.push(`catalog cards: ${initial.cards}`);
     if (!initial.starsActive || !initial.webMethodsHidden) failures.push('Telegram Stars not enforced inside Telegram');
-    if (!initial.appJs.includes('20260718-01')) failures.push('cache version not updated');
+    if (!initial.appJs.includes('20260718-02')) failures.push('cache version not updated');
     if (!initial.welcomeLogo.includes('assets/logo-welcome.png')) failures.push('player logo asset missing');
     if (!initial.playerControls || !initial.playerSeekInput || !initial.playerVolumeInput) failures.push('player controls missing');
     if (!initial.supportButton || !initial.supportOverlay || !initial.supportForm) failures.push('support ui missing');
     if (!initial.aiDiscoveryHidden) failures.push('disabled AI discovery should remain hidden');
+    if (!initial.groupTitles.some((title) => title.includes('LGBTQIA+'))) failures.push('LGBTQIA+ home section missing');
     if (!initial.groupTitles.includes('Séries Gratuitas') || !initial.groupTitles.includes('Séries Pagas')) failures.push(`catalog groups missing: ${initial.groupTitles.join(', ')}`);
     if (!initial.groupCounts.includes('8 títulos') || !initial.groupCounts.includes('1 título')) failures.push(`catalog group counts unexpected: ${initial.groupCounts.join(', ')}`);
     if (!initial.paidCardAction.includes('Ver detalhes')) failures.push(`paid card action before payment: ${initial.paidCardAction}`);
     if (initial.topBadges !== 0) failures.push(`cover badge count: ${initial.topBadges}`);
     if (initial.lockedPaidPlayback !== 'locked') failures.push(`locked playback state: ${initial.lockedPaidPlayback}`);
     if (initial.missingPlayback !== 'missing') failures.push(`missing playback state: ${initial.missingPlayback}`);
+    if (webLgbtqiaState.path !== '/categoria/lgbtqia' || webLgbtqiaState.cards !== 1 || !webLgbtqiaState.title.includes('LGBTQIA+') || !webLgbtqiaState.canonical.includes('/categoria/lgbtqia')) failures.push('LGBTQIA+ category route failed');
     if (deliveryLog.length !== 5) failures.push(`delivery count mismatch: ${deliveryLog.length}`);
     if (deliveryLog.filter((entry) => entry.seriesId === 'direct-ok').length !== 1 || directDeliveryState.overlay || directDeliveryState.modal) failures.push('direct telegram delivery failed');
     if (!directState.overlay || directState.videoDisplay !== 'block' || directState.playerError || directState.muted || !directState.controlsActive) failures.push('direct player failed');

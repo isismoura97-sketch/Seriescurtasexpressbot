@@ -19,6 +19,12 @@ function slugify(value) {
     .slice(0, 100);
 }
 
+function getSeriesCategories(serie) {
+  const values = [serie?.categories, serie?.category]
+    .flatMap((value) => Array.isArray(value) ? value : String(value || '').split(/[,/|;]/));
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
 function escapeXml(value) {
   return String(value).replace(/[<>&'\"]/g, (character) => ({
     '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;',
@@ -87,7 +93,7 @@ function buildSeriesHtml(template, serie, slug) {
   const image = seo.og_image_url;
   const socialTitle = seo.og_title;
   const socialDescription = seo.og_description;
-  const genres = String(serie.category || '').split(/[,/|;]/).map((entry) => entry.trim()).filter(Boolean);
+  const genres = getSeriesCategories(serie);
   const duration = Number(serie.duration_minutes || 0);
   const schema = seo.schema || {
     '@context': 'https://schema.org',
@@ -138,6 +144,7 @@ const urls = new Set([
   `${SITE_URL}/busca`,
   `${SITE_URL}/favoritos`,
   `${SITE_URL}/categoria/gratuitas`,
+  `${SITE_URL}/categoria/lgbtqia`,
   `${SITE_URL}/categoria/dubladas`,
   `${SITE_URL}/categoria/legendadas`,
   `${SITE_URL}/ajuda`,
@@ -157,7 +164,10 @@ for (const serie of catalog) {
     await fs.writeFile(path.join(pageDirectory, 'index.html'), buildSeriesHtml(indexTemplate, serie, slug), 'utf8');
   }
   if (seo.indexable) {
-    const categories = String(serie?.category || '').split(/[,/|;]/).map(slugify).filter(Boolean);
+    const categories = getSeriesCategories(serie).map(slugify).filter(Boolean);
+    if (serie?.is_lgbtqia_content === true && categories.some((category) => category === 'lgbtqia' || category.includes('lgbtqia'))) {
+      categories.push('lgbtqia');
+    }
     categories.forEach((category) => urls.add(`${SITE_URL}/categoria/${category}`));
   }
 }

@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260718-01';
+const BUILD_VERSION = '20260718-02';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -110,7 +110,7 @@ function buildAutomaticSeriesSeo(serie = {}) {
     const title = String(serie.title || '').replace(/\s+/g, ' ').trim();
     const slug = getSeriesSlug({ ...serie, title });
     const canonical = sanitizeUrl(serie.canonical_url) || new URL(`/series/${slug}`, window.location.origin).toString();
-    const genres = normalizeSeriesTerms(serie.genre || serie.genres || serie.category);
+    const genres = getSeriesCategories(serie);
     const summary = String(serie.short_description || serie.description || '').replace(/\s+/g, ' ').trim();
     const genreText = genres.length ? ` de ${genres.slice(0, 3).join(', ')}` : '';
     const generatedTitle = truncateSeoText(`${title || 'Série'} — Série Curta Completa`, 70);
@@ -746,12 +746,13 @@ function setMetaContent(selector, content) {
 function updatePageMetadata(serie = null) {
     const siteName = 'Séries Curtas Express';
     const seo = serie ? getSeriesResolvedSeo(serie) : null;
-    const title = seo?.title || siteName;
-    const description = seo?.description || 'Descubra séries curtas completas, gratuitas e premium, com acesso pelo Telegram.';
-    const canonical = seo?.canonical_url || new URL('/', window.location.origin).toString();
+    const categorySeo = !serie ? getCategorySeo(currentCategory) : null;
+    const title = seo?.title || categorySeo?.title || siteName;
+    const description = seo?.description || categorySeo?.description || 'Descubra séries curtas completas, gratuitas e premium, com acesso pelo Telegram.';
+    const canonical = seo?.canonical_url || categorySeo?.canonical || new URL('/', window.location.origin).toString();
     const image = seo?.og_image_url || new URL('/assets/logo-welcome.png', window.location.origin).toString();
-    const socialTitle = seo?.og_title || title;
-    const socialDescription = seo?.og_description || description;
+    const socialTitle = seo?.og_title || categorySeo?.title || title;
+    const socialDescription = seo?.og_description || categorySeo?.description || description;
 
     document.title = title;
     setMetaContent('meta[name="description"]', description);
@@ -768,10 +769,10 @@ function updatePageMetadata(serie = null) {
     const schemaNode = document.getElementById('seriesStructuredData');
     if (!schemaNode) return;
     if (!serie) {
-        schemaNode.textContent = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: siteName, url: canonical });
+        schemaNode.textContent = JSON.stringify(categorySeo?.schema || { '@context': 'https://schema.org', '@type': 'WebSite', name: siteName, url: canonical });
         return;
     }
-    const genres = normalizeSeriesTerms(serie.genre || serie.genres || serie.category);
+    const genres = getSeriesCategories(serie);
     const durationMinutes = Number(serie.duration_minutes || serie.durationMinutes || 0);
     schemaNode.textContent = JSON.stringify(seo?.schema || {
         '@context': 'https://schema.org',
@@ -1697,6 +1698,10 @@ async function applyPublicRoute() {
     } else {
         const categoryMatch = path.match(/^\/categoria\/([^/]+)$/);
         if (categoryMatch) filterCategory(categoryMatch[1], { updateUrl: false });
+        else {
+            currentSearchTerm = '';
+            filterCategory('all', { updateUrl: false });
+        }
     }
     updatePageMetadata(null);
 }
@@ -3774,6 +3779,7 @@ function updateOwnerFormMode(serie = null) {
     const trailerInput = document.querySelector('input[name="trailer_file"]');
     const titleInput = document.querySelector('input[name="title"]');
     const categoryInput = document.querySelector('input[name="category"]');
+    const categoriesInput = document.querySelector('input[name="categories"]');
     const descriptionInput = document.querySelector('textarea[name="description"]');
     const freeToggle = document.getElementById('ownerSeriesFree');
     const priceInput = document.getElementById('ownerSeriesPrice');
@@ -3811,6 +3817,11 @@ function updateOwnerFormMode(serie = null) {
     if (categoryInput instanceof HTMLInputElement) {
         categoryInput.value = serie?.category || 'Geral';
     }
+    if (categoriesInput instanceof HTMLInputElement) {
+        categoriesInput.value = Array.isArray(serie?.categories)
+            ? serie.categories.join(', ')
+            : String(serie?.category || 'Geral');
+    }
     if (descriptionInput instanceof HTMLTextAreaElement) {
         descriptionInput.value = serie?.description || '';
     }
@@ -3819,6 +3830,8 @@ function updateOwnerFormMode(serie = null) {
         alternate_title: serie?.alternate_title || '',
         short_description: serie?.short_description || '',
         tags: Array.isArray(serie?.tags) ? serie.tags.join(', ') : (serie?.tags || ''),
+        lgbtqia_editorial_description: serie?.lgbtqia_editorial_description || '',
+        content_warnings: Array.isArray(serie?.content_warnings) ? serie.content_warnings.join(', ') : (serie?.content_warnings || ''),
         language: serie?.language || 'Português',
         subtitle_language: serie?.subtitle_language || '',
         duration_minutes: serie?.duration_minutes || '',
@@ -3835,7 +3848,7 @@ function updateOwnerFormMode(serie = null) {
         const field = form?.querySelector(`[name="${name}"]`);
         if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = String(value ?? '');
     });
-    ['is_featured', 'is_dubbed', 'is_subtitled', 'is_new', 'seo_noindex'].forEach((name) => {
+    ['is_featured', 'is_dubbed', 'is_subtitled', 'is_new', 'is_lgbtqia_content', 'seo_noindex'].forEach((name) => {
         const field = form?.querySelector(`[name="${name}"]`);
         if (field instanceof HTMLInputElement) field.checked = serie?.[name] === true;
     });
@@ -3941,6 +3954,7 @@ function buildOwnerSeriesDraftFromForm(form) {
     };
     const titleField = form?.querySelector('[name="title"]');
     const categoryField = form?.querySelector('[name="category"]');
+    const categoriesField = form?.querySelector('[name="categories"]');
     const descriptionField = form?.querySelector('[name="description"]');
     const slugField = form?.querySelector('[name="slug"]');
     const shortDescriptionField = form?.querySelector('[name="short_description"]');
@@ -3951,6 +3965,7 @@ function buildOwnerSeriesDraftFromForm(form) {
         id: ownerSeriesEditId || 'nova-serie',
         title: titleField instanceof HTMLInputElement ? titleField.value : '',
         category: categoryField instanceof HTMLInputElement ? categoryField.value : '',
+        categories: categoriesField instanceof HTMLInputElement ? categoriesField.value.split(',').map((item) => item.trim()).filter(Boolean) : [],
         description: descriptionField instanceof HTMLTextAreaElement ? descriptionField.value : '',
         short_description: shortDescriptionField instanceof HTMLTextAreaElement ? shortDescriptionField.value : '',
         slug: slugField instanceof HTMLInputElement ? slugField.value : '',
@@ -3964,6 +3979,9 @@ function buildOwnerSeriesDraftFromForm(form) {
         status: statusField instanceof HTMLSelectElement ? statusField.value : 'draft',
         is_active: statusField instanceof HTMLSelectElement && statusField.value === 'published',
         is_free: checkbox('is_free'),
+        is_lgbtqia_content: checkbox('is_lgbtqia_content'),
+        lgbtqia_editorial_description: value('lgbtqia_editorial_description'),
+        content_warnings: value('content_warnings').split(',').map((item) => item.trim()).filter(Boolean),
         price: priceField instanceof HTMLInputElement ? Number(priceField.value || 0) : 0,
         seo_noindex: checkbox('seo_noindex'),
         seo_sitemap_enabled: checkbox('seo_sitemap_enabled'),
@@ -4148,7 +4166,7 @@ function wireOwnerUploadForm() {
     }
 
     const seoSourceNames = [
-        'title', 'category', 'description', 'short_description', 'slug', 'language',
+        'title', 'category', 'categories', 'description', 'short_description', 'slug', 'language',
         'duration_minutes', 'release_year', 'age_rating', 'seo_noindex', 'seo_sitemap_enabled',
     ];
     seoSourceNames.forEach((name) => {
@@ -4769,6 +4787,9 @@ function getOwnerAIFormData() {
         description: String(form.elements.namedItem('description')?.value || ''),
         short_description: String(form.elements.namedItem('short_description')?.value || ''),
         alternate_title: String(form.elements.namedItem('alternate_title')?.value || ''),
+        categories: String(form.elements.namedItem('categories')?.value || '').split(',').map((item) => item.trim()).filter(Boolean),
+        is_lgbtqia_content: Boolean(form.elements.namedItem('is_lgbtqia_content')?.checked),
+        lgbtqia_editorial_description: String(form.elements.namedItem('lgbtqia_editorial_description')?.value || ''),
         tags: String(form.elements.namedItem('tags')?.value || '').split(',').map((item) => item.trim()).filter(Boolean),
         style: String(document.getElementById('ownerAIStyle')?.value || 'sem spoilers'),
     };
@@ -4872,7 +4893,7 @@ function getApplicableOwnerAIFields(fields = {}) {
         description: fields.description,
         alternate_title: fields.alternate_title,
         tags: Array.isArray(fields.tags) ? fields.tags.join(', ') : '',
-        category: Array.isArray(fields.categories) ? fields.categories.join(', ') : '',
+        categories: Array.isArray(fields.categories) ? fields.categories.join(', ') : '',
     };
 }
 
@@ -5292,6 +5313,31 @@ function renderOwnerDashboard(data) {
                                 <label class="payment-field owner-upload-span-2">
                                     <span>Descrição</span>
                                     <textarea name="description" rows="4" placeholder="Descreva a série"></textarea>
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Categorias relacionadas</span>
+                                    <input type="text" name="categories" placeholder="Romance, Drama, LGBTQIA+, Casamento">
+                                    <small>Separe por vírgulas. Uma série pode participar de várias categorias.</small>
+                                </label>
+                            </div>
+                        </section>
+                        <section class="owner-form-group">
+                            <div class="owner-form-group-head">
+                                <strong>Representação e temas</strong>
+                                <span>Classifique somente quando a representação estiver fundamentada no conteúdo cadastrado.</span>
+                            </div>
+                            <div class="owner-upload-grid">
+                                <label class="owner-upload-toggle owner-upload-span-2">
+                                    <input type="checkbox" name="is_lgbtqia_content">
+                                    <span>A série possui temática ou representação LGBTQIA+ confirmada</span>
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Descrição editorial interna</span>
+                                    <textarea name="lgbtqia_editorial_description" rows="3" maxlength="1000" placeholder="Explique objetivamente a base da classificação para revisão interna."></textarea>
+                                </label>
+                                <label class="payment-field owner-upload-span-2">
+                                    <span>Avisos de conteúdo</span>
+                                    <input type="text" name="content_warnings" placeholder="Ex.: preconceito, violência, luto">
                                 </label>
                             </div>
                         </section>
@@ -6120,7 +6166,7 @@ function updateHero(index) {
 
     if (DOM.heroMeta) {
         const metadata = [
-            ...normalizeSeriesTerms(serie.genre || serie.category).slice(0, 1),
+            ...getSeriesCategories(serie).slice(0, 1),
             serie.language || serie.audio_language,
             serie.duration_minutes ? `${serie.duration_minutes} min` : '',
             'Série completa',
@@ -6167,9 +6213,18 @@ function renderGrid(series) {
 
     const freeSeries = series.filter((serie) => isFree(serie));
     const paidSeries = series.filter((serie) => !isFree(serie));
+    const lgbtqiaSeries = currentCategory === 'all' && !currentSearchTerm && !(aiSearchResultIds instanceof Set)
+        ? series.filter((serie) => isLgbtqiaSeries(serie))
+        : [];
     const fragment = document.createDocumentFragment();
 
     [
+        {
+            key: 'lgbtqia',
+            title: '🏳️‍🌈 Séries LGBTQIA+',
+            subtitle: 'Histórias de romance, drama, comédia e representatividade.',
+            items: lgbtqiaSeries,
+        },
         {
             key: 'free',
             title: 'Séries Gratuitas',
@@ -6632,7 +6687,7 @@ function openModal(serie) {
 
     if (DOM.modalSeriesMeta) {
         const metadata = [
-            ...normalizeSeriesTerms(serie.genre || serie.genres || serie.category).slice(0, 2),
+            ...getSeriesCategories(serie).slice(0, 2),
             serie.language || serie.audio_language,
             serie.duration_minutes ? `${serie.duration_minutes} min` : '',
             'Série completa',
@@ -6752,6 +6807,7 @@ function getRelatedSeries(currentSerie, catalog = allSeries, limit = 4) {
     if (!currentSerie) return [];
     const currentTerms = new Set(normalizeSearchText([
         currentSerie.category,
+        currentSerie.categories,
         currentSerie.genre,
         currentSerie.genres,
         currentSerie.tags,
@@ -6763,6 +6819,7 @@ function getRelatedSeries(currentSerie, catalog = allSeries, limit = 4) {
         .map((candidate) => {
             const candidateTerms = new Set(normalizeSearchText([
                 candidate.category,
+                candidate.categories,
                 candidate.genre,
                 candidate.genres,
                 candidate.tags,
@@ -6810,6 +6867,9 @@ function closeModal() {
     }
     if (window.location.pathname.startsWith('/series/')) {
         history.pushState({ route: 'home' }, '', '/');
+        currentCategory = 'all';
+        currentSearchTerm = '';
+        refreshCatalog();
         updatePageMetadata(null);
     }
 }
@@ -7202,6 +7262,43 @@ function normalizeSeriesTerms(value) {
     return entries.map((entry) => String(entry || '').trim()).filter(Boolean);
 }
 
+function getSeriesCategories(serie = {}) {
+    const values = [serie?.categories, serie?.category, serie?.genre, serie?.genres]
+        .flatMap((value) => normalizeSeriesTerms(value));
+    return Array.from(new Set(values.map((value) => String(value).trim()).filter(Boolean)));
+}
+
+function isLgbtqiaSeries(serie = {}) {
+    if (serie?.is_lgbtqia_content !== true) return false;
+    return getSeriesCategories(serie).some((category) => {
+        const normalized = slugify(category);
+        return normalized === 'lgbtqia' || normalized.includes('lgbtqia');
+    });
+}
+
+function getCategorySeo(category) {
+    const normalized = slugify(category);
+    if (!normalized || normalized === 'all' || normalized === 'favorites') return null;
+    if (normalized === 'lgbtqia') {
+        const canonical = new URL('/categoria/lgbtqia', window.location.origin).toString();
+        const title = 'Séries Curtas LGBTQIA+ — Romance, Drama e Representatividade';
+        const description = 'Conheça séries curtas LGBTQIA+ com histórias de romance, drama, comédia, fantasia e personagens diversos.';
+        return {
+            title,
+            description,
+            canonical,
+            schema: {
+                '@context': 'https://schema.org',
+                '@type': 'CollectionPage',
+                name: title,
+                description,
+                url: canonical,
+            },
+        };
+    }
+    return null;
+}
+
 function buildSeriesSearchText(serie) {
     const terms = [
         serie?.title,
@@ -7210,6 +7307,7 @@ function buildSeriesSearchText(serie) {
         serie?.short_description,
         serie?.description,
         serie?.category,
+        serie?.categories,
         serie?.genre,
         serie?.genres,
         serie?.tags,
@@ -7226,6 +7324,7 @@ function seriesMatchesCategory(serie, category) {
     const normalizedCategory = slugify(category);
     if (normalizedCategory === 'gratuitas') return isFree(serie);
     if (normalizedCategory === 'pagas') return !isFree(serie);
+    if (normalizedCategory === 'lgbtqia') return isLgbtqiaSeries(serie);
     const searchable = buildSeriesSearchText(serie);
     if (normalizedCategory === 'dubladas') return searchable.includes('dublad');
     if (normalizedCategory === 'legendadas') return searchable.includes('legendad');

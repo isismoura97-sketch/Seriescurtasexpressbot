@@ -164,7 +164,11 @@ export function sanitizeAIContext(value: unknown, maxCharacters = 8000) {
     "genre",
     "genres",
     "category",
+    "categories",
     "tags",
+    "is_lgbtqia_content",
+    "lgbtqia_editorial_description",
+    "content_warnings",
     "language",
     "subtitle_language",
     "duration_minutes",
@@ -398,7 +402,7 @@ export function buildFallbackEditorial(
     fields.tags = cleanList(data.tags, 8, 50);
   } else if (task === "suggest_categories") {
     fields.categories = cleanList(
-      data.genres || data.genre || data.category,
+      data.categories || data.genres || data.genre || data.category,
       5,
       60,
     );
@@ -429,6 +433,7 @@ export function filterCatalogByIntent(
     ? normalizeSearchText([
       similar.genre,
       similar.category,
+      ...(Array.isArray(similar.categories) ? similar.categories : []),
       ...(Array.isArray(similar.tags) ? similar.tags : []),
     ].join(" ")).split(" ").filter(Boolean)
     : [];
@@ -440,6 +445,7 @@ export function filterCatalogByIntent(
       item.description,
       item.genre,
       item.category,
+      ...(Array.isArray(item.categories) ? item.categories : []),
       ...(Array.isArray(item.tags) ? item.tags : []),
       item.language,
     ].join(" "));

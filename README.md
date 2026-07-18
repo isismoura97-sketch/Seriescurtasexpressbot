@@ -41,6 +41,7 @@ python -m http.server 8000
 
 - `/series/[slug]` - detalhes públicos da série
 - `/categoria/[slug]` - catálogo filtrado por gênero ou tipo
+- `/categoria/lgbtqia` - séries com representação LGBTQIA+ confirmada editorialmente
 - `/busca?q=termo` - busca por título, sinopse, gênero, tags, idioma e temas
 - `/favoritos` - favoritos sincronizados no Telegram ou mantidos no navegador
 - `/ajuda`, `/termos` e `/privacidade` - páginas institucionais

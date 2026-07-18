@@ -238,6 +238,18 @@ function normalizeSeriesTags(value: unknown) {
   return Array.from(new Set(entries.map((entry) => String(entry ?? "").trim()).filter(Boolean))).slice(0, 24);
 }
 
+function isLgbtqiaCategory(value: unknown) {
+  const normalized = slugifySeriesTitle(value);
+  return normalized === "lgbtqia" || normalized.includes("lgbtqia");
+}
+
+function getSeriesCategories(row: Record<string, unknown>) {
+  return Array.from(new Set([
+    ...normalizeSeriesTags(row.categories),
+    ...normalizeSeriesTags(row.category),
+  ])).slice(0, 24);
+}
+
 function truncateSeoText(value: unknown, maxLength: number) {
   const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
   if (normalized.length <= maxLength) return normalized;
@@ -275,7 +287,7 @@ function buildAutomaticSeriesSeo(row: Record<string, unknown>, siteUrl = SERIES_
   const slug = slugifySeriesTitle(row.slug || title || row.id);
   const baseUrl = getSeriesSeoBaseUrl(siteUrl);
   const pageUrl = new URL(`/series/${slug}`, baseUrl).toString();
-  const genres = getSeriesGenres(row.genres ?? row.genre ?? row.category);
+  const genres = getSeriesGenres(row.categories ?? row.genres ?? row.genre ?? row.category);
   const summary = String(row.short_description ?? row.description ?? "").replace(/\s+/g, " ").trim();
   const genreText = genres.length ? ` de ${genres.slice(0, 3).join(", ")}` : "";
   const generatedTitle = truncateSeoText(`${title || "Série"} — Série Curta Completa`, 70);
@@ -5238,6 +5250,7 @@ async function getSeriesList(userId = "", includeProtected = false) {
       delete output.storage_path;
       delete output.cover_storage_path;
       delete output.trailer_storage_path;
+      delete output.lgbtqia_editorial_description;
     }
 
     return output;
@@ -6964,6 +6977,10 @@ function serializeOwnerSeries(row: Record<string, unknown>) {
     title: String(row.title ?? ""),
     description: String(row.description ?? ""),
     category: String(row.category ?? ""),
+    categories: getSeriesCategories(row),
+    is_lgbtqia_content: row.is_lgbtqia_content === true,
+    lgbtqia_editorial_description: String(row.lgbtqia_editorial_description ?? ""),
+    content_warnings: normalizeSeriesTags(row.content_warnings),
     slug: String(row.slug ?? ""),
     alternate_title: String(row.alternate_title ?? ""),
     short_description: String(row.short_description ?? ""),
@@ -8366,6 +8383,13 @@ async function handleOwnerSeriesCreate(req: Request) {
   const title = String(form.get("title") ?? "").trim();
   const description = String(form.get("description") ?? "").trim();
   const category = String(form.get("category") ?? "Geral").trim() || "Geral";
+  const categories = Array.from(new Set([
+    ...normalizeSeriesTags(form.get("categories")),
+    category,
+  ])).slice(0, 24);
+  const isLgbtqiaContent = isTruthyInput(form.get("is_lgbtqia_content"));
+  const lgbtqiaEditorialDescription = String(form.get("lgbtqia_editorial_description") ?? "").trim().slice(0, 1000) || null;
+  const contentWarnings = normalizeSeriesTags(form.get("content_warnings")).slice(0, 12);
   const requestedSlug = slugifySeriesTitle(form.get("slug"));
   const alternateTitle = String(form.get("alternate_title") ?? "").trim() || null;
   const shortDescription = String(form.get("short_description") ?? "").trim().slice(0, 220) || null;
@@ -8415,6 +8439,14 @@ async function handleOwnerSeriesCreate(req: Request) {
 
   if (status === "published" && !description) {
     return json(req, { error: "Informe a descricao antes de publicar" }, 400);
+  }
+
+  if (status === "published" && isLgbtqiaContent && !lgbtqiaEditorialDescription) {
+    return json(req, { error: "Explique a base editorial da classificacao LGBTQIA+ antes de publicar" }, 400);
+  }
+
+  if (status === "published" && isLgbtqiaContent && !categories.some(isLgbtqiaCategory)) {
+    return json(req, { error: "Inclua a categoria LGBTQIA+ para confirmar a classificacao" }, 400);
   }
 
   if (seoTitle && seoTitle.length > 70) {
@@ -8527,6 +8559,10 @@ async function handleOwnerSeriesCreate(req: Request) {
     title,
     description,
     category,
+    categories,
+    is_lgbtqia_content: isLgbtqiaContent,
+    lgbtqia_editorial_description: lgbtqiaEditorialDescription,
+    content_warnings: contentWarnings,
     slug,
     alternate_title: alternateTitle,
     short_description: shortDescription,
@@ -8802,6 +8838,10 @@ async function handleOwnerSeriesAction(req: Request) {
       title: duplicateTitle,
       description: String(existingRow.description ?? ""),
       category: String(existingRow.category ?? "Geral") || "Geral",
+      categories: getSeriesCategories(existingRow),
+      is_lgbtqia_content: existingRow.is_lgbtqia_content === true,
+      lgbtqia_editorial_description: existingRow.lgbtqia_editorial_description ?? null,
+      content_warnings: normalizeSeriesTags(existingRow.content_warnings),
       slug: duplicateSlug,
       alternate_title: existingRow.alternate_title ?? null,
       short_description: existingRow.short_description ?? null,

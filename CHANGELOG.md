@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-18 - Seção LGBTQIA+ e categorias editoriais
+
+- O CMS passou a aceitar múltiplas categorias, confirmação manual de representação LGBTQIA+, justificativa editorial interna e avisos de conteúdo.
+- A home exibe a seção `Séries LGBTQIA+` somente quando existem títulos publicados classificados com base editorial confirmada.
+- A rota `/categoria/lgbtqia`, a busca, recomendações, SEO e sitemap usam categorias e tags cadastradas, sem inferência automática.
+- A justificativa editorial fica protegida no backend e não é enviada ao catálogo público.
+- A Express IA foi orientada a não presumir orientação ou identidade por aparência, nome ou estereótipo; toda sugestão continua dependendo de revisão humana.
+
 ## 2026-07-18 - Express IA isolada e desativada por padrão
 
 - Criada uma camada backend de IA com adapter de provedor, prompts versionados, saída estruturada e chave restrita aos segredos do Supabase.
