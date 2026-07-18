@@ -129,3 +129,27 @@ Também execute o build da Vercel e o smoke em modo web e Telegram antes de ativ
 - O painel de IA está integrado à área da proprietária existente, sem criar uma segunda autenticação administrativa.
 - Alertas externos de orçamento não são enviados; o orçamento bloqueia chamadas e o painel exibe o consumo registrado.
 - O custo permanece desconhecido até as tarifas do provedor serem configuradas.
+
+## Estado da ativação controlada (2026-07-18)
+
+O ambiente de produção foi preparado, mas a Express IA permanece desligada até que uma chave real do provedor seja fornecida e validada.
+
+- `AI_ENABLED=false`.
+- `AI_EDITORIAL_ENABLED=false`.
+- `AI_SEARCH_ENABLED=false`.
+- `AI_SUPPORT_ENABLED=false`.
+- `AI_STREAMING_ENABLED=false`.
+- O modelo configurado no backend é `gpt-5.6-luna`, sem chave no frontend, no repositório ou nos logs.
+- O limite inicial é de 20 requisições diárias para a proprietária, 10 por usuário, 8.000 caracteres de entrada, 800 tokens de saída e 30 segundos por requisição.
+- O teto mensal interno configurado é 1.000 centavos na unidade de custo já usada pelo sistema.
+- A conta autorizada continua sendo a identidade do proprietário definida por `OWNER_TELEGRAM_USER_ID`; nenhuma conta adicional foi liberada.
+- `AI_API_KEY`, `AI_INPUT_COST_PER_MILLION_CENTS` e `AI_OUTPUT_COST_PER_MILLION_CENTS` ainda não foram configurados. Portanto, não há chamadas ao provedor nem consumo de IA em produção.
+- A implementação atual não possui um teto monetário diário separado; o controle diário disponível é o limite de requisições. Não ativar antes de confirmar a unidade cambial e, se necessário, implementar esse controle separadamente.
+
+Para a próxima etapa, adicionar os valores somente como segredos do Supabase, sem commit:
+
+```bash
+supabase secrets set AI_API_KEY=<chave-real> AI_INPUT_COST_PER_MILLION_CENTS=<tarifa-de-entrada> AI_OUTPUT_COST_PER_MILLION_CENTS=<tarifa-de-saida> --project-ref <project-ref>
+```
+
+Depois, validar o custo e o monitoramento em staging, ativar somente `AI_ENABLED` e `AI_EDITORIAL_ENABLED` para a proprietária e revisar cada sugestão manualmente. Em caso de emergência, manter ou restaurar essas flags para `false`; pagamentos, acesso, entrega, webhook, catálogo e Mini App não dependem da IA.
