@@ -4649,6 +4649,16 @@ function renderOwnerAIManagement(ai = {}) {
     const enabled = Boolean(settings.ai_enabled);
     const editorialEnabled = Boolean(settings.ai_editorial_enabled);
     const searchEnabled = Boolean(settings.ai_search_enabled);
+    const agentFlags = {
+        editorial: Boolean(settings.ai_editorial_agent_enabled),
+        seo: Boolean(settings.ai_seo_agent_enabled),
+        catalog: Boolean(settings.ai_catalog_agent_enabled),
+        discovery: Boolean(settings.ai_discovery_agent_enabled),
+        analytics: Boolean(settings.ai_analytics_agent_enabled),
+        marketing: Boolean(settings.ai_marketing_agent_enabled),
+        administration: Boolean(settings.ai_administration_agent_enabled),
+        support: Boolean(settings.ai_support_agent_enabled),
+    };
     const providerConfigured = Boolean(settings.provider_configured);
     return `
         <section class="owner-section owner-ai-management">
@@ -4686,6 +4696,16 @@ function renderOwnerAIManagement(ai = {}) {
                     <label class="owner-upload-toggle"><input type="checkbox" name="ai_editorial_enabled" ${editorialEnabled ? 'checked' : ''}><span>Assistente editorial</span></label>
                     <label class="owner-upload-toggle"><input type="checkbox" name="ai_search_enabled" ${searchEnabled ? 'checked' : ''}><span>Busca conversacional</span></label>
                 </div>
+                <div class="owner-editor-flags owner-ai-flags" aria-label="Agentes especializados">
+                    <label class="owner-upload-toggle"><input type="checkbox" name="ai_editorial_agent_enabled" ${agentFlags.editorial ? 'checked' : ''}><span>Agente editorial</span></label>
+                    <label class="owner-upload-toggle"><input type="checkbox" name="ai_seo_agent_enabled" ${agentFlags.seo ? 'checked' : ''}><span>Agente SEO</span></label>
+                    <label class="owner-upload-toggle"><input type="checkbox" name="ai_discovery_agent_enabled" ${agentFlags.discovery ? 'checked' : ''}><span>Agente de descoberta</span></label>
+                    <label class="owner-upload-toggle"><input type="checkbox" name="ai_marketing_agent_enabled" ${agentFlags.marketing ? 'checked' : ''}><span>Agente de marketing</span></label>
+                    <label class="owner-upload-toggle" title="Ferramentas somente leitura ainda não disponíveis"><input type="checkbox" name="ai_catalog_agent_enabled" ${agentFlags.catalog ? 'checked' : ''} disabled><span>Catálogo (em preparação)</span></label>
+                    <label class="owner-upload-toggle" title="Ferramentas somente leitura ainda não disponíveis"><input type="checkbox" name="ai_analytics_agent_enabled" ${agentFlags.analytics ? 'checked' : ''} disabled><span>Analytics (em preparação)</span></label>
+                    <label class="owner-upload-toggle" title="Ferramentas somente leitura ainda não disponíveis"><input type="checkbox" name="ai_administration_agent_enabled" ${agentFlags.administration ? 'checked' : ''} disabled><span>Administração (em preparação)</span></label>
+                    <label class="owner-upload-toggle" title="Fluxo de suporte humano continua sendo o padrão"><input type="checkbox" name="ai_support_agent_enabled" ${agentFlags.support ? 'checked' : ''} disabled><span>Suporte (em preparação)</span></label>
+                </div>
                 <div class="owner-ai-settings-actions">
                     <button class="btn btn-primary" type="submit"><i class="fas fa-floppy-disk"></i> Salvar configuração</button>
                     <span class="owner-status" id="ownerAISettingsStatus"></span>
@@ -4696,7 +4716,7 @@ function renderOwnerAIManagement(ai = {}) {
 }
 
 function renderOwnerAIEditor(aiSettings = {}) {
-    const active = Boolean(aiSettings.ai_enabled && aiSettings.ai_editorial_enabled);
+    const active = Boolean(aiSettings.ai_enabled && (aiSettings.ai_editorial_enabled || aiSettings.ai_editorial_agent_enabled));
     return `
         <section class="owner-form-group owner-ai-editor">
             <div class="owner-form-group-head">
@@ -4738,6 +4758,14 @@ function collectOwnerAISettings(form) {
         ai_enabled: readChecked('ai_enabled'),
         ai_editorial_enabled: readChecked('ai_editorial_enabled'),
         ai_search_enabled: readChecked('ai_search_enabled'),
+        ai_editorial_agent_enabled: readChecked('ai_editorial_agent_enabled'),
+        ai_seo_agent_enabled: readChecked('ai_seo_agent_enabled'),
+        ai_catalog_agent_enabled: readChecked('ai_catalog_agent_enabled'),
+        ai_discovery_agent_enabled: readChecked('ai_discovery_agent_enabled'),
+        ai_analytics_agent_enabled: readChecked('ai_analytics_agent_enabled'),
+        ai_marketing_agent_enabled: readChecked('ai_marketing_agent_enabled'),
+        ai_administration_agent_enabled: readChecked('ai_administration_agent_enabled'),
+        ai_support_agent_enabled: readChecked('ai_support_agent_enabled'),
         assistant_name: readValue('assistant_name'),
         model: readValue('model'),
         description: readValue('description'),

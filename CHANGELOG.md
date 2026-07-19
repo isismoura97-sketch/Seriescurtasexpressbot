@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-07-18 - Registro seguro de agentes da Express IA
+
+- Criado registro central com oito agentes especializados, responsabilidades, versoes de prompt, contexto permitido e modo somente leitura.
+- As tarefas atuais foram roteadas para Editorial, SEO, Descoberta e Marketing sem alterar pagamentos, acesso, player, entregas ou Mini App.
+- Adicionadas flags independentes, modelos opcionais, limites/orcamentos por agente e auditoria por agente; novas capacidades permanecem desligadas.
+- Agentes de Catalogo, Analytics, Administracao e Suporte ficaram preparados, mas sem ferramentas executaveis ou mutacoes automaticas.
+- Testes cobrem flags seguras, roteamento, compatibilidade legada e menor privilegio.
+
 ## 2026-07-18 - Seção LGBTQIA+ e categorias editoriais
 
 - O CMS passou a aceitar múltiplas categorias, confirmação manual de representação LGBTQIA+, justificativa editorial interna e avisos de conteúdo.

@@ -43,6 +43,21 @@ Atendimento automatizado e streaming possuem flags reservadas, mas não foram at
 - Logs guardam tarefa, modelo, tokens, latência, custo estimado, status e hash; não guardam prompt ou resposta integral.
 - A busca registra somente tamanho da consulta, quantidade de resultados e modo de execução.
 
+## Registro de agentes
+
+O registro central fica em `ai/agents.ts`. Cada agente possui responsabilidade, versao de prompt, campos permitidos, flag propria e indicacao de revisao humana:
+
+- `editorial`: sinopses, titulos, tags e variacoes;
+- `seo`: SEO e textos de compartilhamento;
+- `catalog`: auditoria somente leitura, reservado para ferramentas futuras;
+- `discovery`: filtros estruturados para busca conversacional;
+- `analytics`: analises agregadas, reservado para ferramentas futuras;
+- `marketing`: rascunhos de divulgacao, sem envio automatico;
+- `administration`: leitura operacional, sem mutacoes;
+- `support`: FAQ e encaminhamento humano, sem alterar conta ou pedido.
+
+O backend resolve a tarefa para um agente conhecido. O frontend nao escolhe prompts, modelos, permissoes, SQL ou ferramentas. Agentes sem ferramenta implementada nao executam nada.
+
 ## Feature flags
 
 Todas começam como `false`:
@@ -53,6 +68,17 @@ AI_EDITORIAL_ENABLED=false
 AI_SEARCH_ENABLED=false
 AI_SUPPORT_ENABLED=false
 AI_STREAMING_ENABLED=false
+AI_EDITORIAL_AGENT_ENABLED=false
+AI_SEO_AGENT_ENABLED=false
+AI_CATALOG_AGENT_ENABLED=false
+AI_DISCOVERY_AGENT_ENABLED=false
+AI_ANALYTICS_AGENT_ENABLED=false
+AI_MARKETING_AGENT_ENABLED=false
+AI_ADMINISTRATION_AGENT_ENABLED=false
+AI_SUPPORT_AGENT_ENABLED=false
+AI_RAG_ENABLED=false
+AI_EMBEDDINGS_ENABLED=false
+AI_ADMIN_MEMORY_ENABLED=false
 ```
 
 As flags persistidas em `ai_settings` podem ser controladas pelo painel. Variáveis de ambiente, quando definidas, têm precedência e funcionam como bloqueio ou liberação operacional.
@@ -63,6 +89,7 @@ Variáveis principais:
 
 ```env
 AI_PROVIDER=openai
+AI_DEFAULT_MODEL=
 AI_MODEL=gpt-5.6-luna
 AI_API_KEY=
 AI_DAILY_REQUEST_LIMIT_PER_USER=10
@@ -93,6 +120,8 @@ A migração `20260718020241_add_ai_assistant_foundation.sql` cria:
 
 As tabelas possuem RLS, sem políticas públicas, e privilégios somente para `service_role`.
 
+A migraÃ§Ã£o `20260718235000_add_ai_agent_registry.sql` adiciona as flags por agente, modelos opcionais, limites/orcamentos por agente e o campo `agent` nos logs, cache e histÃ³rico.
+
 ## Fallbacks
 
 - IA desligada: a interface pública fica oculta e o produto continua normal.
@@ -110,6 +139,8 @@ As tabelas possuem RLS, sem políticas públicas, e privilégios somente para `s
 5. Revisar histórico, erros, latência e custo por alguns dias.
 6. Ativar `ai_search_enabled` somente depois da validação editorial.
 7. Manter `ai_support_enabled` e `ai_streaming_enabled` desligadas nesta versão.
+
+As flags novas de agentes sao independentes e permanecem `false`. Para ativacao gradual, habilite primeiro `AI_ENABLED` e o agente Editorial/SEO somente para a proprietaria; Discovery, Marketing e demais agentes devem ser avaliados separadamente. RAG, embeddings e memoria administrativa continuam fora do escopo executavel.
 
 ## Testes
 

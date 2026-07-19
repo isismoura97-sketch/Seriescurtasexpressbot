@@ -18,6 +18,14 @@ import {
   validateEditorialSuggestion,
   validateSearchIntent,
 } from "./ai/core.ts";
+import {
+  getAIAgentDailyLimit,
+  getAIAgentDefinition,
+  isAIAgentEnabled,
+  listAIAgentStatuses,
+  resolveAIAgentForTask,
+} from "./ai/agents.ts";
+import { getAIPrompt } from "./ai/prompts.ts";
 
 function assertEquals(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -511,6 +519,48 @@ Deno.test("IA permanece desativada por padrao e limites sao normalizados", () =>
     500,
     "entrada minima restringida",
   );
+  for (const flag of [
+    "ai_editorial_agent_enabled",
+    "ai_seo_agent_enabled",
+    "ai_catalog_agent_enabled",
+    "ai_discovery_agent_enabled",
+    "ai_analytics_agent_enabled",
+    "ai_marketing_agent_enabled",
+    "ai_administration_agent_enabled",
+    "ai_support_agent_enabled",
+    "ai_rag_enabled",
+    "ai_embeddings_enabled",
+    "ai_admin_memory_enabled",
+  ]) {
+    assertEquals((settings as Record<string, unknown>)[flag], false, `${flag} desativada`);
+  }
+});
+
+Deno.test("registro de agentes aplica roteamento, legado e menor privilegio", () => {
+  assertEquals(resolveAIAgentForTask("generate_seo"), "seo", "SEO roteado para o agente SEO");
+  assertEquals(resolveAIAgentForTask("generate_telegram_copy"), "marketing", "Telegram roteado para marketing");
+  assertEquals(resolveAIAgentForTask("extract_search_filters"), "discovery", "busca roteada para descoberta");
+  assertEquals(getAIAgentDefinition("analytics").readOnly, true, "analytics somente leitura");
+
+  const settings = normalizeAISettings({
+    ai_enabled: true,
+    ai_editorial_enabled: true,
+    agent_daily_limits: { seo: 7 },
+  });
+  assertEquals(isAIAgentEnabled(settings, "seo"), true, "flag legada mantém SEO compatível");
+  assertEquals(getAIAgentDailyLimit(settings, "seo", true), 7, "limite específico aplicado");
+  assertEquals(isAIAgentEnabled(settings, "analytics"), false, "agente novo continua bloqueado");
+  assertEquals(listAIAgentStatuses(settings).length, 8, "registro completo de agentes");
+});
+
+Deno.test("prompts identificam o agente e mantem versao propria", () => {
+  const seo = getAIPrompt("generate_seo");
+  const discovery = getAIPrompt("extract_search_filters");
+  assertEquals(seo.agent, "seo", "prompt SEO identificado");
+  assertEquals(seo.name, "express_ai_seo", "nome do prompt SEO");
+  assertEquals(discovery.agent, "discovery", "prompt de descoberta identificado");
+  assertEquals(discovery.name, "express_ai_discovery_filters", "nome do prompt de descoberta");
+  assertEquals(seo.version, "2026-07-18.3", "versao do prompt registrada");
 });
 
 Deno.test("contexto de IA remove segredos e dados pessoais nao permitidos", () => {

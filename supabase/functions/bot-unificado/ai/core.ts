@@ -1,10 +1,22 @@
 import type {
+  AIAgentName,
   AISettings,
   EditorialFields,
   EditorialSuggestion,
   SearchFilters,
   SearchIntent,
 } from "./types.ts";
+
+const AI_AGENT_NAMES: AIAgentName[] = [
+  "editorial",
+  "seo",
+  "catalog",
+  "discovery",
+  "analytics",
+  "marketing",
+  "administration",
+  "support",
+];
 
 const EMPTY_EDITORIAL_FIELDS: EditorialFields = {
   seo_title: "",
@@ -27,8 +39,22 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   ai_search_enabled: false,
   ai_support_enabled: false,
   ai_streaming_enabled: false,
+  ai_editorial_agent_enabled: false,
+  ai_seo_agent_enabled: false,
+  ai_catalog_agent_enabled: false,
+  ai_discovery_agent_enabled: false,
+  ai_analytics_agent_enabled: false,
+  ai_marketing_agent_enabled: false,
+  ai_administration_agent_enabled: false,
+  ai_support_agent_enabled: false,
+  ai_rag_enabled: false,
+  ai_embeddings_enabled: false,
+  ai_admin_memory_enabled: false,
   provider: "openai",
   model: "gpt-5.6-luna",
+  agent_models: {},
+  agent_daily_limits: {},
+  agent_monthly_budgets: {},
   assistant_name: "Express IA",
   welcome_message:
     "Olá! Sou a Express IA. Posso ajudar você a encontrar uma série curta de acordo com o que deseja assistir.",
@@ -75,6 +101,28 @@ function boundedInteger(
     : fallback;
 }
 
+function normalizeAgentMap(value: unknown, kind: "model" | "limit" | "budget") {
+  const row = value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
+  const output: Partial<Record<AIAgentName, string | number>> = {};
+  for (const agent of AI_AGENT_NAMES) {
+    if (!(agent in row)) continue;
+    if (kind === "model") {
+      const model = cleanText(row[agent], 100);
+      if (model) output[agent] = model;
+      continue;
+    }
+    const minimum = kind === "limit" ? 1 : 0;
+    const maximum = kind === "limit" ? 5000 : 100000000;
+    const number = Number(row[agent]);
+    if (Number.isFinite(number) && number >= minimum) {
+      output[agent] = Math.min(maximum, Math.round(number));
+    }
+  }
+  return output;
+}
+
 export function normalizeAISettings(value: unknown): AISettings {
   const row = value && typeof value === "object"
     ? value as Record<string, unknown>
@@ -97,10 +145,54 @@ export function normalizeAISettings(value: unknown): AISettings {
       row.ai_streaming_enabled,
       DEFAULT_AI_SETTINGS.ai_streaming_enabled,
     ),
+    ai_editorial_agent_enabled: cleanBoolean(
+      row.ai_editorial_agent_enabled,
+      DEFAULT_AI_SETTINGS.ai_editorial_agent_enabled,
+    ),
+    ai_seo_agent_enabled: cleanBoolean(
+      row.ai_seo_agent_enabled,
+      DEFAULT_AI_SETTINGS.ai_seo_agent_enabled,
+    ),
+    ai_catalog_agent_enabled: cleanBoolean(
+      row.ai_catalog_agent_enabled,
+      DEFAULT_AI_SETTINGS.ai_catalog_agent_enabled,
+    ),
+    ai_discovery_agent_enabled: cleanBoolean(
+      row.ai_discovery_agent_enabled,
+      DEFAULT_AI_SETTINGS.ai_discovery_agent_enabled,
+    ),
+    ai_analytics_agent_enabled: cleanBoolean(
+      row.ai_analytics_agent_enabled,
+      DEFAULT_AI_SETTINGS.ai_analytics_agent_enabled,
+    ),
+    ai_marketing_agent_enabled: cleanBoolean(
+      row.ai_marketing_agent_enabled,
+      DEFAULT_AI_SETTINGS.ai_marketing_agent_enabled,
+    ),
+    ai_administration_agent_enabled: cleanBoolean(
+      row.ai_administration_agent_enabled,
+      DEFAULT_AI_SETTINGS.ai_administration_agent_enabled,
+    ),
+    ai_support_agent_enabled: cleanBoolean(
+      row.ai_support_agent_enabled,
+      DEFAULT_AI_SETTINGS.ai_support_agent_enabled,
+    ),
+    ai_rag_enabled: cleanBoolean(row.ai_rag_enabled, DEFAULT_AI_SETTINGS.ai_rag_enabled),
+    ai_embeddings_enabled: cleanBoolean(
+      row.ai_embeddings_enabled,
+      DEFAULT_AI_SETTINGS.ai_embeddings_enabled,
+    ),
+    ai_admin_memory_enabled: cleanBoolean(
+      row.ai_admin_memory_enabled,
+      DEFAULT_AI_SETTINGS.ai_admin_memory_enabled,
+    ),
     provider: row.provider === "openai"
       ? "openai"
       : DEFAULT_AI_SETTINGS.provider,
     model: cleanText(row.model, 100) || DEFAULT_AI_SETTINGS.model,
+    agent_models: normalizeAgentMap(row.agent_models, "model") as Partial<Record<AIAgentName, string>>,
+    agent_daily_limits: normalizeAgentMap(row.agent_daily_limits, "limit") as Partial<Record<AIAgentName, number>>,
+    agent_monthly_budgets: normalizeAgentMap(row.agent_monthly_budgets, "budget") as Partial<Record<AIAgentName, number>>,
     assistant_name: cleanText(row.assistant_name, 60) ||
       DEFAULT_AI_SETTINGS.assistant_name,
     welcome_message: cleanText(row.welcome_message, 240) ||

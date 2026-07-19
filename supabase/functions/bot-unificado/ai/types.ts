@@ -1,3 +1,13 @@
+export type AIAgentName =
+  | "editorial"
+  | "seo"
+  | "catalog"
+  | "discovery"
+  | "analytics"
+  | "marketing"
+  | "administration"
+  | "support";
+
 export type AITask =
   | "generate_seo"
   | "improve_short_synopsis"
@@ -18,8 +28,22 @@ export type AISettings = {
   ai_search_enabled: boolean;
   ai_support_enabled: boolean;
   ai_streaming_enabled: boolean;
+  ai_editorial_agent_enabled: boolean;
+  ai_seo_agent_enabled: boolean;
+  ai_catalog_agent_enabled: boolean;
+  ai_discovery_agent_enabled: boolean;
+  ai_analytics_agent_enabled: boolean;
+  ai_marketing_agent_enabled: boolean;
+  ai_administration_agent_enabled: boolean;
+  ai_support_agent_enabled: boolean;
+  ai_rag_enabled: boolean;
+  ai_embeddings_enabled: boolean;
+  ai_admin_memory_enabled: boolean;
   provider: "openai";
   model: string;
+  agent_models: Partial<Record<AIAgentName, string>>;
+  agent_daily_limits: Partial<Record<AIAgentName, number>>;
+  agent_monthly_budgets: Partial<Record<AIAgentName, number>>;
   assistant_name: string;
   welcome_message: string;
   tone: string;

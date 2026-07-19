@@ -12,7 +12,16 @@ import {
 } from "./ai/core.ts";
 import { getAIPrompt } from "./ai/prompts.ts";
 import { createAIProvider } from "./ai/provider.ts";
-import type { AITask, AISettings, EditorialSuggestion, SearchIntent } from "./ai/types.ts";
+import {
+  getAIAgentBudget,
+  getAIAgentDailyLimit,
+  getAIAgentDefinition,
+  getAIAgentModel,
+  isAIAgentEnabled,
+  listAIAgentStatuses,
+  resolveAIAgentForTask,
+} from "./ai/agents.ts";
+import type { AIAgentName, AITask, AISettings, EditorialSuggestion, SearchIntent } from "./ai/types.ts";
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -7326,6 +7335,21 @@ async function getAISettings(): Promise<AISettings> {
     console.warn("[AI] Configuração persistida indisponível; usando padrão seguro:", error instanceof Error ? error.message : String(error));
   }
 
+  const agentModels = { ...settings.agent_models };
+  for (const [agent, envName] of Object.entries({
+    editorial: "AI_EDITORIAL_MODEL",
+    seo: "AI_SEO_MODEL",
+    catalog: "AI_CATALOG_MODEL",
+    discovery: "AI_DISCOVERY_MODEL",
+    analytics: "AI_ANALYTICS_MODEL",
+    marketing: "AI_MARKETING_MODEL",
+    administration: "AI_ADMINISTRATION_MODEL",
+    support: "AI_SUPPORT_MODEL",
+  })) {
+    const model = Deno.env.get(envName);
+    if (model) agentModels[agent as keyof typeof agentModels] = model;
+  }
+
   return normalizeAISettings({
     ...settings,
     ai_enabled: envBoolean("AI_ENABLED", settings.ai_enabled),
@@ -7333,8 +7357,20 @@ async function getAISettings(): Promise<AISettings> {
     ai_search_enabled: envBoolean("AI_SEARCH_ENABLED", settings.ai_search_enabled),
     ai_support_enabled: envBoolean("AI_SUPPORT_ENABLED", settings.ai_support_enabled),
     ai_streaming_enabled: envBoolean("AI_STREAMING_ENABLED", settings.ai_streaming_enabled),
+    ai_editorial_agent_enabled: envBoolean("AI_EDITORIAL_AGENT_ENABLED", settings.ai_editorial_agent_enabled),
+    ai_seo_agent_enabled: envBoolean("AI_SEO_AGENT_ENABLED", settings.ai_seo_agent_enabled),
+    ai_catalog_agent_enabled: envBoolean("AI_CATALOG_AGENT_ENABLED", settings.ai_catalog_agent_enabled),
+    ai_discovery_agent_enabled: envBoolean("AI_DISCOVERY_AGENT_ENABLED", settings.ai_discovery_agent_enabled),
+    ai_analytics_agent_enabled: envBoolean("AI_ANALYTICS_AGENT_ENABLED", settings.ai_analytics_agent_enabled),
+    ai_marketing_agent_enabled: envBoolean("AI_MARKETING_AGENT_ENABLED", settings.ai_marketing_agent_enabled),
+    ai_administration_agent_enabled: envBoolean("AI_ADMINISTRATION_AGENT_ENABLED", settings.ai_administration_agent_enabled),
+    ai_support_agent_enabled: envBoolean("AI_SUPPORT_AGENT_ENABLED", settings.ai_support_agent_enabled),
+    ai_rag_enabled: envBoolean("AI_RAG_ENABLED", settings.ai_rag_enabled),
+    ai_embeddings_enabled: envBoolean("AI_EMBEDDINGS_ENABLED", settings.ai_embeddings_enabled),
+    ai_admin_memory_enabled: envBoolean("AI_ADMIN_MEMORY_ENABLED", settings.ai_admin_memory_enabled),
     provider: Deno.env.get("AI_PROVIDER") || settings.provider,
-    model: Deno.env.get("AI_MODEL") || settings.model,
+    model: Deno.env.get("AI_DEFAULT_MODEL") || Deno.env.get("AI_MODEL") || settings.model,
+    agent_models: agentModels,
     max_output_tokens: Deno.env.get("AI_MAX_OUTPUT_TOKENS") || settings.max_output_tokens,
     request_timeout_ms: Deno.env.get("AI_REQUEST_TIMEOUT") || settings.request_timeout_ms,
     daily_request_limit_per_user: Deno.env.get("AI_DAILY_REQUEST_LIMIT_PER_USER") || settings.daily_request_limit_per_user,
@@ -7351,6 +7387,18 @@ function serializeAISettings(settings: AISettings, includeLimits = false) {
     ai_search_enabled: settings.ai_search_enabled,
     ai_support_enabled: settings.ai_support_enabled,
     ai_streaming_enabled: settings.ai_streaming_enabled,
+    ai_editorial_agent_enabled: settings.ai_editorial_agent_enabled,
+    ai_seo_agent_enabled: settings.ai_seo_agent_enabled,
+    ai_catalog_agent_enabled: settings.ai_catalog_agent_enabled,
+    ai_discovery_agent_enabled: settings.ai_discovery_agent_enabled,
+    ai_analytics_agent_enabled: settings.ai_analytics_agent_enabled,
+    ai_marketing_agent_enabled: settings.ai_marketing_agent_enabled,
+    ai_administration_agent_enabled: settings.ai_administration_agent_enabled,
+    ai_support_agent_enabled: settings.ai_support_agent_enabled,
+    ai_rag_enabled: settings.ai_rag_enabled,
+    ai_embeddings_enabled: settings.ai_embeddings_enabled,
+    ai_admin_memory_enabled: settings.ai_admin_memory_enabled,
+    agents: listAIAgentStatuses(settings),
     provider: settings.provider,
     model: settings.model,
     assistant_name: settings.assistant_name,
@@ -7367,6 +7415,9 @@ function serializeAISettings(settings: AISettings, includeLimits = false) {
       max_output_tokens: settings.max_output_tokens,
       request_timeout_ms: settings.request_timeout_ms,
       cache_ttl_seconds: settings.cache_ttl_seconds,
+      agent_daily_limits: settings.agent_daily_limits,
+      agent_monthly_budgets: settings.agent_monthly_budgets,
+      agent_models: settings.agent_models,
     } : {}),
   };
 }
@@ -7387,6 +7438,7 @@ function estimateAICostCents(inputTokens: number | null, outputTokens: number | 
 async function logAIUsage(entry: {
   userId?: string;
   userRole: "anonymous" | "user" | "owner" | "system";
+  agent: AIAgentName;
   task: string;
   settings: AISettings;
   promptVersion: string;
@@ -7405,6 +7457,7 @@ async function logAIUsage(entry: {
       body: stringifyJson([{
         user_id: entry.userId || null,
         user_role: entry.userRole,
+        agent: entry.agent,
         task: entry.task,
         provider: entry.settings.provider,
         model: entry.settings.model,
@@ -7424,27 +7477,28 @@ async function logAIUsage(entry: {
   }
 }
 
-async function getAIMonthlySpendCents() {
+async function getAIMonthlySpendCents(agent: AIAgentName) {
   const monthStart = new Date();
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
   const rows = await supabaseFetch(
-    `${AI_USAGE_LOGS_TABLE}?select=estimated_cost_cents&created_at=gte.${encodeURIComponent(monthStart.toISOString())}&limit=10000`,
+    `${AI_USAGE_LOGS_TABLE}?select=estimated_cost_cents&agent=eq.${encodeURIComponent(agent)}&created_at=gte.${encodeURIComponent(monthStart.toISOString())}&limit=10000`,
   ).catch(() => []);
   return (Array.isArray(rows) ? rows : []).reduce((sum, row) => (
     sum + (Number((row as Record<string, unknown>).estimated_cost_cents ?? 0) || 0)
   ), 0);
 }
 
-async function assertAIRateLimit(settings: AISettings, userId: string, isOwner: boolean) {
+async function assertAIRateLimit(settings: AISettings, userId: string, isOwner: boolean, agent: AIAgentName) {
   const start = new Date();
   start.setUTCHours(0, 0, 0, 0);
-  const limit = isOwner ? settings.daily_request_limit_per_admin : settings.daily_request_limit_per_user;
+  const limit = getAIAgentDailyLimit(settings, agent, isOwner);
   const rows = await supabaseFetch(
-    `${AI_USAGE_LOGS_TABLE}?select=id&user_id=eq.${encodeURIComponent(userId)}&created_at=gte.${encodeURIComponent(start.toISOString())}&status=in.(success,cached,fallback)&limit=${limit + 1}`,
+    `${AI_USAGE_LOGS_TABLE}?select=id&agent=eq.${encodeURIComponent(agent)}&user_id=eq.${encodeURIComponent(userId)}&created_at=gte.${encodeURIComponent(start.toISOString())}&status=in.(success,cached,fallback)&limit=${limit + 1}`,
   ).catch(() => []);
   if (Array.isArray(rows) && rows.length >= limit) throw new Error("ai_daily_limit_reached");
-  if (settings.monthly_budget_cents != null && await getAIMonthlySpendCents() >= settings.monthly_budget_cents) {
+  const budget = getAIAgentBudget(settings, agent);
+  if (budget != null && await getAIMonthlySpendCents(agent) >= budget) {
     throw new Error("ai_monthly_budget_reached");
   }
 }
@@ -7463,23 +7517,25 @@ async function getAICachedResponse(cacheKey: string) {
   return response && typeof response === "object" ? response as Record<string, unknown> : null;
 }
 
-async function setAICachedResponse(cacheKey: string, task: AITask, response: Record<string, unknown>, settings: AISettings, promptVersion: string) {
+async function setAICachedResponse(cacheKey: string, agent: AIAgentName, task: AITask, response: Record<string, unknown>, settings: AISettings, promptVersion: string) {
   await supabaseRestRequest(`${AI_RESPONSE_CACHE_TABLE}?on_conflict=cache_key`, {
     method: "POST",
     headers: { "content-type": "application/json", prefer: "resolution=merge-duplicates,return=minimal" },
     body: stringifyJson([{
       cache_key: cacheKey,
+      agent,
       task,
       response,
       prompt_version: promptVersion,
       provider: settings.provider,
-      model: settings.model,
+      model: getAIAgentModel(settings, agent),
       expires_at: new Date(Date.now() + settings.cache_ttl_seconds * 1000).toISOString(),
     }]),
   });
 }
 
 async function runStructuredAI(options: {
+  agent?: AIAgentName;
   task: AITask;
   data: Record<string, unknown>;
   settings: AISettings;
@@ -7489,17 +7545,20 @@ async function runStructuredAI(options: {
   fallback: () => Record<string, unknown>;
   validate: (value: unknown) => Record<string, unknown>;
 }) {
+  const agent = options.agent || resolveAIAgentForTask(options.task);
   const prompt = getAIPrompt(options.task, options.settings.tone);
+  const model = getAIAgentModel(options.settings, agent);
   const safeData = sanitizeAIContext(options.data, options.settings.max_input_characters);
-  const inputHash = await hashAIValue({ task: options.task, data: safeData, prompt: prompt.version, model: options.settings.model });
+  const inputHash = await hashAIValue({ agent, task: options.task, data: safeData, prompt: prompt.version, model });
   const startedAt = Date.now();
 
   try {
-    await assertAIRateLimit(options.settings, options.userId, options.userRole === "owner");
+    await assertAIRateLimit(options.settings, options.userId, options.userRole === "owner", agent);
   } catch (error) {
     await logAIUsage({
       userId: options.userId,
       userRole: options.userRole,
+      agent,
       task: options.task,
       settings: options.settings,
       promptVersion: prompt.version,
@@ -7517,6 +7576,7 @@ async function runStructuredAI(options: {
       await logAIUsage({
         userId: options.userId,
         userRole: options.userRole,
+        agent,
         task: options.task,
         settings: options.settings,
         promptVersion: prompt.version,
@@ -7534,6 +7594,7 @@ async function runStructuredAI(options: {
     await logAIUsage({
       userId: options.userId,
       userRole: options.userRole,
+      agent,
       task: options.task,
       settings: options.settings,
       promptVersion: prompt.version,
@@ -7553,7 +7614,7 @@ async function runStructuredAI(options: {
       try {
         result = await provider.generateStructured({
           task: options.task,
-          model: options.settings.model,
+          model,
           instructions: attempt === 0
             ? prompt.instructions
             : `${prompt.instructions}\nA resposta anterior foi inválida. Retorne somente o JSON exigido pelo schema.`,
@@ -7572,10 +7633,11 @@ async function runStructuredAI(options: {
       }
     }
     if (!result || !validated) throw new Error("ai_provider_invalid_response");
-    if (options.cacheable) await setAICachedResponse(inputHash, options.task, validated, options.settings, prompt.version).catch(() => null);
+    if (options.cacheable) await setAICachedResponse(inputHash, agent, options.task, validated, options.settings, prompt.version).catch(() => null);
     await logAIUsage({
       userId: options.userId,
       userRole: options.userRole,
+      agent,
       task: options.task,
       settings: options.settings,
       promptVersion: prompt.version,
@@ -7591,6 +7653,7 @@ async function runStructuredAI(options: {
     await logAIUsage({
       userId: options.userId,
       userRole: options.userRole,
+      agent,
       task: options.task,
       settings: options.settings,
       promptVersion: prompt.version,
@@ -7607,19 +7670,22 @@ async function getAIDashboard() {
   const settings = await getAISettings();
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
   const rows = await supabaseFetch(
-    `${AI_USAGE_LOGS_TABLE}?select=task,status,estimated_cost_cents,latency_ms,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`,
+    `${AI_USAGE_LOGS_TABLE}?select=agent,task,status,estimated_cost_cents,latency_ms,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`,
   ).catch(() => []);
   const usage = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
   const byStatus: Record<string, number> = {};
   const byTask: Record<string, number> = {};
+  const byAgent: Record<string, number> = {};
   let latencyTotal = 0;
   let latencyCount = 0;
   let estimatedCostCents = 0;
   for (const row of usage) {
     const status = String(row.status || "unknown");
     const task = String(row.task || "unknown");
+    const agent = String(row.agent || "editorial");
     byStatus[status] = (byStatus[status] || 0) + 1;
     byTask[task] = (byTask[task] || 0) + 1;
+    byAgent[agent] = (byAgent[agent] || 0) + 1;
     estimatedCostCents += Number(row.estimated_cost_cents || 0) || 0;
     if (Number.isFinite(Number(row.latency_ms))) {
       latencyTotal += Number(row.latency_ms);
@@ -7635,6 +7701,7 @@ async function getAIDashboard() {
       average_latency_ms: latencyCount ? Math.round(latencyTotal / latencyCount) : 0,
       by_status: byStatus,
       by_task: byTask,
+      by_agent: byAgent,
     },
   };
 }
@@ -7700,8 +7767,10 @@ async function handleAISearch(req: Request) {
   let intent = fallbackIntent;
   let mode = "fallback";
 
-  if (settings.ai_enabled && settings.ai_search_enabled) {
+  const discoveryEnabled = isAIAgentEnabled(settings, "discovery");
+  if (discoveryEnabled) {
     const result = await runStructuredAI({
+      agent: "discovery",
       task: "extract_search_filters",
       data: {
         query,
@@ -7727,11 +7796,11 @@ async function handleAISearch(req: Request) {
     userId,
     eventSource: "backend",
     salesChannel: initData ? "telegram" : "web",
-    metadata: { result_count: results.length, mode, ai_enabled: settings.ai_enabled && settings.ai_search_enabled },
+    metadata: { result_count: results.length, mode, ai_enabled: discoveryEnabled },
   });
   return json(req, {
     ok: true,
-    enabled: settings.ai_enabled && settings.ai_search_enabled,
+    enabled: discoveryEnabled,
     mode,
     assistant_name: settings.assistant_name,
     explanation: buildAISearchExplanation(results, intent, mode === "fallback"),
@@ -7774,8 +7843,10 @@ async function handleOwnerAIGenerate(req: Request) {
   if (!AI_EDITORIAL_TASKS.has(task)) return json(req, { error: "Tarefa editorial invalida" }, 400);
 
   const settings = await getAISettings();
-  if (!settings.ai_enabled || !settings.ai_editorial_enabled) {
-    return json(req, { error: "A assistente editorial esta desativada", code: "ai_editorial_disabled" }, 503);
+  const agent = resolveAIAgentForTask(task);
+  const definition = getAIAgentDefinition(agent);
+  if (!isAIAgentEnabled(settings, agent)) {
+    return json(req, { error: `O agente ${definition.name} esta desativado`, code: "ai_agent_disabled", agent }, 503);
   }
   const seriesId = String(body.series_id ?? "").trim();
   const stored = seriesId ? await getSeriesById(seriesId) : null;
@@ -7785,6 +7856,7 @@ async function handleOwnerAIGenerate(req: Request) {
 
   try {
     const result = await runStructuredAI({
+      agent,
       task,
       data,
       settings,
@@ -7801,6 +7873,7 @@ async function handleOwnerAIGenerate(req: Request) {
       body: stringifyJson([{
         series_id: seriesId || null,
         actor_user_id: access.userId,
+        agent,
         task,
         original_content: data,
         suggested_content: suggestion,
@@ -7815,13 +7888,14 @@ async function handleOwnerAIGenerate(req: Request) {
       userId: access.userId,
       seriesId: seriesId || undefined,
       eventSource: "backend",
-      metadata: { task, mode: result.mode },
+      metadata: { agent, task, mode: result.mode },
     });
     return json(req, {
       ok: true,
       suggestion,
       history_id: historyId,
       mode: result.mode,
+      agent,
       prompt_version: result.promptVersion,
       warning: result.mode === "fallback" ? "A geração inteligente estava indisponível; foi usado um modelo determinístico seguro." : null,
     });
