@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-18 - Auditoria segura do catalogo pela Express IA
+
+- Adicionado o agente de catalogo com seis ferramentas de consulta somente leitura.
+- O painel da proprietaria permite auditar prontidao, SEO, banners, trailers, categorias e precos invalidos.
+- A rota exige identidade e senha da proprietaria, rejeita ferramentas desconhecidas e nao executa SQL ou mutacoes.
+- Resultados sao sanitizados e nao exibem File_ID, URLs protegidas, pagamentos ou dados pessoais.
+
 ## 2026-07-18 - Registro seguro de agentes da Express IA
 
 - Criado registro central com oito agentes especializados, responsabilidades, versoes de prompt, contexto permitido e modo somente leitura.

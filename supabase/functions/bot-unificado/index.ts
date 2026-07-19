@@ -13,6 +13,10 @@ import {
 import { getAIPrompt } from "./ai/prompts.ts";
 import { createAIProvider } from "./ai/provider.ts";
 import {
+  auditCatalog,
+  normalizeCatalogAuditTool,
+} from "./ai/catalog.ts";
+import {
   getAIAgentBudget,
   getAIAgentDailyLimit,
   getAIAgentDefinition,
@@ -197,6 +201,7 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "ai_search_started",
   "ai_search_completed",
   "ai_editorial_generated",
+  "ai_catalog_audit",
 ]);
 
 function corsHeaders(req: Request) {
@@ -7711,6 +7716,54 @@ async function handleAIStatus(req: Request) {
   return json(req, { ok: true, ai: serializeAISettings(settings) });
 }
 
+async function handleOwnerAICatalogAudit(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+  const access = await resolveOwnerRequest(body);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
+
+  const settings = await getAISettings();
+  if (!isAIAgentEnabled(settings, "catalog")) {
+    return json(req, { error: "O agente catalogo esta desativado", code: "ai_agent_disabled", agent: "catalog" }, 503);
+  }
+
+  const tool = normalizeCatalogAuditTool(body.tool ?? body.question);
+  if (!tool) {
+    return json(req, {
+      error: "Informe uma auditoria permitida: SEO, banner, trailer, categoria, preco ou prontidao para publicacao.",
+      code: "catalog_tool_invalid",
+    }, 400);
+  }
+
+  const rows = await getSeriesList("", true) as Record<string, unknown>[];
+  const result = auditCatalog(rows, tool);
+  const inputHash = await hashAIValue({ agent: "catalog", tool, series_ids: rows.map((row) => String(row.id ?? "")).filter(Boolean) });
+  await logAIUsage({
+    userId: access.userId,
+    userRole: "owner",
+    agent: "catalog",
+    task: `catalog_audit_${tool}`,
+    settings,
+    promptVersion: getAIAgentDefinition("catalog").version,
+    status: "success",
+    inputHash,
+  });
+  void recordAppEvent({
+    eventName: "ai_catalog_audit",
+    userId: access.userId,
+    eventSource: "backend",
+    metadata: { tool, inspected_count: result.inspected_count, issue_count: result.issue_count },
+  });
+  return json(req, {
+    ok: true,
+    agent: "catalog",
+    tool,
+    mode: "deterministic_tool",
+    prompt_version: getAIAgentDefinition("catalog").version,
+    result,
+  });
+}
+
 function getCatalogAIDimensions(series: Record<string, unknown>[]) {
   const collect = (values: unknown[]) => Array.from(new Set(values.flatMap((value) => {
     if (Array.isArray(value)) return value.map(String);
@@ -9203,6 +9256,10 @@ if (import.meta.main) Deno.serve(async (req) => {
 
     if (action === "ai-search" && req.method === "POST") {
       return await handleAISearch(req);
+    }
+
+    if (action === "owner-ai-catalog-audit" && req.method === "POST") {
+      return await handleOwnerAICatalogAudit(req);
     }
 
     if (action === "support-submit" && req.method === "POST") {

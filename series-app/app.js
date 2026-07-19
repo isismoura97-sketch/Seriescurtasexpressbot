@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260718-02';
+const BUILD_VERSION = '20260718-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -3042,6 +3042,14 @@ async function requestOwnerAISettings(operation = 'get', settings = null) {
     }, 25000);
 }
 
+async function requestOwnerAICatalogAudit(tool) {
+    return await requestJson(`${API_URL}?action=owner-ai-catalog-audit`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        tool,
+    }, 30000);
+}
+
 async function requestOwnerAIGenerate(task, data, seriesId = '') {
     return await requestJson(`${API_URL}?action=owner-ai-generate`, {
         init_data: tg?.initData || '',
@@ -3598,6 +3606,8 @@ function wireOwnerDashboardControls() {
 
     const aiSettingsForm = document.getElementById('ownerAISettingsForm');
     if (aiSettingsForm instanceof HTMLFormElement) aiSettingsForm.onsubmit = submitOwnerAISettings;
+    const catalogAuditButton = document.getElementById('ownerAICatalogAuditButton');
+    if (catalogAuditButton instanceof HTMLButtonElement) catalogAuditButton.onclick = () => runOwnerAICatalogAudit(catalogAuditButton);
     document.querySelectorAll('[data-owner-ai-task]').forEach((button) => {
         if (!(button instanceof HTMLButtonElement)) return;
         button.onclick = () => runOwnerAIGeneration(button.dataset.ownerAiTask || 'generate_seo', button);
@@ -4701,10 +4711,25 @@ function renderOwnerAIManagement(ai = {}) {
                     <label class="owner-upload-toggle"><input type="checkbox" name="ai_seo_agent_enabled" ${agentFlags.seo ? 'checked' : ''}><span>Agente SEO</span></label>
                     <label class="owner-upload-toggle"><input type="checkbox" name="ai_discovery_agent_enabled" ${agentFlags.discovery ? 'checked' : ''}><span>Agente de descoberta</span></label>
                     <label class="owner-upload-toggle"><input type="checkbox" name="ai_marketing_agent_enabled" ${agentFlags.marketing ? 'checked' : ''}><span>Agente de marketing</span></label>
-                    <label class="owner-upload-toggle" title="Ferramentas somente leitura ainda não disponíveis"><input type="checkbox" name="ai_catalog_agent_enabled" ${agentFlags.catalog ? 'checked' : ''} disabled><span>Catálogo (em preparação)</span></label>
+                    <label class="owner-upload-toggle"><input type="checkbox" name="ai_catalog_agent_enabled" ${agentFlags.catalog ? 'checked' : ''}><span>Agente de catálogo</span></label>
                     <label class="owner-upload-toggle" title="Ferramentas somente leitura ainda não disponíveis"><input type="checkbox" name="ai_analytics_agent_enabled" ${agentFlags.analytics ? 'checked' : ''} disabled><span>Analytics (em preparação)</span></label>
                     <label class="owner-upload-toggle" title="Ferramentas somente leitura ainda não disponíveis"><input type="checkbox" name="ai_administration_agent_enabled" ${agentFlags.administration ? 'checked' : ''} disabled><span>Administração (em preparação)</span></label>
                     <label class="owner-upload-toggle" title="Fluxo de suporte humano continua sendo o padrão"><input type="checkbox" name="ai_support_agent_enabled" ${agentFlags.support ? 'checked' : ''} disabled><span>Suporte (em preparação)</span></label>
+                </div>
+                <div class="owner-ai-catalog-tool">
+                    <div><strong>Auditoria segura do catálogo</strong><span>Somente leitura. Escolha uma ferramenta permitida para localizar ajustes reais.</span></div>
+                    <div class="owner-ai-catalog-tool-row">
+                        <select id="ownerAICatalogTool" aria-label="Tipo de auditoria do catálogo">
+                            <option value="list_publication_readiness_issues">Prontidão para publicação</option>
+                            <option value="list_series_without_seo">Séries sem SEO personalizado</option>
+                            <option value="list_series_without_banner">Séries sem banner</option>
+                            <option value="list_series_without_trailer">Séries sem trailer</option>
+                            <option value="list_series_without_category">Séries sem categoria</option>
+                            <option value="list_series_with_invalid_price">Séries com preço inválido</option>
+                        </select>
+                        <button class="btn btn-secondary" type="button" id="ownerAICatalogAuditButton" ${enabled && agentFlags.catalog ? '' : 'disabled'}><i class="fas fa-magnifying-glass-chart"></i> Auditar catálogo</button>
+                    </div>
+                    <div class="owner-ai-catalog-result" id="ownerAICatalogAuditResult" aria-live="polite"></div>
                 </div>
                 <div class="owner-ai-settings-actions">
                     <button class="btn btn-primary" type="submit"><i class="fas fa-floppy-disk"></i> Salvar configuração</button>
@@ -4779,6 +4804,36 @@ function collectOwnerAISettings(form) {
             : null,
         max_output_tokens: readInteger('max_output_tokens', 1200),
     };
+}
+
+async function runOwnerAICatalogAudit(button) {
+    const tool = String(document.getElementById('ownerAICatalogTool')?.value || 'list_publication_readiness_issues');
+    const resultElement = document.getElementById('ownerAICatalogAuditResult');
+    try {
+        if (button instanceof HTMLButtonElement) button.disabled = true;
+        if (resultElement) resultElement.textContent = 'Consultando o catálogo...';
+        const response = await requestOwnerAICatalogAudit(tool);
+        const audit = response?.result || {};
+        const issues = Array.isArray(audit.issues) ? audit.issues : [];
+        if (resultElement) {
+            resultElement.textContent = '';
+            const summary = document.createElement('p');
+            summary.textContent = audit.summary || 'Auditoria concluída.';
+            resultElement.appendChild(summary);
+            issues.slice(0, 20).forEach((item) => {
+                const row = document.createElement('div');
+                row.className = 'owner-ai-catalog-issue';
+                row.textContent = `${item.title || 'Série'}: ${item.message || 'Revisar cadastro.'}`;
+                resultElement.appendChild(row);
+            });
+        }
+        showToast(issues.length ? `${issues.length} ajuste(s) encontrado(s).` : 'Nenhum ajuste encontrado.', issues.length ? 'info' : 'success');
+    } catch (error) {
+        if (resultElement) resultElement.textContent = error?.message || 'Não foi possível auditar o catálogo.';
+        showToast(error?.message || 'Não foi possível auditar o catálogo.', 'error');
+    } finally {
+        if (button instanceof HTMLButtonElement && button.isConnected) button.disabled = false;
+    }
 }
 
 async function submitOwnerAISettings(event) {

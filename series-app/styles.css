@@ -5453,6 +5453,25 @@ body.light-mode .cart-item {
 .owner-ai-flags { margin: 14px 0; }
 .owner-ai-settings-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .owner-ai-settings-actions .owner-status { flex: 1 1 220px; margin: 0; }
+.owner-ai-catalog-tool {
+    display: grid;
+    gap: 10px;
+    margin: 16px 0;
+    padding: 14px;
+    border: 1px solid rgba(72, 176, 255, .18);
+    border-radius: 14px;
+    background: rgba(5, 15, 32, .38);
+}
+.owner-ai-catalog-tool strong,
+.owner-ai-catalog-tool span { display: block; }
+.owner-ai-catalog-tool strong { color: #f7f9ff; }
+.owner-ai-catalog-tool span { margin-top: 4px; color: #9eabc0; font-size: .8rem; }
+.owner-ai-catalog-tool-row { display: flex; flex-wrap: wrap; gap: 9px; }
+.owner-ai-catalog-tool-row select { flex: 1 1 260px; min-width: 0; }
+.owner-ai-catalog-tool-row .btn { flex: 0 1 auto; }
+.owner-ai-catalog-result { color: #dbe4f4; font-size: .86rem; line-height: 1.45; }
+.owner-ai-catalog-result p { margin: 0 0 8px; color: var(--primary); font-weight: 800; }
+.owner-ai-catalog-issue { padding: 7px 0; border-top: 1px solid rgba(255, 255, 255, .07); }
 
 .owner-ai-editor {
     border-color: rgba(72, 176, 255, .18);

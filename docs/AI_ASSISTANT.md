@@ -122,6 +122,12 @@ As tabelas possuem RLS, sem políticas públicas, e privilégios somente para `s
 
 A migraÃ§Ã£o `20260718235000_add_ai_agent_registry.sql` adiciona as flags por agente, modelos opcionais, limites/orcamentos por agente e o campo `agent` nos logs, cache e histÃ³rico.
 
+## Auditoria segura do catalogo
+
+O agente de catalogo possui ferramentas somente leitura: SEO, banner, trailer, categoria, preco invalido e prontidao para publicacao. A rota `owner-ai-catalog-audit` exige a identidade e a senha da proprietaria, aceita somente os nomes dessas ferramentas e consulta o catalogo por servico interno. A IA nunca recebe permissao para gerar SQL, escolher endpoints ou alterar series.
+
+Com a flag desligada, a rota responde bloqueio e o painel permanece funcional. Os resultados retornam apenas id, titulo, gravidade, mensagem e caminho administrativo; referencias de midia, File_ID e dados de pagamento nao sao retornados.
+
 ## Fallbacks
 
 - IA desligada: a interface pública fica oculta e o produto continua normal.

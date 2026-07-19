@@ -26,6 +26,10 @@ import {
   resolveAIAgentForTask,
 } from "./ai/agents.ts";
 import { getAIPrompt } from "./ai/prompts.ts";
+import {
+  auditCatalog,
+  normalizeCatalogAuditTool,
+} from "./ai/catalog.ts";
 
 function assertEquals(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
@@ -561,6 +565,27 @@ Deno.test("prompts identificam o agente e mantem versao propria", () => {
   assertEquals(discovery.agent, "discovery", "prompt de descoberta identificado");
   assertEquals(discovery.name, "express_ai_discovery_filters", "nome do prompt de descoberta");
   assertEquals(seo.version, "2026-07-18.3", "versao do prompt registrada");
+});
+
+Deno.test("auditoria de catalogo usa somente ferramentas permitidas", () => {
+  assertEquals(normalizeCatalogAuditTool("Quais séries estão sem trailer?"), "list_series_without_trailer", "pergunta mapeada para ferramenta");
+  assertEquals(normalizeCatalogAuditTool("select * from payment_orders"), null, "SQL nao e aceito como ferramenta");
+  const result = auditCatalog([
+    {
+      id: "s-1",
+      title: "Série sem categoria",
+      status: "published",
+      is_active: true,
+      is_free: false,
+      price: 0,
+      cover_url: "https://example.com/cover.webp",
+      video_file_id: "telegram-file",
+    },
+  ], "list_publication_readiness_issues");
+  assertEquals(result.source, "catalog_service", "fonte interna declarada");
+  assertEquals(result.issue_count, 2, "preco e descricao ausentes identificados");
+  assertEquals(result.issues[0].entity_id, "s-1", "id real preservado");
+  assertEquals(result.issues[0].admin_path.includes("file_id"), false, "nenhuma referencia de midia exposta");
 });
 
 Deno.test("contexto de IA remove segredos e dados pessoais nao permitidos", () => {
