@@ -72,6 +72,7 @@ const SEARCH_SCHEMA = {
       required: [
         "genres",
         "tags",
+        "lgbtqiaContent",
         "isFree",
         "maxDurationMinutes",
         "language",
@@ -89,6 +90,7 @@ const SEARCH_SCHEMA = {
           maxItems: 8,
           items: { type: "string", maxLength: 50 },
         },
+        lgbtqiaContent: { type: ["boolean", "null"] },
         isFree: { type: ["boolean", "null"] },
         maxDurationMinutes: {
           type: ["integer", "null"],

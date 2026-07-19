@@ -7782,6 +7782,7 @@ function buildAISearchExplanation(results: Record<string, unknown>[], intent: Se
   const filters = [
     ...intent.filters.genres,
     ...intent.filters.tags,
+    intent.filters.lgbtqiaContent === true ? "LGBTQIA+" : "",
     intent.filters.isFree === true ? "gratuitas" : intent.filters.isFree === false ? "pagas" : "",
     intent.filters.language,
   ].filter(Boolean).slice(0, 4);

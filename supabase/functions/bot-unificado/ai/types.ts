@@ -104,6 +104,7 @@ export type EditorialSuggestion = {
 export type SearchFilters = {
   genres: string[];
   tags: string[];
+  lgbtqiaContent: boolean | null;
   isFree: boolean | null;
   maxDurationMinutes: number | null;
   language: string;

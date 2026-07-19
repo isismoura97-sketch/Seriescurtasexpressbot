@@ -648,6 +648,7 @@ Deno.test("busca conversacional aceita apenas filtros existentes no catalogo", (
     filters: {
       genres: ["Romance", "Gênero inventado"],
       tags: ["Vampiro", "Tag inventada"],
+      lgbtqiaContent: true,
       isFree: false,
       maxDurationMinutes: 120,
       language: "Português",
@@ -667,6 +668,39 @@ Deno.test("busca conversacional aceita apenas filtros existentes no catalogo", (
     "tag inventada removida",
   );
   assertEquals(intent.filters.similarToTitle, "", "título inventado removido");
+});
+
+Deno.test("busca LGBTQIA+ usa somente marcacao editorial explicita", () => {
+  const allowed = {
+    genres: ["Romance"],
+    tags: ["Romance"],
+    languages: ["Português"],
+    titles: ["Amor em Cena"],
+  };
+  const intent = buildFallbackSearchIntent("quero representatividade", allowed);
+  const results = filterCatalogByIntent([
+    {
+      id: "confirmed",
+      title: "Amor em Cena",
+      genre: "Romance",
+      tags: ["Romance"],
+      is_lgbtqia_content: true,
+      is_free: true,
+      price: 0,
+    },
+    {
+      id: "unconfirmed",
+      title: "Outro Romance",
+      genre: "Romance",
+      tags: ["Romance"],
+      is_lgbtqia_content: false,
+      is_free: true,
+      price: 0,
+    },
+  ], intent);
+  assertEquals(intent.filters.lgbtqiaContent, true, "pedido editorial reconhecido");
+  assertEquals(results.length, 1, "somente um conteudo confirmado retornado");
+  assertEquals(results[0]?.id, "confirmed", "conteudo confirmado retornado");
 });
 
 Deno.test("fallback de busca filtra catalogo real sem executar texto malicioso", () => {

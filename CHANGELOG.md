@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-18 - Busca editorial LGBTQIA+ segura
+
+- A busca conversacional passou a reconhecer pedidos de representatividade por um filtro estruturado, neutro por padrao e validado no backend.
+- Somente series com marcacao editorial explicita `is_lgbtqia_content = true` entram nesse resultado; nenhuma identidade de usuario e inferida.
+- Adicionada cobertura de teste e documentacao de catalogo, SEO, privacidade e arquitetura.
+
 ## 2026-07-18 - Auditoria segura do catalogo pela Express IA
 
 - Adicionado o agente de catalogo com seis ferramentas de consulta somente leitura.

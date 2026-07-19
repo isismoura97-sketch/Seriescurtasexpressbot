@@ -367,6 +367,7 @@ export function validateSearchIntent(
     filters: {
       genres: intersect(filters.genres, allowed.genres, 5),
       tags: intersect(filters.tags, allowed.tags, 8),
+      lgbtqiaContent: filters.lgbtqiaContent === true ? true : null,
       isFree: typeof filters.isFree === "boolean" ? filters.isFree : null,
       maxDurationMinutes: Number.isFinite(duration) && duration > 0
         ? Math.min(1440, Math.round(duration))
@@ -409,6 +410,14 @@ export function buildFallbackSearchIntent(
   }
   const similarToTitle = allowed.titles.find((title) => includesTerm(title)) ||
     "";
+  const asksForLgbtqia = [
+    "lgbtqia",
+    "lgbt",
+    "representatividade",
+    "romance entre mulheres",
+    "romance entre homens",
+    "personagem trans",
+  ].some(includesTerm);
   const stopWords = new Set([
     "quero",
     "uma",
@@ -426,6 +435,15 @@ export function buildFallbackSearchIntent(
     "assistir",
     "parecida",
     "parecido",
+    "lgbtqia",
+    "lgbt",
+    "representatividade",
+    "romance",
+    "entre",
+    "mulheres",
+    "homens",
+    "personagem",
+    "trans",
   ]);
   const keywords = normalized.split(" ").filter((term) =>
     term.length > 2 && !stopWords.has(term)
@@ -435,6 +453,7 @@ export function buildFallbackSearchIntent(
     filters: {
       genres: allowed.genres.filter(includesTerm).slice(0, 5),
       tags: allowed.tags.filter(includesTerm).slice(0, 8),
+      lgbtqiaContent: asksForLgbtqia ? true : null,
       isFree: /\b(?:gratis|gratuita|gratuitas)\b/.test(normalized)
         ? true
         : /\b(?:paga|pagas|premium)\b/.test(normalized)
@@ -545,6 +564,9 @@ export function filterCatalogByIntent(
     const free = item.is_free === true || price <= 0;
     const duration = Number(item.duration_minutes ?? 0);
     if (intent.filters.isFree !== null && free !== intent.filters.isFree) {
+      return null;
+    }
+    if (intent.filters.lgbtqiaContent === true && item.is_lgbtqia_content !== true) {
       return null;
     }
     if (
