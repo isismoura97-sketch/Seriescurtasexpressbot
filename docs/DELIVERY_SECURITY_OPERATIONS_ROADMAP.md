@@ -34,6 +34,8 @@ Estado tecnico em 2026-08-16: a tabela legada de sessoes administrativas foi end
 
 Comunicacao em 2026-08-16: a confirmação de compra por e-mail foi preparada com marcador idempotente no pedido; falhas de envio não interrompem pagamento ou entrega.
 
+Também foram preparados marcadores separados para avisos de falha, reembolso e chargeback; todos os e-mails transacionais permanecem opt-in.
+
 - RBAC para proprietaria, suporte e operacao.
 - Segundo fator para funcoes administrativas sensiveis.
 - E-mails transacionais de verificacao, compra, falha, reembolso e seguranca.

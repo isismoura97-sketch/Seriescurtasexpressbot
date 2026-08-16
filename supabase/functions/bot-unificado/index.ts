@@ -47,6 +47,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
 const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "Séries Curtas Express <onboarding@resend.dev>";
 const PAYMENT_CONFIRMATION_EMAIL_ENABLED = (Deno.env.get("PAYMENT_CONFIRMATION_EMAIL_ENABLED") ?? "false").toLowerCase() === "true";
+const PAYMENT_STATUS_EMAIL_ENABLED = (Deno.env.get("PAYMENT_STATUS_EMAIL_ENABLED") ?? "false").toLowerCase() === "true";
 const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260712-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
@@ -2110,6 +2111,92 @@ async function sendPaymentConfirmationEmail(
   return { sent: true as const, id: typeof payload?.id === "string" ? payload.id : "" };
 }
 
+type PaymentStatusEmailEvent = "failed" | "refunded" | "chargeback";
+
+function buildPaymentStatusEmailContent(
+  order: Record<string, unknown>,
+  payment: Record<string, unknown>,
+  event: PaymentStatusEmailEvent,
+) {
+  const orderId = String(order.order_id ?? "").trim();
+  const statusDetail = String(payment.status_detail ?? payment.status ?? "").trim();
+  const items = Array.isArray(order.items) ? (order.items as Record<string, unknown>[]) : [];
+  const itemTitles = items
+    .map((item) => String(item.title ?? item.name ?? "Série").trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  const itemText = itemTitles.length ? itemTitles.map((title) => `- ${title}`).join("\n") : "- Itens do pedido";
+  const itemHtml = itemTitles.length
+    ? itemTitles.map((title) => `<li>${escapeHtml(title)}</li>`).join("")
+    : "<li>Itens do pedido</li>";
+  const isFailed = event === "failed";
+  const title = isFailed
+    ? "Não foi possível confirmar o pagamento"
+    : event === "chargeback"
+    ? "Atualização do pagamento e acesso"
+    : "Reembolso confirmado";
+  const description = isFailed
+    ? "O pagamento não foi aprovado. Nenhuma cobrança confirmada libera o conteúdo deste pedido."
+    : event === "chargeback"
+    ? "O pagamento foi contestado e o acesso associado ao pedido foi revogado."
+    : "O reembolso foi registrado e o acesso associado ao pedido foi revogado.";
+  const subject = `${title} - pedido ${orderId.slice(0, 8) || "ShortNovels"}`.slice(0, 140);
+  const text = [
+    title,
+    "",
+    description,
+    `Pedido: ${orderId || "não informado"}`,
+    statusDetail ? `Detalhe: ${statusDetail}` : "",
+    "",
+    "Itens:",
+    itemText,
+    "",
+    `Suporte: ${SUPPORT_INBOX_EMAIL}`,
+  ].filter(Boolean).join("\n");
+  const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0b1a2f;">
+    <h2>${escapeHtml(title)}</h2>
+    <p>${escapeHtml(description)}</p>
+    <p><strong>Pedido:</strong> ${escapeHtml(orderId || "não informado")}${statusDetail ? `<br><strong>Detalhe:</strong> ${escapeHtml(statusDetail)}` : ""}</p>
+    <p><strong>Itens</strong></p><ul>${itemHtml}</ul>
+    <p>Se precisar de ajuda, responda este e-mail ou escreva para ${escapeHtml(SUPPORT_INBOX_EMAIL)}.</p>
+  </div>`;
+  return { subject, text, html };
+}
+
+async function sendPaymentStatusEmail(
+  order: Record<string, unknown>,
+  payment: Record<string, unknown>,
+  event: PaymentStatusEmailEvent,
+) {
+  const email = String(order.buyer_email ?? "").trim();
+  if (!PAYMENT_STATUS_EMAIL_ENABLED) return { sent: false as const, skipped: "disabled" };
+  if (!RESEND_API_KEY) return { sent: false as const, skipped: "not_configured" };
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { sent: false as const, skipped: "email_invalid" };
+  }
+
+  const content = buildPaymentStatusEmailContent(order, payment, event);
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${RESEND_API_KEY}`,
+    },
+    body: JSON.stringify({
+      from: SUPPORT_FROM_EMAIL,
+      to: [email],
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(String(payload?.error || payload?.message || `HTTP ${response.status}`));
+  }
+  return { sent: true as const, id: typeof payload?.id === "string" ? payload.id : "" };
+}
+
 function normalizeWebhookStatus(value: unknown) {
   const status = String(value ?? "").trim().toLowerCase();
   if (!status) return "pending";
@@ -2409,6 +2496,22 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
     });
   }
 
+  if (
+    orderId
+    && ["rejected", "cancelled", "canceled", "expired"].includes(currentStatus)
+    && !updatedOrder.payment_failure_email_sent_at
+  ) {
+    const emailResult = await sendPaymentStatusEmail(updatedOrder, payment, "failed").catch((error) => {
+      console.warn("[PAYMENT][EMAIL] Falha ao enviar aviso de pagamento não aprovado:", error instanceof Error ? error.message : String(error));
+      return { sent: false as const, skipped: "send_failed" };
+    });
+    if (emailResult.sent) {
+      await updatePaymentOrderRecord(orderId, {
+        payment_failure_email_sent_at: new Date().toISOString(),
+      });
+    }
+  }
+
   if (orderId && (currentStatus === "refunded" || currentStatus === "charged_back")) {
     await revokeOrderEntitlements(orderId, currentStatus === "refunded" ? "refunded" : "charged_back");
     await recordAppEvent({
@@ -2418,6 +2521,22 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
       salesChannel: normalizeAnalyticsChannel(updatedOrder.sales_channel),
       metadata: { payment_provider: "mercado_pago" },
     });
+
+    if (!updatedOrder.payment_refund_email_sent_at) {
+      const emailResult = await sendPaymentStatusEmail(
+        updatedOrder,
+        payment,
+        currentStatus === "charged_back" ? "chargeback" : "refunded",
+      ).catch((error) => {
+        console.warn("[PAYMENT][EMAIL] Falha ao enviar aviso de encerramento financeiro:", error instanceof Error ? error.message : String(error));
+        return { sent: false as const, skipped: "send_failed" };
+      });
+      if (emailResult.sent) {
+        await updatePaymentOrderRecord(orderId, {
+          payment_refund_email_sent_at: new Date().toISOString(),
+        });
+      }
+    }
   }
 
   let finalOrder = updatedOrder;
@@ -3965,8 +4084,9 @@ async function handleTelegramRefundedPayment(
     return json(req, { ok: false, error: "Estorno divergente do pedido" }, 409);
   }
 
+  let refundedOrder = order;
   if (String(order.status ?? "").toLowerCase() !== "refunded") {
-    await updatePaymentOrderRecord(orderId, {
+    refundedOrder = await updatePaymentOrderRecord(orderId, {
       status: "refunded",
       refunded_at: new Date().toISOString(),
       delivery_status: "revoked",
@@ -3976,7 +4096,7 @@ async function handleTelegramRefundedPayment(
         currency: String(payment.currency ?? "").toUpperCase(),
         total_amount: Math.round(Number(payment.total_amount ?? 0) || 0),
       },
-    });
+    }) as Record<string, unknown>;
     await revokeOrderEntitlements(orderId, "refunded");
     await recordAppEvent({
       eventName: "purchase_refunded",
@@ -3984,6 +4104,22 @@ async function handleTelegramRefundedPayment(
       orderId,
       metadata: { payment_provider: "telegram_stars" },
     });
+  }
+
+  if (!refundedOrder.payment_refund_email_sent_at) {
+    const emailResult = await sendPaymentStatusEmail(
+      refundedOrder,
+      { ...payment, status: "refunded", status_detail: "Reembolso confirmado pelo Telegram" },
+      "refunded",
+    ).catch((error) => {
+      console.warn("[PAYMENT][EMAIL] Falha ao enviar aviso de reembolso:", error instanceof Error ? error.message : String(error));
+      return { sent: false as const, skipped: "send_failed" };
+    });
+    if (emailResult.sent) {
+      await updatePaymentOrderRecord(orderId, {
+        payment_refund_email_sent_at: new Date().toISOString(),
+      });
+    }
   }
 
   await syncReferralRewardLedger(orderId, "refunded").catch((error) => {
@@ -9479,6 +9615,7 @@ export {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
   buildPaymentConfirmationEmailContent,
+  buildPaymentStatusEmailContent,
   buildReferralLedgerSourceEventId,
   getCheckoutRecoverySkipReason,
   getReferralRewardLedgerAction,

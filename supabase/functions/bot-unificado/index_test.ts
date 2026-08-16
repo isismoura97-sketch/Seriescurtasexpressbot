@@ -2,6 +2,7 @@ import {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
   buildPaymentConfirmationEmailContent,
+  buildPaymentStatusEmailContent,
   buildReferralLedgerSourceEventId,
   getCheckoutRecoverySkipReason,
   getReferralRewardLedgerAction,
@@ -124,6 +125,21 @@ Deno.test("email de compra usa somente dados publicos do catalogo", () => {
   assertStringIncludes(content.text, "Abrir catálogo");
   assertEquals(content.text.includes("telegram-secret-file-id"), false);
   assertEquals(content.html.includes("telegram-secret-file-id"), false);
+});
+
+Deno.test("email de reembolso nao expoe referencias privadas", () => {
+  const content = buildPaymentStatusEmailContent(
+    {
+      order_id: "order-987654",
+      items: [{ title: "Série reembolsada", video_file_id: "private-file-id" }],
+      buyer_email: "buyer@example.com",
+    },
+    { status: "refunded", status_detail: "Reembolso confirmado" },
+    "refunded",
+  );
+  assertStringIncludes(content.subject, "Reembolso");
+  assertStringIncludes(content.text, "Série reembolsada");
+  assertEquals(content.html.includes("private-file-id"), false);
 });
 
 Deno.test("exportacao da conta omite referencias protegidas de midia", () => {
