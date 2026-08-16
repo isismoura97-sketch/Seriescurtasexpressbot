@@ -36,6 +36,8 @@ RBAC em 2026-08-16: registro privado de papéis criado para `owner`, `support` e
 
 As credenciais futuras usam verificador PBKDF2-SHA-256 com salt, e não senha em texto ou hash simples.
 
+Matriz inicial: `owner` mantém todos os fluxos atuais; `operations` pode reprocessar entrega pelo endpoint `owner-order-retry`; `support` fica limitado ao status de acesso até o painel de atendimento próprio existir.
+
 Comunicacao em 2026-08-16: a confirmação de compra por e-mail foi preparada com marcador idempotente no pedido; falhas de envio não interrompem pagamento ou entrega.
 
 Também foram preparados marcadores separados para avisos de falha, reembolso e chargeback; todos os e-mails transacionais permanecem opt-in.

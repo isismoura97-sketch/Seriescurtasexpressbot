@@ -8841,7 +8841,7 @@ async function handleOwnerOrderRetry(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
 
-  const access = await resolveOwnerRequest(body);
+  const access = await resolveAdminRequest(body, ["owner", "operations"]);
   if ("error" in access) return json(req, { error: access.error }, access.status);
 
   const orderId = String(body.order_id ?? body.orderId ?? "").trim();
