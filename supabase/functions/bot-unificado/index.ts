@@ -46,6 +46,7 @@ const TELEGRAM_BOT_USERNAME = (
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
 const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "Séries Curtas Express <onboarding@resend.dev>";
+const SUPPORT_TICKETS_TABLE = Deno.env.get("SUPPORT_TICKETS_TABLE") ?? "support_tickets";
 const PAYMENT_CONFIRMATION_EMAIL_ENABLED = (Deno.env.get("PAYMENT_CONFIRMATION_EMAIL_ENABLED") ?? "false").toLowerCase() === "true";
 const PAYMENT_STATUS_EMAIL_ENABLED = (Deno.env.get("PAYMENT_STATUS_EMAIL_ENABLED") ?? "false").toLowerCase() === "true";
 const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260712-03";
@@ -9550,6 +9551,74 @@ async function handleOwnerSeriesAction(req: Request) {
   return json(req, { ok: true, series: updated ? serializeOwnerSeries(updated) : null, dashboard });
 }
 
+async function createSupportTicket(input: {
+  email: string;
+  subject: string;
+  description: string;
+  context: string;
+  telegramUserId: string;
+  telegramUserName: string;
+  telegramName: string;
+}) {
+  const created = await supabaseRestRequest(SUPPORT_TICKETS_TABLE, {
+    method: "POST",
+    headers: { "content-type": "application/json", prefer: "return=representation" },
+    body: stringifyJson({
+      requester_telegram_id: input.telegramUserId,
+      requester_email: input.email,
+      subject: input.subject.slice(0, 160),
+      description: input.description.slice(0, 12000),
+      context: input.context.slice(0, 2000) || null,
+      metadata: {
+        source: "mini_app",
+        telegram_username: input.telegramUserName.slice(0, 80),
+        telegram_name: input.telegramName.slice(0, 160),
+      },
+    }),
+  });
+  const row = Array.isArray(created) ? created[0] as Record<string, unknown> | undefined : created as Record<string, unknown>;
+  const ticketId = String(row?.id ?? "").trim();
+  return ticketId || null;
+}
+
+async function getSupportTicketSummary(limit = 50) {
+  const boundedLimit = Math.min(100, Math.max(1, Math.round(Number(limit) || 50)));
+  const rows = await supabaseFetch(
+    `${SUPPORT_TICKETS_TABLE}?select=id,requester_telegram_id,requester_email,subject,description,context,status,created_at,updated_at,resolved_at&order=created_at.desc&limit=${boundedLimit}`,
+  );
+  const tickets = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
+  const statusCounts = tickets.reduce<Record<string, number>>((counts, ticket) => {
+    const status = String(ticket.status ?? "new").trim().toLowerCase() || "new";
+    counts[status] = (counts[status] ?? 0) + 1;
+    return counts;
+  }, {});
+  return {
+    total_returned: tickets.length,
+    status_counts: statusCounts,
+    tickets,
+  };
+}
+
+async function handleAdminSupportSummary(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+
+  const access = await resolveAdminRequest(body, ["owner", "support"]);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
+
+  try {
+    const summary = await getSupportTicketSummary(body.limit);
+    return json(req, {
+      ok: true,
+      role: access.role,
+      ...summary,
+    });
+  } catch (error) {
+    console.warn("[SUPPORT] Falha ao carregar painel:", error instanceof Error ? error.message : String(error));
+    return json(req, { error: "Não foi possível carregar os tickets agora" }, 502);
+  }
+}
+
 async function handleSupportSubmit(req: Request) {
   const contentType = (req.headers.get("content-type") || "").toLowerCase();
   let body: Record<string, unknown> | null = null;
@@ -9680,6 +9749,11 @@ async function handleSupportSubmitV2(req: Request) {
     telegramName,
   };
 
+  const ticketId = await createSupportTicket(supportInput).catch((error) => {
+    console.warn("[SUPPORT] Falha ao persistir ticket:", error instanceof Error ? error.message : String(error));
+    return null;
+  });
+
   const [emailResult, telegramResult] = await Promise.allSettled([
     RESEND_API_KEY
       ? sendSupportEmail(supportInput)
@@ -9704,7 +9778,8 @@ async function handleSupportSubmitV2(req: Request) {
 
   return json(req, {
     ok: true,
-    support_id: `${Date.now()}-${telegramUserId || "anon"}`,
+    support_id: ticketId || `${Date.now()}-${telegramUserId || "anon"}`,
+    ticket_id: ticketId,
     email_sent: emailSent,
     telegram_sent: telegramSent,
     mailto_url: emailSent ? undefined : mailtoUrl,
@@ -9855,6 +9930,10 @@ if (import.meta.main) Deno.serve(async (req) => {
 
     if (action === "admin-access-status" && req.method === "POST") {
       return await handleAdminAccessStatus(req);
+    }
+
+    if (action === "admin-support-summary" && req.method === "POST") {
+      return await handleAdminSupportSummary(req);
     }
 
     if (action === "owner-ai-settings" && req.method === "POST") {

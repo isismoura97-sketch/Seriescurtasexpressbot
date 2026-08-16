@@ -38,6 +38,8 @@ As credenciais futuras usam verificador PBKDF2-SHA-256 com salt, e não senha em
 
 Matriz inicial: `owner` mantém todos os fluxos atuais; `operations` pode reprocessar entrega pelo endpoint `owner-order-retry`; `support` fica limitado ao status de acesso até o painel de atendimento próprio existir.
 
+Painel de suporte inicial: tickets persistidos no backend e endpoint `admin-support-summary` em modo somente leitura para `owner` e `support`; alterações de status ainda aguardam o fluxo de atendimento definido.
+
 Comunicacao em 2026-08-16: a confirmação de compra por e-mail foi preparada com marcador idempotente no pedido; falhas de envio não interrompem pagamento ou entrega.
 
 Também foram preparados marcadores separados para avisos de falha, reembolso e chargeback; todos os e-mails transacionais permanecem opt-in.
