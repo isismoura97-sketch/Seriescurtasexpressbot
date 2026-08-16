@@ -32,6 +32,8 @@ Estado tecnico em 2026-08-16: a fundacao do ledger foi aplicada no Supabase e a 
 
 Estado tecnico em 2026-08-16: a tabela legada de sessoes administrativas foi endurecida para acesso exclusivo do backend; RBAC formal e segundo fator continuam pendentes.
 
+RBAC em 2026-08-16: registro privado de papéis criado para `owner`, `support` e `operations`; ativação permanece desligada até existir autenticação própria por papel.
+
 Comunicacao em 2026-08-16: a confirmação de compra por e-mail foi preparada com marcador idempotente no pedido; falhas de envio não interrompem pagamento ou entrega.
 
 Também foram preparados marcadores separados para avisos de falha, reembolso e chargeback; todos os e-mails transacionais permanecem opt-in.
