@@ -1,6 +1,7 @@
 import {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
+  buildPaymentConfirmationEmailContent,
   buildReferralLedgerSourceEventId,
   getCheckoutRecoverySkipReason,
   getReferralRewardLedgerAction,
@@ -105,6 +106,24 @@ Deno.test("ledger de indicacao usa eventos idempotentes e reversao explicita", (
     "referral:referral_reversal:42:order-123",
     "chave de reversao estavel",
   );
+});
+
+Deno.test("email de compra usa somente dados publicos do catalogo", () => {
+  const content = buildPaymentConfirmationEmailContent(
+    {
+      order_id: "order-123456",
+      amount: 19.9,
+      payment_method: "mercado_pago",
+      buyer_email: "buyer@example.com",
+      items: [{ title: "Série de teste", video_file_id: "telegram-secret-file-id" }],
+    },
+    { status_detail: "Pagamento aprovado" },
+    { delivered: [], failed: [] },
+  );
+  assertStringIncludes(content.text, "Série de teste");
+  assertStringIncludes(content.text, "Abrir catálogo");
+  assertEquals(content.text.includes("telegram-secret-file-id"), false);
+  assertEquals(content.html.includes("telegram-secret-file-id"), false);
 });
 
 Deno.test("exportacao da conta omite referencias protegidas de midia", () => {

@@ -46,6 +46,7 @@ const TELEGRAM_BOT_USERNAME = (
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
 const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "Séries Curtas Express <onboarding@resend.dev>";
+const PAYMENT_CONFIRMATION_EMAIL_ENABLED = (Deno.env.get("PAYMENT_CONFIRMATION_EMAIL_ENABLED") ?? "true").toLowerCase() !== "false";
 const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260712-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
@@ -2011,6 +2012,104 @@ async function sendPaymentConfirmationMessage(
   });
 }
 
+function buildPaymentConfirmationEmailContent(
+  order: Record<string, unknown>,
+  payment: Record<string, unknown>,
+  deliverySummary?: {
+    delivered: Array<{ seriesId: string; title: string; deliveryType: "telegram_file" | "telegram_url" }>;
+    failed: Array<{ seriesId: string; title: string; reason: string }>;
+  },
+) {
+  const method = normalizeCheckoutMethod(order.payment_method);
+  const amount = Number(order.amount ?? 0);
+  const providerAmount = Math.max(0, Math.round(Number(order.provider_amount ?? 0) || 0));
+  const orderId = String(order.order_id ?? "").trim();
+  const statusDetail = typeof payment.status_detail === "string" ? payment.status_detail.trim() : "";
+  const items = Array.isArray(order.items) ? (order.items as Record<string, unknown>[]) : [];
+  const itemTitles = items
+    .map((item) => String(item.title ?? item.name ?? "Série").trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  const deliveredCount = deliverySummary?.delivered.length ?? 0;
+  const failedCount = deliverySummary?.failed.length ?? 0;
+  const amountText = method === "telegram_checkout" && providerAmount > 0
+    ? `${providerAmount} Stars`
+    : formatCurrencyBRL(amount);
+  const methodText = method === "pix_qr" ? "Pix" : method === "telegram_checkout" ? "Telegram Stars" : "Mercado Pago";
+  const itemText = itemTitles.length ? itemTitles.map((title) => `- ${title}`).join("\n") : "- Itens do pedido";
+  const itemHtml = itemTitles.length
+    ? itemTitles.map((title) => `<li>${escapeHtml(title)}</li>`).join("")
+    : "<li>Itens do pedido</li>";
+  const deliveryText = failedCount > 0
+    ? `Entrega iniciada: ${deliveredCount} item(ns) entregue(s), ${failedCount} item(ns) aguardando reprocessamento.`
+    : `Entrega iniciada para ${deliveredCount} item(ns).`;
+  const deliveryHtml = failedCount > 0
+    ? `<p>Entrega iniciada: ${deliveredCount} item(ns) entregue(s) e ${failedCount} item(ns) aguardando reprocessamento.</p>`
+    : `<p>Entrega iniciada para ${deliveredCount} item(ns).</p>`;
+  const subject = `Compra confirmada - pedido ${orderId.slice(0, 8) || "ShortNovels"}`.slice(0, 140);
+  const text = [
+    "Sua compra foi confirmada.",
+    `Pedido: ${orderId || "não informado"}`,
+    `Valor: ${amountText}`,
+    `Método: ${methodText}`,
+    statusDetail ? `Detalhe: ${statusDetail}` : "",
+    "",
+    "Itens:",
+    itemText,
+    "",
+    deliveryText,
+    `Abrir catálogo: ${SERIES_WEBAPP_URL}`,
+  ].filter(Boolean).join("\n");
+  const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0b1a2f;">
+    <h2>Compra confirmada</h2>
+    <p>Recebemos o seu pagamento com segurança.</p>
+    <p><strong>Pedido:</strong> ${escapeHtml(orderId || "não informado")}<br>
+    <strong>Valor:</strong> ${escapeHtml(amountText)}<br>
+    <strong>Método:</strong> ${escapeHtml(methodText)}${statusDetail ? `<br><strong>Detalhe:</strong> ${escapeHtml(statusDetail)}` : ""}</p>
+    <p><strong>Itens</strong></p><ul>${itemHtml}</ul>
+    ${deliveryHtml}
+    <p><a href="${escapeHtml(SERIES_WEBAPP_URL)}">Abrir catálogo ShortNovels</a></p>
+  </div>`;
+  return { subject, text, html };
+}
+
+async function sendPaymentConfirmationEmail(
+  order: Record<string, unknown>,
+  payment: Record<string, unknown>,
+  deliverySummary?: {
+    delivered: Array<{ seriesId: string; title: string; deliveryType: "telegram_file" | "telegram_url" }>;
+    failed: Array<{ seriesId: string; title: string; reason: string }>;
+  },
+) {
+  const email = String(order.buyer_email ?? "").trim();
+  if (!PAYMENT_CONFIRMATION_EMAIL_ENABLED) return { sent: false as const, skipped: "disabled" };
+  if (!RESEND_API_KEY) return { sent: false as const, skipped: "not_configured" };
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { sent: false as const, skipped: "email_invalid" };
+  }
+
+  const content = buildPaymentConfirmationEmailContent(order, payment, deliverySummary);
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${RESEND_API_KEY}`,
+    },
+    body: JSON.stringify({
+      from: SUPPORT_FROM_EMAIL,
+      to: [email],
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(String(payload?.error || payload?.message || `HTTP ${response.status}`));
+  }
+  return { sent: true as const, id: typeof payload?.id === "string" ? payload.id : "" };
+}
+
 function normalizeWebhookStatus(value: unknown) {
   const status = String(value ?? "").trim().toLowerCase();
   if (!status) return "pending";
@@ -2367,6 +2466,18 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
       if (orderId) {
         finalOrder = await updatePaymentOrderRecord(orderId, {
           delivery_notification_sent_at: new Date().toISOString(),
+        }) as Record<string, unknown>;
+      }
+    }
+
+    if (!finalOrder.confirmation_email_sent_at) {
+      const emailResult = await sendPaymentConfirmationEmail(finalOrder, payment, deliverySummary).catch((error) => {
+        console.warn("[PAYMENT][EMAIL] Falha ao enviar confirmação de compra:", error instanceof Error ? error.message : String(error));
+        return { sent: false as const, skipped: "send_failed" };
+      });
+      if (emailResult.sent && orderId) {
+        finalOrder = await updatePaymentOrderRecord(orderId, {
+          confirmation_email_sent_at: new Date().toISOString(),
         }) as Record<string, unknown>;
       }
     }
@@ -3806,6 +3917,22 @@ async function handleTelegramSuccessfulPayment(
     approvedOrder = await updatePaymentOrderRecord(orderId, {
       delivery_notification_sent_at: new Date().toISOString(),
     }) as Record<string, unknown>;
+  }
+
+  if (!approvedOrder.confirmation_email_sent_at) {
+    const emailResult = await sendPaymentConfirmationEmail(
+      approvedOrder,
+      { status_detail: "Confirmado pelo Telegram" },
+      deliverySummary,
+    ).catch((error) => {
+      console.warn("[PAYMENT][EMAIL] Falha ao enviar confirmação de compra:", error instanceof Error ? error.message : String(error));
+      return { sent: false as const, skipped: "send_failed" };
+    });
+    if (emailResult.sent) {
+      approvedOrder = await updatePaymentOrderRecord(orderId, {
+        confirmation_email_sent_at: new Date().toISOString(),
+      }) as Record<string, unknown>;
+    }
   }
 
   return json(req, {
@@ -9351,6 +9478,7 @@ async function handleSupportSubmitV2(req: Request) {
 export {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
+  buildPaymentConfirmationEmailContent,
   buildReferralLedgerSourceEventId,
   getCheckoutRecoverySkipReason,
   getReferralRewardLedgerAction,
