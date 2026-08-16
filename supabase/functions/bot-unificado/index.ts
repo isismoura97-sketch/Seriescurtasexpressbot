@@ -74,6 +74,8 @@ const TELEGRAM_STARS_DEFAULT_PRICE = Math.max(1, Math.round(Number(Deno.env.get(
 const OWNER_TELEGRAM_USER_ID = Deno.env.get("OWNER_TELEGRAM_USER_ID") ?? "";
 const OWNER_AREA_PASSWORD = Deno.env.get("OWNER_AREA_PASSWORD") ?? "";
 const OWNER_AREA_PASSWORD_SHA256 = Deno.env.get("OWNER_AREA_PASSWORD_SHA256") ?? "";
+const ADMIN_ACCESS_ROLES_TABLE = Deno.env.get("ADMIN_ACCESS_ROLES_TABLE") ?? "admin_access_roles";
+const ADMIN_RBAC_ENABLED = (Deno.env.get("ADMIN_RBAC_ENABLED") ?? "false").toLowerCase() === "true";
 const SERIES_COVER_BUCKET = Deno.env.get("SERIES_COVER_BUCKET") ?? "covers";
 const SERIES_TRAILER_BUCKET = Deno.env.get("SERIES_TRAILER_BUCKET") ?? "trailers";
 const SERIES_VIDEO_BUCKET = Deno.env.get("SERIES_VIDEO_BUCKET") ?? "videos";
@@ -3655,6 +3657,110 @@ async function validateOwnerPassword(password: string) {
   if (!configuredPassword) return false;
 
   return constantTimeEqual(submitted, configuredPassword);
+}
+
+type AdminRole = "owner" | "support" | "operations";
+type AdminPermission = "*" | "support:read" | "orders:read" | "catalog:read" | "delivery:retry";
+
+const ADMIN_ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermission[]>> = {
+  owner: ["*"],
+  support: ["support:read", "orders:read"],
+  operations: ["catalog:read", "orders:read", "delivery:retry"],
+};
+
+function normalizeAdminRole(value: unknown): AdminRole | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "owner" || normalized === "support" || normalized === "operations"
+    ? normalized
+    : null;
+}
+
+function getAdminRolePermissions(role: AdminRole): readonly AdminPermission[] {
+  return ADMIN_ROLE_PERMISSIONS[role] || [];
+}
+
+async function getConfiguredAdminRole(userId: string) {
+  if (!ADMIN_RBAC_ENABLED || !/^\d{1,20}$/.test(userId)) return null;
+  const rows = await supabaseFetch(
+    `${ADMIN_ACCESS_ROLES_TABLE}?select=telegram_user_id,role,display_name,enabled,password_verifier&telegram_user_id=eq.${encodeURIComponent(userId)}&enabled=eq.true&limit=1`,
+  ).catch(() => []);
+  const row = Array.isArray(rows) && rows.length ? rows[0] as Record<string, unknown> : null;
+  const role = normalizeAdminRole(row?.role);
+  const passwordVerifier = String(row?.password_verifier ?? "").trim();
+  if (!row || !role || !/^pbkdf2-sha256\$[1-9][0-9]{4,6}\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/.test(passwordVerifier)) return null;
+  return {
+    role,
+    displayName: String(row.display_name ?? "").trim(),
+    passwordVerifier,
+  };
+}
+
+async function verifyAdminPasswordVerifier(password: string, verifier: string) {
+  const [scheme, rawIterations, saltPart, hashPart] = String(verifier ?? "").split("$");
+  const iterations = Number(rawIterations);
+  if (scheme !== "pbkdf2-sha256" || !Number.isInteger(iterations) || iterations < 10_000 || iterations > 1_000_000) {
+    return false;
+  }
+
+  try {
+    const salt = base64UrlDecode(saltPart);
+    const expected = base64UrlDecode(hashPart);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      textEncode(password),
+      { name: "PBKDF2" },
+      false,
+      ["deriveBits"],
+    );
+    const derived = new Uint8Array(await crypto.subtle.deriveBits(
+      { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+      key,
+      expected.length * 8,
+    ));
+    return constantTimeEqual(base64UrlEncode(derived), base64UrlEncode(expected));
+  } catch {
+    return false;
+  }
+}
+
+async function resolveAdminRequest(
+  body: Record<string, unknown>,
+  allowedRoles: readonly AdminRole[] = ["owner"],
+) {
+  let validated: { userId: string };
+  try {
+    validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { error: message, status: 401 };
+  }
+
+  const userId = String(validated.userId ?? "").trim();
+  const password = String(body.password ?? "");
+  let role: AdminRole | null = null;
+  let displayName = "";
+
+  if (OWNER_TELEGRAM_USER_ID && userId === String(OWNER_TELEGRAM_USER_ID)) {
+    const hasPasswordConfigured = Boolean(OWNER_AREA_PASSWORD_SHA256 || OWNER_AREA_PASSWORD);
+    if (!hasPasswordConfigured) return { error: "Senha do proprietario nao configurada", status: 503 };
+    if (await validateOwnerPassword(password)) role = "owner";
+  } else {
+    const configured = await getConfiguredAdminRole(userId);
+    if (configured && await verifyAdminPasswordVerifier(password, configured.passwordVerifier)) {
+      role = configured.role;
+      displayName = configured.displayName;
+    }
+  }
+
+  if (!role) return { error: "Acesso administrativo invalido", status: 403 };
+  if (!allowedRoles.includes(role)) return { error: "Papel sem permissao para esta operacao", status: 403 };
+
+  return {
+    userId,
+    role,
+    displayName,
+    permissions: getAdminRolePermissions(role),
+  };
 }
 
 async function deriveAesKey(secret: string) {
@@ -8514,29 +8620,23 @@ async function buildOwnerDashboardPayload(userId: string) {
 }
 
 async function resolveOwnerRequest(body: Record<string, unknown>) {
-  let validated: { userId: string };
-  try {
-    validated = await validateWebAppInitData(String(body.init_data ?? body.initData ?? ""));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { error: message, status: 401 };
-  }
+  return await resolveAdminRequest(body, ["owner"]);
+}
 
-  if (String(validated.userId) !== String(OWNER_TELEGRAM_USER_ID)) {
-    return { error: "Acesso restrito ao proprietario", status: 403 };
-  }
+async function handleAdminAccessStatus(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
 
-  const hasPasswordConfigured = Boolean(OWNER_AREA_PASSWORD_SHA256 || OWNER_AREA_PASSWORD);
-  if (!hasPasswordConfigured) {
-    return { error: "Senha do proprietario nao configurada", status: 503 };
-  }
+  const access = await resolveAdminRequest(body, ["owner", "support", "operations"]);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
 
-  const passwordOk = await validateOwnerPassword(String(body.password ?? ""));
-  if (!passwordOk) {
-    return { error: "Senha invalida", status: 403 };
-  }
-
-  return { userId: validated.userId };
+  return json(req, {
+    ok: true,
+    role: access.role,
+    display_name: access.displayName || null,
+    permissions: access.permissions,
+    rbac_enabled: ADMIN_RBAC_ENABLED,
+  });
 }
 
 async function handleOwnerDashboard(req: Request) {
@@ -9614,8 +9714,10 @@ async function handleSupportSubmitV2(req: Request) {
 export {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
+  getAdminRolePermissions,
   buildPaymentConfirmationEmailContent,
   buildPaymentStatusEmailContent,
+  normalizeAdminRole,
   buildReferralLedgerSourceEventId,
   getCheckoutRecoverySkipReason,
   getReferralRewardLedgerAction,
@@ -9749,6 +9851,10 @@ if (import.meta.main) Deno.serve(async (req) => {
 
     if (action === "owner-dashboard" && req.method === "POST") {
       return await handleOwnerDashboard(req);
+    }
+
+    if (action === "admin-access-status" && req.method === "POST") {
+      return await handleAdminAccessStatus(req);
     }
 
     if (action === "owner-ai-settings" && req.method === "POST") {

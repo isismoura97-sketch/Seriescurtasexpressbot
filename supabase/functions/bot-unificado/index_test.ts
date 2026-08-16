@@ -1,6 +1,7 @@
 import {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
+  getAdminRolePermissions,
   buildPaymentConfirmationEmailContent,
   buildPaymentStatusEmailContent,
   buildReferralLedgerSourceEventId,
@@ -8,6 +9,7 @@ import {
   getReferralRewardLedgerAction,
   normalizeReferralCode,
   normalizeReferralRewardConfig,
+  normalizeAdminRole,
   normalizeWebhookStatus,
   serializeCustomerExportSeries,
   validateApprovedPaymentForOrder,
@@ -83,6 +85,14 @@ Deno.test("ledger de indicacao permanece bloqueado sem regra comercial", () => {
     "disabled",
     "pagamento aprovado nao gera credito enquanto bloqueado",
   );
+});
+
+Deno.test("RBAC reconhece somente papeis administrativos previstos", () => {
+  assertEquals(normalizeAdminRole("support"), "support");
+  assertEquals(normalizeAdminRole("operations"), "operations");
+  assertEquals(normalizeAdminRole("customer"), null);
+  assertEquals(getAdminRolePermissions("support"), ["support:read", "orders:read"]);
+  assertEquals(getAdminRolePermissions("operations"), ["catalog:read", "orders:read", "delivery:retry"]);
 });
 
 Deno.test("ledger de indicacao usa eventos idempotentes e reversao explicita", () => {

@@ -10,6 +10,7 @@
 - Preparado e-mail transacional idempotente de confirmação de compra, sem exposição de mídia protegida.
 - Preparadas notificações opt-in para pagamento não aprovado, reembolso e chargeback.
 - Criada a fundação privada de RBAC administrativo com papéis `owner`, `support` e `operations`, ainda desativada por padrão.
+- A credencial por papel foi preparada com verificador PBKDF2-SHA-256 com salt; nenhuma conta administrativa adicional foi ativada.
 
 ## 2026-07-18 - Busca editorial LGBTQIA+ segura
 
