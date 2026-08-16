@@ -165,6 +165,11 @@ const CUSTOMER_ACCOUNT_CONSENTS_TABLE = Deno.env.get("CUSTOMER_ACCOUNT_CONSENTS_
 const CUSTOMER_TELEGRAM_LINKS_TABLE = Deno.env.get("CUSTOMER_TELEGRAM_LINKS_TABLE") ?? "customer_telegram_links";
 const REFERRAL_CODES_TABLE = Deno.env.get("REFERRAL_CODES_TABLE") ?? "referral_codes";
 const REFERRALS_TABLE = Deno.env.get("REFERRALS_TABLE") ?? "referrals";
+const CREDIT_LEDGER_TABLE = Deno.env.get("CREDIT_LEDGER_TABLE") ?? "credit_ledger_entries";
+const REFERRAL_REWARD_CONFIG = normalizeReferralRewardConfig(
+  Deno.env.get("REFERRAL_REWARD_ENABLED"),
+  Deno.env.get("REFERRAL_REWARD_AMOUNT_CENTS"),
+);
 const AI_SETTINGS_TABLE = Deno.env.get("AI_SETTINGS_TABLE") ?? "ai_settings";
 const AI_USAGE_LOGS_TABLE = Deno.env.get("AI_USAGE_LOGS_TABLE") ?? "ai_usage_logs";
 const AI_RESPONSE_CACHE_TABLE = Deno.env.get("AI_RESPONSE_CACHE_TABLE") ?? "ai_response_cache";
@@ -2279,6 +2284,12 @@ async function applyMercadoPagoPaymentState(order: Record<string, unknown>, paym
     ? await updatePaymentOrderRecord(orderId, nextPatch) as Record<string, unknown>
     : order;
 
+  if (orderId && ["approved", "refunded", "charged_back"].includes(currentStatus)) {
+    await syncReferralRewardLedger(orderId, currentStatus).catch((error) => {
+      console.warn("[REFERRAL] Falha ao sincronizar ledger de recompensa:", error instanceof Error ? error.message : String(error));
+    });
+  }
+
   if (orderId && currentStatus === "approved") {
     await updateCouponRedemption(orderId, "applied");
   } else if (orderId && ["rejected", "cancelled", "canceled", "expired"].includes(currentStatus)) {
@@ -3756,6 +3767,10 @@ async function handleTelegramSuccessfulPayment(
     webhook_payload: { source: "telegram_successful_payment", currency, total_amount: totalAmount },
   }) as Record<string, unknown>;
 
+  await syncReferralRewardLedger(orderId, "approved").catch((error) => {
+    console.warn("[REFERRAL] Falha ao sincronizar ledger de recompensa:", error instanceof Error ? error.message : String(error));
+  });
+
   await grantOrderEntitlements(approvedOrder);
   await updateCouponRedemption(orderId, "applied");
   const deliverySummary = await deliverApprovedOrderSeries(approvedOrder);
@@ -3843,6 +3858,10 @@ async function handleTelegramRefundedPayment(
       metadata: { payment_provider: "telegram_stars" },
     });
   }
+
+  await syncReferralRewardLedger(orderId, "refunded").catch((error) => {
+    console.warn("[REFERRAL] Falha ao sincronizar reversao no ledger:", error instanceof Error ? error.message : String(error));
+  });
 
   return json(req, { ok: true, action: "telegram_payment_refunded", order_id: orderId });
 }
@@ -6320,6 +6339,123 @@ function generateReferralCode() {
   const bytes = new Uint8Array(6);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+type ReferralRewardConfig = Readonly<{
+  enabled: boolean;
+  amountCents: number;
+  currency: "BRL";
+}>;
+
+function normalizeReferralRewardConfig(enabledValue: unknown, amountValue: unknown): ReferralRewardConfig {
+  const amountCents = Math.round(Number(amountValue ?? 0) || 0);
+  const enabled = [true, "true", "1", "yes", "on"].includes(enabledValue as boolean | string);
+  return {
+    enabled: enabled && amountCents > 0 && amountCents <= 100_000_000,
+    amountCents: amountCents > 0 && amountCents <= 100_000_000 ? amountCents : 0,
+    currency: "BRL",
+  };
+}
+
+function getReferralRewardLedgerAction(
+  paymentStatus: unknown,
+  referralStatus: unknown,
+  config: ReferralRewardConfig,
+) {
+  if (!config.enabled) return "disabled" as const;
+  const payment = String(paymentStatus ?? "").trim().toLowerCase();
+  const referral = String(referralStatus ?? "").trim().toLowerCase();
+  if (payment === "approved" && referral === "converted") return "credit" as const;
+  if (["refunded", "charged_back"].includes(payment) && referral === "reversed") return "debit" as const;
+  return "not_eligible" as const;
+}
+
+function buildReferralLedgerSourceEventId(
+  referralId: unknown,
+  orderId: unknown,
+  entryType: "referral_reward" | "referral_reversal",
+) {
+  const normalizedReferralId = String(referralId ?? "").trim();
+  const normalizedOrderId = String(orderId ?? "").trim();
+  if (!normalizedReferralId || !normalizedOrderId) return "";
+  return `referral:${entryType}:${normalizedReferralId}:${normalizedOrderId}`;
+}
+
+async function getCreditLedgerEntry(sourceEventId: string) {
+  if (!sourceEventId) return null;
+  const rows = await supabaseFetch(
+    `${CREDIT_LEDGER_TABLE}?select=id,user_id,direction,amount_cents,currency,entry_type,referral_id,order_id,reversal_of,source_event_id&source_event_id=eq.${encodeURIComponent(sourceEventId)}&limit=1`,
+  ).catch(() => []);
+  return Array.isArray(rows) && rows.length ? rows[0] as Record<string, unknown> : null;
+}
+
+async function insertCreditLedgerEntry(entry: Record<string, unknown>) {
+  const sourceEventId = String(entry.source_event_id ?? "").trim();
+  const existing = await getCreditLedgerEntry(sourceEventId);
+  if (existing) return { entry: existing, replayed: true };
+
+  try {
+    const created = await supabaseRestRequest(CREDIT_LEDGER_TABLE, {
+      method: "POST",
+      headers: { "content-type": "application/json", prefer: "return=representation" },
+      body: stringifyJson(entry),
+    });
+    const row = Array.isArray(created) ? created[0] as Record<string, unknown> | undefined : created as Record<string, unknown>;
+    return { entry: row ?? null, replayed: false };
+  } catch (error) {
+    const raced = await getCreditLedgerEntry(sourceEventId);
+    if (raced) return { entry: raced, replayed: true };
+    throw error;
+  }
+}
+
+async function syncReferralRewardLedger(orderId: string, paymentStatus: string) {
+  if (!REFERRAL_REWARD_CONFIG.enabled) return { recorded: false, reason: "reward_disabled" };
+
+  const rows = await supabaseFetch(
+    `${REFERRALS_TABLE}?select=id,referrer_id,referred_user_id,status,first_order_id&first_order_id=eq.${encodeURIComponent(orderId)}&limit=1`,
+  );
+  const referral = Array.isArray(rows) && rows.length ? rows[0] as Record<string, unknown> : null;
+  if (!referral) return { recorded: false, reason: "referral_not_found" };
+
+  const action = getReferralRewardLedgerAction(paymentStatus, referral.status, REFERRAL_REWARD_CONFIG);
+  if (action !== "credit" && action !== "debit") {
+    return { recorded: false, reason: action === "disabled" ? "reward_disabled" : "referral_not_eligible" };
+  }
+
+  const referralId = Number(referral.id);
+  const referrerId = String(referral.referrer_id ?? "").trim();
+  if (!Number.isSafeInteger(referralId) || !/^\d{1,20}$/.test(referrerId)) {
+    return { recorded: false, reason: "referral_identity_invalid" };
+  }
+
+  const entryType = action === "credit" ? "referral_reward" : "referral_reversal";
+  const sourceEventId = buildReferralLedgerSourceEventId(referralId, orderId, entryType);
+  if (!sourceEventId) return { recorded: false, reason: "ledger_event_invalid" };
+
+  let reversalOf: string | null = null;
+  if (action === "debit") {
+    const reward = await getCreditLedgerEntry(
+      buildReferralLedgerSourceEventId(referralId, orderId, "referral_reward"),
+    );
+    if (!reward?.id) return { recorded: false, reason: "original_reward_missing" };
+    reversalOf = String(reward.id);
+  }
+
+  const result = await insertCreditLedgerEntry({
+    user_id: referrerId,
+    direction: action,
+    amount_cents: REFERRAL_REWARD_CONFIG.amountCents,
+    currency: REFERRAL_REWARD_CONFIG.currency,
+    entry_type: entryType,
+    referral_id: referralId,
+    order_id: orderId,
+    reversal_of: reversalOf,
+    source_event_id: sourceEventId,
+    metadata: { source: "payment_transition", payment_status: paymentStatus },
+    effective_at: new Date().toISOString(),
+  });
+  return { recorded: true, replayed: result.replayed, entry: result.entry };
 }
 
 async function ensureReferralCode(userId: string) {
@@ -9215,8 +9351,11 @@ async function handleSupportSubmitV2(req: Request) {
 export {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
+  buildReferralLedgerSourceEventId,
   getCheckoutRecoverySkipReason,
+  getReferralRewardLedgerAction,
   normalizeReferralCode,
+  normalizeReferralRewardConfig,
   normalizeWebhookStatus,
   serializeCustomerExportSeries,
   validateApprovedPaymentForOrder,

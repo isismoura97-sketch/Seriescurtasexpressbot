@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-16 - Fundação do ledger de créditos
+
+- Criado o ledger privado e append-only para futuras recompensas de indicação.
+- O histórico usa eventos idempotentes, reversões vinculadas e não depende de saldo mutável.
+- Aprovações, estornos e chargebacks já possuem integração preparada em Mercado Pago e Telegram Stars.
+- A recompensa permanece desativada (`REFERRAL_REWARD_ENABLED=false`) até existir uma regra comercial aprovada.
+
 ## 2026-07-18 - Busca editorial LGBTQIA+ segura
 
 - A busca conversacional passou a reconhecer pedidos de representatividade por um filtro estruturado, neutro por padrao e validado no backend.

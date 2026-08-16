@@ -1,8 +1,11 @@
 import {
   buildAutomaticSeriesSeo,
   buildOwnerAnalyticsSnapshot,
+  buildReferralLedgerSourceEventId,
   getCheckoutRecoverySkipReason,
+  getReferralRewardLedgerAction,
   normalizeReferralCode,
+  normalizeReferralRewardConfig,
   normalizeWebhookStatus,
   serializeCustomerExportSeries,
   validateApprovedPaymentForOrder,
@@ -66,6 +69,41 @@ Deno.test("codigo de indicacao aceita somente formato seguro", () => {
     normalizeReferralCode("<script>"),
     "",
     "conteudo inseguro bloqueado",
+  );
+});
+
+Deno.test("ledger de indicacao permanece bloqueado sem regra comercial", () => {
+  const config = normalizeReferralRewardConfig("false", "590");
+  assertEquals(config.enabled, false, "recompensa desativada por padrao");
+  assertEquals(config.amountCents, 590, "valor preparado sem ativacao");
+  assertEquals(
+    getReferralRewardLedgerAction("approved", "converted", config),
+    "disabled",
+    "pagamento aprovado nao gera credito enquanto bloqueado",
+  );
+});
+
+Deno.test("ledger de indicacao usa eventos idempotentes e reversao explicita", () => {
+  const config = normalizeReferralRewardConfig("true", "590");
+  assertEquals(
+    getReferralRewardLedgerAction("approved", "converted", config),
+    "credit",
+    "conversao elegivel gera credito",
+  );
+  assertEquals(
+    getReferralRewardLedgerAction("refunded", "reversed", config),
+    "debit",
+    "estorno elegivel gera debito",
+  );
+  assertEquals(
+    buildReferralLedgerSourceEventId(42, "order-123", "referral_reward"),
+    "referral:referral_reward:42:order-123",
+    "chave de credito estavel",
+  );
+  assertEquals(
+    buildReferralLedgerSourceEventId(42, "order-123", "referral_reversal"),
+    "referral:referral_reversal:42:order-123",
+    "chave de reversao estavel",
   );
 });
 

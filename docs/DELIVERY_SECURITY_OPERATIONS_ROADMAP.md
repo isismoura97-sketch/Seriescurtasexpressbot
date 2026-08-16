@@ -20,6 +20,8 @@ Este documento registra a evolucao incremental solicitada para contas, entrega, 
 
 Objetivo: criar um historico contabil imutavel antes de ativar qualquer recompensa por indicacao.
 
+Estado tecnico em 2026-08-16: a fundacao do ledger foi aplicada no Supabase e a integracao idempotente com aprovacao, estorno e chargeback esta preparada. A recompensa continua desativada ate a definicao da regra comercial.
+
 - Definir evento elegivel, valor, prazo e limite da recompensa.
 - Criar ledger de credito e debito sem depender apenas de um campo de saldo.
 - Reverter recompensa em estorno, chargeback ou fraude confirmada.
