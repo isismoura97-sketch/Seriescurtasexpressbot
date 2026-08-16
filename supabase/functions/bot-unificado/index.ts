@@ -3661,11 +3661,11 @@ async function validateOwnerPassword(password: string) {
 }
 
 type AdminRole = "owner" | "support" | "operations";
-type AdminPermission = "*" | "support:read" | "orders:read" | "catalog:read" | "delivery:retry";
+type AdminPermission = "*" | "support:read" | "support:update" | "orders:read" | "catalog:read" | "delivery:retry";
 
 const ADMIN_ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly AdminPermission[]>> = {
   owner: ["*"],
-  support: ["support:read", "orders:read"],
+  support: ["support:read", "support:update", "orders:read"],
   operations: ["catalog:read", "orders:read", "delivery:retry"],
 };
 
@@ -9599,6 +9599,15 @@ async function getSupportTicketSummary(limit = 50) {
   };
 }
 
+const SUPPORT_TICKET_STATUSES = ["new", "in_progress", "resolved", "closed"] as const;
+
+function normalizeSupportTicketStatus(value: unknown) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return SUPPORT_TICKET_STATUSES.includes(normalized as typeof SUPPORT_TICKET_STATUSES[number])
+    ? normalized as typeof SUPPORT_TICKET_STATUSES[number]
+    : null;
+}
+
 async function handleAdminSupportSummary(req: Request) {
   const body = await req.json().catch(() => null) as Record<string, unknown> | null;
   if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
@@ -9616,6 +9625,46 @@ async function handleAdminSupportSummary(req: Request) {
   } catch (error) {
     console.warn("[SUPPORT] Falha ao carregar painel:", error instanceof Error ? error.message : String(error));
     return json(req, { error: "Não foi possível carregar os tickets agora" }, 502);
+  }
+}
+
+async function handleAdminSupportUpdate(req: Request) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return json(req, { error: "Corpo da requisicao invalido" }, 400);
+
+  const access = await resolveAdminRequest(body, ["owner", "support"]);
+  if ("error" in access) return json(req, { error: access.error }, access.status);
+  if (!access.permissions.includes("*") && !access.permissions.includes("support:update")) {
+    return json(req, { error: "Papel sem permissao para atualizar tickets" }, 403);
+  }
+
+  const ticketId = String(body.ticket_id ?? body.ticketId ?? "").trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ticketId)) {
+    return json(req, { error: "Ticket invalido" }, 400);
+  }
+
+  const status = normalizeSupportTicketStatus(body.status);
+  if (!status) return json(req, { error: "Status de ticket invalido" }, 400);
+
+  try {
+    const updatedRows = await supabaseRestRequest(
+      `${SUPPORT_TICKETS_TABLE}?id=eq.${encodeURIComponent(ticketId)}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json", prefer: "return=representation" },
+        body: stringifyJson({
+          status,
+          updated_at: new Date().toISOString(),
+          resolved_at: status === "resolved" || status === "closed" ? new Date().toISOString() : null,
+        }),
+      },
+    );
+    const ticket = Array.isArray(updatedRows) ? updatedRows[0] as Record<string, unknown> | undefined : null;
+    if (!ticket) return json(req, { error: "Ticket nao encontrado" }, 404);
+    return json(req, { ok: true, role: access.role, ticket });
+  } catch (error) {
+    console.warn("[SUPPORT] Falha ao atualizar ticket:", error instanceof Error ? error.message : String(error));
+    return json(req, { error: "Não foi possível atualizar o ticket agora" }, 502);
   }
 }
 
@@ -9934,6 +9983,10 @@ if (import.meta.main) Deno.serve(async (req) => {
 
     if (action === "admin-support-summary" && req.method === "POST") {
       return await handleAdminSupportSummary(req);
+    }
+
+    if (action === "admin-support-update" && req.method === "POST") {
+      return await handleAdminSupportUpdate(req);
     }
 
     if (action === "owner-ai-settings" && req.method === "POST") {

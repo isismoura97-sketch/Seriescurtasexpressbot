@@ -7,7 +7,7 @@
       "continue": true
     },
     {
-      "src": "/(app.min.js|styles.css)",
+      "src": "/(app.min.js|app.js|styles.css)",
       "headers": { "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400" },
       "continue": true
     },

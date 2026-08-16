@@ -13,6 +13,8 @@
 - A credencial por papel foi preparada com verificador PBKDF2-SHA-256 com salt; nenhuma conta administrativa adicional foi ativada.
 - Aplicada a primeira permissão efetiva do RBAC: `operations` pode reprocessar entregas, sem acesso a edição de catálogo, cupons ou IA.
 - Tickets de suporte passaram a ser persistidos em tabela privada e consultáveis em modo somente leitura por `owner` e `support`.
+- A área administrativa ganhou listagem de tickets com filtros por status e atualização segura para `new`, `in_progress`, `resolved` e `closed`.
+- O papel `support` passou a ter a permissão explícita `support:update`; o Mini App mostra apenas o painel de atendimento para esse papel.
 
 ## 2026-07-18 - Busca editorial LGBTQIA+ segura
 

@@ -5511,6 +5511,61 @@ body.light-mode .cart-item {
 .owner-ai-warning { color: #fff0b0; }
 .owner-ai-suggestion-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 
+.owner-support-section {
+    border-color: rgba(72, 176, 255, .22);
+    background: linear-gradient(145deg, rgba(14, 31, 58, .84), rgba(16, 25, 50, .76));
+}
+
+.owner-support-head-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.admin-support-filters { margin: 18px 0; }
+.admin-support-ticket-list { display: grid; gap: 12px; }
+
+.admin-support-ticket {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 16px;
+    background: rgba(4, 12, 27, .48);
+}
+
+.admin-support-ticket-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.admin-support-ticket-head h4 { margin: 5px 0 0; color: #fff; font-size: 1rem; }
+.admin-support-status-control { flex: 0 0 160px; }
+.admin-support-status-control span { display: block; margin-bottom: 5px; color: #9eabc0; font-size: .72rem; font-weight: 800; text-transform: uppercase; }
+.admin-support-status-control select { width: 100%; }
+.admin-support-ticket-description { margin: 14px 0; color: #dbe4f4; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.admin-support-ticket-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    color: #9eabc0;
+    font-size: .78rem;
+}
+
+.admin-support-ticket-meta span,
+.admin-support-ticket-meta a { display: inline-flex; align-items: center; gap: 6px; color: inherit; overflow-wrap: anywhere; }
+.admin-support-ticket-meta a:hover { color: var(--primary); }
+.admin-support-empty-state { padding: 28px 16px; }
+.admin-support-empty-state > i { margin-bottom: 10px; color: var(--primary); font-size: 1.6rem; }
+
+.admin-support-dashboard-head { margin-bottom: 18px; }
+.admin-support-dashboard-head h3 { margin: 6px 0; color: #fff; }
+.admin-support-dashboard-head p { margin: 0; color: #aeb8ca; line-height: 1.5; }
+
 @media (max-width: 900px) {
     .ai-discovery { grid-template-columns: 1fr; }
     .ai-search-reset { grid-column: 1; }
@@ -5528,4 +5583,8 @@ body.light-mode .cart-item {
     .owner-ai-task-grid .owner-ai-style { grid-column: auto; }
     .owner-ai-suggestion-head { flex-direction: column; }
     .owner-ai-suggestion-actions .btn { width: 100%; }
+    .owner-support-head-actions,
+    .admin-support-ticket-head { align-items: stretch; flex-direction: column; }
+    .owner-support-head-actions { justify-content: flex-start; }
+    .admin-support-status-control { flex-basis: auto; }
 }

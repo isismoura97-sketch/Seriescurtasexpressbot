@@ -202,6 +202,9 @@ let ownerSeriesSearchTerm = '';
 let ownerSeriesFilterMode = 'all';
 let ownerCouponEditCode = '';
 let ownerSessionAuthorized = false;
+let adminSessionRole = '';
+let supportTicketsSnapshot = null;
+let supportTicketFilter = 'all';
 let ownerAISuggestionState = null;
 let ownerAIPreviousValues = null;
 let supportRequestPending = false;
@@ -3008,6 +3011,23 @@ async function requestOwnerDashboard(password) {
     }, 20000);
 }
 
+async function requestAdminSupportSummary(password, limit = 100) {
+    return await requestJson(`${API_URL}?action=admin-support-summary`, {
+        init_data: tg?.initData || '',
+        password,
+        limit,
+    }, 20000);
+}
+
+async function requestAdminSupportUpdate(ticketId, status) {
+    return await requestJson(`${API_URL}?action=admin-support-update`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        ticket_id: String(ticketId || ''),
+        status: String(status || ''),
+    }, 20000);
+}
+
 async function requestOwnerOrderRetry(orderId) {
     return await requestJson(`${API_URL}?action=owner-order-retry`, {
         init_data: tg?.initData || '',
@@ -3590,6 +3610,7 @@ function restoreOwnerSeriesEditorState() {
 }
 
 function wireOwnerDashboardControls() {
+    wireAdminSupportControls();
     document.querySelectorAll('.owner-series-thumb').forEach((image) => {
         if (!(image instanceof HTMLImageElement)) return;
         image.onerror = () => {
@@ -5040,6 +5061,176 @@ function restoreOwnerAIValues() {
     showToast('Conteúdo anterior restaurado no formulário.', 'success');
 }
 
+const ADMIN_SUPPORT_STATUSES = [
+    { key: 'new', label: 'Novo', icon: 'fa-inbox' },
+    { key: 'in_progress', label: 'Em andamento', icon: 'fa-spinner' },
+    { key: 'resolved', label: 'Resolvido', icon: 'fa-check' },
+    { key: 'closed', label: 'Fechado', icon: 'fa-lock' },
+];
+
+function getAdminSupportStatusMeta(status) {
+    const normalized = String(status || 'new').trim().toLowerCase();
+    return ADMIN_SUPPORT_STATUSES.find((item) => item.key === normalized) || ADMIN_SUPPORT_STATUSES[0];
+}
+
+function setSupportTicketFilter(filter = 'all') {
+    supportTicketFilter = filter || 'all';
+    if (adminSessionRole === 'support' && supportTicketsSnapshot) {
+        renderAdminSupportDashboard(supportTicketsSnapshot);
+    } else if (ownerDashboardSnapshot) {
+        renderOwnerDashboard(ownerDashboardSnapshot);
+    }
+}
+
+function renderAdminSupportSection(summary = {}) {
+    supportTicketsSnapshot = summary || {};
+    const tickets = Array.isArray(summary?.tickets) ? summary.tickets : [];
+    const statusCounts = summary?.status_counts && typeof summary.status_counts === 'object'
+        ? summary.status_counts
+        : {};
+    const visibleTickets = supportTicketFilter === 'all'
+        ? tickets
+        : tickets.filter((ticket) => String(ticket?.status || 'new').toLowerCase() === supportTicketFilter);
+    const filterItems = [
+        { key: 'all', label: `Todos (${tickets.length})` },
+        ...ADMIN_SUPPORT_STATUSES.map((status) => ({
+            key: status.key,
+            label: `${status.label} (${Number(statusCounts[status.key] || 0)})`,
+        })),
+    ];
+    const filterButtons = filterItems.map((item) => `
+        <button type="button" class="owner-filter-chip ${supportTicketFilter === item.key ? 'active' : ''}" data-support-filter="${escapeAttr(item.key)}">
+            ${escapeHtml(item.label)}
+        </button>
+    `).join('');
+    const ticketRows = visibleTickets.map((ticket) => {
+        const meta = getAdminSupportStatusMeta(ticket?.status);
+        const ticketId = String(ticket?.id || '');
+        const email = String(ticket?.requester_email || '').trim();
+        const requester = String(ticket?.requester_telegram_id || '').trim();
+        const context = String(ticket?.context || '').trim();
+        const description = String(ticket?.description || '').trim();
+        return `
+            <article class="admin-support-ticket">
+                <div class="admin-support-ticket-head">
+                    <div>
+                        <span class="owner-eyebrow"><i class="fas ${escapeAttr(meta.icon)}"></i> Ticket ${escapeHtml(ticketId.slice(0, 8) || 'sem ID')}</span>
+                        <h4>${escapeHtml(ticket?.subject || 'Sem assunto')}</h4>
+                    </div>
+                    <label class="admin-support-status-control">
+                        <span>Status</span>
+                        <select data-support-status-update="${escapeAttr(ticketId)}" aria-label="Atualizar status do ticket">
+                            ${ADMIN_SUPPORT_STATUSES.map((status) => `<option value="${escapeAttr(status.key)}" ${status.key === String(ticket?.status || 'new') ? 'selected' : ''}>${escapeHtml(status.label)}</option>`).join('')}
+                        </select>
+                    </label>
+                </div>
+                <p class="admin-support-ticket-description">${escapeHtml(description || 'Sem descrição.')}</p>
+                <div class="admin-support-ticket-meta">
+                    ${email ? `<a href="mailto:${escapeAttr(email)}"><i class="fas fa-envelope"></i> ${escapeHtml(email)}</a>` : '<span><i class="fas fa-envelope"></i> E-mail não informado</span>'}
+                    ${requester ? `<span><i class="fab fa-telegram"></i> Telegram ${escapeHtml(requester)}</span>` : ''}
+                    ${context ? `<span><i class="fas fa-tag"></i> ${escapeHtml(context)}</span>` : ''}
+                    <span><i class="fas fa-clock"></i> ${escapeHtml(formatOwnerDate(ticket?.created_at))}</span>
+                </div>
+            </article>
+        `;
+    }).join('') || `
+        <div class="owner-empty-state admin-support-empty-state">
+            <i class="fas fa-headset"></i>
+            <strong>${supportTicketFilter === 'all' ? 'Nenhum ticket recebido ainda.' : 'Nenhum ticket neste status.'}</strong>
+            <span>Novas solicitações enviadas pelo Mini App aparecerão aqui.</span>
+        </div>
+    `;
+
+    return `
+        <section class="owner-section owner-support-section">
+            <div class="owner-section-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-headset"></i> Atendimento</span>
+                    <h3>Tickets de suporte</h3>
+                    <p>Atualize o andamento de cada solicitação. O conteúdo é carregado pelo backend privado e não fica exposto ao catálogo público.</p>
+                </div>
+                <div class="owner-support-head-actions">
+                    <div class="owner-series-count">${escapeHtml(String(tickets.length))} tickets</div>
+                    <button type="button" class="btn btn-secondary" data-support-refresh><i class="fas fa-rotate"></i> Atualizar</button>
+                </div>
+            </div>
+            <div class="owner-series-filters admin-support-filters" role="tablist" aria-label="Filtros de tickets">
+                ${filterButtons}
+            </div>
+            <div class="admin-support-ticket-list">${ticketRows}</div>
+        </section>
+    `;
+}
+
+function wireAdminSupportControls() {
+    document.querySelectorAll('[data-support-filter]').forEach((button) => {
+        if (button instanceof HTMLButtonElement) {
+            button.onclick = () => setSupportTicketFilter(button.dataset.supportFilter || 'all');
+        }
+    });
+    document.querySelectorAll('[data-support-refresh]').forEach((button) => {
+        if (button instanceof HTMLButtonElement) button.onclick = () => refreshAdminSupportTickets(button);
+    });
+    document.querySelectorAll('[data-support-status-update]').forEach((select) => {
+        if (!(select instanceof HTMLSelectElement)) return;
+        select.onchange = () => updateAdminSupportTicket(select.dataset.supportStatusUpdate || '', select.value, select);
+    });
+}
+
+async function refreshAdminSupportTickets(button = null) {
+    const previousLabel = button?.innerHTML || '';
+    try {
+        if (button instanceof HTMLButtonElement) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Atualizando...';
+        }
+        const summary = await requestAdminSupportSummary(String(DOM.ownerPasswordInput?.value || ''));
+        if (adminSessionRole === 'support') {
+            renderAdminSupportDashboard(summary);
+        } else if (ownerDashboardSnapshot) {
+            ownerDashboardSnapshot = { ...ownerDashboardSnapshot, support: summary };
+            renderOwnerDashboard(ownerDashboardSnapshot);
+        }
+    } catch (error) {
+        showToast(error?.message || 'Não foi possível atualizar os tickets.', 'error');
+    } finally {
+        if (button instanceof HTMLButtonElement) {
+            button.disabled = false;
+            button.innerHTML = previousLabel || '<i class="fas fa-rotate"></i> Atualizar';
+        }
+    }
+}
+
+async function updateAdminSupportTicket(ticketId, status, select) {
+    if (!ticketId || !status) return;
+    if (select instanceof HTMLSelectElement) select.disabled = true;
+    try {
+        await requestAdminSupportUpdate(ticketId, status);
+        showToast('Status do ticket atualizado.', 'success');
+        await refreshAdminSupportTickets();
+    } catch (error) {
+        showToast(error?.message || 'Não foi possível atualizar o ticket.', 'error');
+        await refreshAdminSupportTickets();
+    } finally {
+        if (select instanceof HTMLSelectElement) select.disabled = false;
+    }
+}
+
+function renderAdminSupportDashboard(summary = {}) {
+    if (!DOM.ownerDashboard) return;
+    ownerDashboardSnapshot = { support: summary };
+    DOM.ownerDashboard.innerHTML = `
+        <div class="admin-support-dashboard-head">
+            <span class="owner-eyebrow"><i class="fas fa-user-headset"></i> Acesso de suporte</span>
+            <h3>Painel de atendimento</h3>
+            <p>Leia as solicitações e atualize o status sem acessar dados de catálogo, pagamentos ou mídia.</p>
+        </div>
+        ${renderAdminSupportSection(summary)}
+    `;
+    DOM.ownerDashboard.hidden = false;
+    wireAdminSupportControls();
+}
+
 function renderOwnerDashboard(data) {
     if (!DOM.ownerDashboard) return;
 
@@ -5049,6 +5240,7 @@ function renderOwnerDashboard(data) {
     const analytics = data?.analytics || {};
     const coupons = data?.coupons || {};
     const ai = data?.ai || {};
+    const support = data?.support || {};
     const aiSettings = ai?.settings || {};
     const funnel = analytics.funnel || {};
     const conversionRates = analytics.conversion_rates || {};
@@ -5317,6 +5509,7 @@ function renderOwnerDashboard(data) {
             </div>
         </section>
         ${renderOwnerAIManagement(ai)}
+        ${renderAdminSupportSection(support)}
         <section class="owner-section owner-orders-section owner-orders-priority-section">
             <div class="owner-section-head">
                 <div>
@@ -5727,13 +5920,31 @@ async function submitOwnerLogin(event) {
     try {
         ownerSessionAuthorized = false;
         const data = await requestOwnerDashboard(password);
+        adminSessionRole = 'owner';
         ownerSessionAuthorized = true;
+        const supportSummary = await requestAdminSupportSummary(password).catch((error) => {
+            debugLog('[SUPPORT] Resumo administrativo indisponível:', error?.message || error);
+            return null;
+        });
+        if (supportSummary) data.support = supportSummary;
         renderOwnerDashboard(data);
         refreshCatalog();
         setOwnerStatus('Acesso validado.', 'success');
     } catch (error) {
         ownerSessionAuthorized = false;
+        adminSessionRole = '';
         DOM.ownerDashboard.hidden = true;
+        try {
+            const supportSummary = await requestAdminSupportSummary(password);
+            if (supportSummary?.role === 'support') {
+                adminSessionRole = 'support';
+                renderAdminSupportDashboard(supportSummary);
+                setOwnerStatus('Acesso de suporte validado.', 'success');
+                return;
+            }
+        } catch (_) {
+            // Mantém a mensagem do acesso de proprietário quando as duas validações falharem.
+        }
         const message = String(error?.message || '');
         const normalizedMessage = message.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         let friendlyMessage = message || 'Não foi possível abrir a área do proprietário.';
