@@ -30,6 +30,8 @@ Estado tecnico em 2026-08-16: a fundacao do ledger foi aplicada no Supabase e a 
 
 ## Prioridade seguinte: administracao e comunicacao
 
+Estado tecnico em 2026-08-16: a tabela legada de sessoes administrativas foi endurecida para acesso exclusivo do backend; RBAC formal e segundo fator continuam pendentes.
+
 - RBAC para proprietaria, suporte e operacao.
 - Segundo fator para funcoes administrativas sensiveis.
 - E-mails transacionais de verificacao, compra, falha, reembolso e seguranca.

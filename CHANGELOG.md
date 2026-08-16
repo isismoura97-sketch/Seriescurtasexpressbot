@@ -6,6 +6,7 @@
 - O histórico usa eventos idempotentes, reversões vinculadas e não depende de saldo mutável.
 - Aprovações, estornos e chargebacks já possuem integração preparada em Mercado Pago e Telegram Stars.
 - A recompensa permanece desativada (`REFERRAL_REWARD_ENABLED=false`) até existir uma regra comercial aprovada.
+- Privilégios residuais de `admin_sessions` foram removidos de `anon` e `authenticated`; o acesso ficou restrito ao backend.
 
 ## 2026-07-18 - Busca editorial LGBTQIA+ segura
 
