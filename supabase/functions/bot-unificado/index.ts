@@ -46,7 +46,7 @@ const TELEGRAM_BOT_USERNAME = (
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
 const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "Séries Curtas Express <onboarding@resend.dev>";
-const PAYMENT_CONFIRMATION_EMAIL_ENABLED = (Deno.env.get("PAYMENT_CONFIRMATION_EMAIL_ENABLED") ?? "true").toLowerCase() !== "false";
+const PAYMENT_CONFIRMATION_EMAIL_ENABLED = (Deno.env.get("PAYMENT_CONFIRMATION_EMAIL_ENABLED") ?? "false").toLowerCase() === "true";
 const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260712-03";
 const WELCOME_LOGO_URL = Deno.env.get("WELCOME_LOGO_URL") ??
   new URL(`/assets/logo-welcome.png?v=${APP_BUILD_VERSION}`, SERIES_WEBAPP_URL).toString();
