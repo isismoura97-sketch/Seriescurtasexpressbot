@@ -5110,6 +5110,12 @@ function renderAdminSupportSection(summary = {}) {
         const requester = String(ticket?.requester_telegram_id || '').trim();
         const context = String(ticket?.context || '').trim();
         const description = String(ticket?.description || '').trim();
+        const statusEvents = Array.isArray(ticket?.status_events) ? ticket.status_events : [];
+        const statusHistory = statusEvents.slice(0, 5).map((event) => {
+            const from = getAdminSupportStatusMeta(event?.previous_status);
+            const to = getAdminSupportStatusMeta(event?.new_status);
+            return `<li><span>${escapeHtml(from.label)} → ${escapeHtml(to.label)}</span><small>${escapeHtml(formatOwnerDate(event?.created_at))} · ${escapeHtml(String(event?.changed_by_role || 'admin'))}</small></li>`;
+        }).join('');
         return `
             <article class="admin-support-ticket">
                 <div class="admin-support-ticket-head">
@@ -5131,6 +5137,7 @@ function renderAdminSupportSection(summary = {}) {
                     ${context ? `<span><i class="fas fa-tag"></i> ${escapeHtml(context)}</span>` : ''}
                     <span><i class="fas fa-clock"></i> ${escapeHtml(formatOwnerDate(ticket?.created_at))}</span>
                 </div>
+                ${statusHistory ? `<details class="admin-support-history"><summary><i class="fas fa-clock-rotate-left"></i> Histórico (${statusEvents.length})</summary><ul>${statusHistory}</ul></details>` : ''}
             </article>
         `;
     }).join('') || `

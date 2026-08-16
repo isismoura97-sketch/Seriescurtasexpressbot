@@ -38,7 +38,7 @@ As credenciais futuras usam verificador PBKDF2-SHA-256 com salt, e não senha em
 
 Matriz inicial: `owner` mantém todos os fluxos atuais; `operations` pode reprocessar entrega pelo endpoint `owner-order-retry`; `support` fica limitado ao atendimento de tickets e não recebe acesso a catálogo, pagamentos ou mídia.
 
-Painel de suporte inicial: tickets persistidos no backend, listagem com filtros no Mini App e endpoints `admin-support-summary`/`admin-support-update`; `support` fica restrito ao atendimento e não recebe catálogo, pagamentos ou mídia.
+Painel de suporte inicial: tickets persistidos no backend, listagem com filtros no Mini App, histórico append-only de status e endpoints `admin-support-summary`/`admin-support-update`; `support` fica restrito ao atendimento e não recebe catálogo, pagamentos ou mídia.
 
 Comunicacao em 2026-08-16: a confirmação de compra por e-mail foi preparada com marcador idempotente no pedido; falhas de envio não interrompem pagamento ou entrega.
 

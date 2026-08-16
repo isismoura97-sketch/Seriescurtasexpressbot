@@ -15,6 +15,7 @@
 - Tickets de suporte passaram a ser persistidos em tabela privada e consultáveis em modo somente leitura por `owner` e `support`.
 - A área administrativa ganhou listagem de tickets com filtros por status e atualização segura para `new`, `in_progress`, `resolved` e `closed`.
 - O papel `support` passou a ter a permissão explícita `support:update`; o Mini App mostra apenas o painel de atendimento para esse papel.
+- Cada transição de status passou a registrar ator, papel, status anterior, novo status e horário em uma trilha privada append-only.
 
 ## 2026-07-18 - Busca editorial LGBTQIA+ segura
 

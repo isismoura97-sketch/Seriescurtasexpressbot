@@ -47,6 +47,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 const SUPPORT_INBOX_EMAIL = Deno.env.get("SUPPORT_INBOX_EMAIL") ?? "isismoura97@gmail.com";
 const SUPPORT_FROM_EMAIL = Deno.env.get("SUPPORT_FROM_EMAIL") ?? "Séries Curtas Express <onboarding@resend.dev>";
 const SUPPORT_TICKETS_TABLE = Deno.env.get("SUPPORT_TICKETS_TABLE") ?? "support_tickets";
+const SUPPORT_TICKET_STATUS_EVENTS_TABLE = Deno.env.get("SUPPORT_TICKET_STATUS_EVENTS_TABLE") ?? "support_ticket_status_events";
 const PAYMENT_CONFIRMATION_EMAIL_ENABLED = (Deno.env.get("PAYMENT_CONFIRMATION_EMAIL_ENABLED") ?? "false").toLowerCase() === "true";
 const PAYMENT_STATUS_EMAIL_ENABLED = (Deno.env.get("PAYMENT_STATUS_EMAIL_ENABLED") ?? "false").toLowerCase() === "true";
 const APP_BUILD_VERSION = Deno.env.get("APP_BUILD_VERSION") ?? "20260712-03";
@@ -9587,15 +9588,31 @@ async function getSupportTicketSummary(limit = 50) {
     `${SUPPORT_TICKETS_TABLE}?select=id,requester_telegram_id,requester_email,subject,description,context,status,created_at,updated_at,resolved_at&order=created_at.desc&limit=${boundedLimit}`,
   );
   const tickets = Array.isArray(rows) ? rows as Record<string, unknown>[] : [];
-  const statusCounts = tickets.reduce<Record<string, number>>((counts, ticket) => {
+  const ticketIds = tickets.map((ticket) => String(ticket.id ?? "").trim()).filter(Boolean);
+  const events = ticketIds.length
+    ? await supabaseFetch(
+      `${SUPPORT_TICKET_STATUS_EVENTS_TABLE}?select=id,ticket_id,previous_status,new_status,changed_by_telegram_id,changed_by_role,created_at&ticket_id=in.(${ticketIds.map(encodeURIComponent).join(",")})&order=created_at.desc&limit=500`,
+    )
+    : [];
+  const eventsByTicket = (Array.isArray(events) ? events as Record<string, unknown>[] : []).reduce<Record<string, Record<string, unknown>[]>>((grouped, event) => {
+    const ticketId = String(event.ticket_id ?? "").trim();
+    if (!ticketId) return grouped;
+    (grouped[ticketId] ||= []).push(event);
+    return grouped;
+  }, {});
+  const ticketsWithEvents = tickets.map((ticket) => ({
+    ...ticket,
+    status_events: eventsByTicket[String(ticket.id ?? "").trim()] ?? [],
+  }));
+  const statusCounts = ticketsWithEvents.reduce<Record<string, number>>((counts, ticket) => {
     const status = String(ticket.status ?? "new").trim().toLowerCase() || "new";
     counts[status] = (counts[status] ?? 0) + 1;
     return counts;
   }, {});
   return {
-    total_returned: tickets.length,
+    total_returned: ticketsWithEvents.length,
     status_counts: statusCounts,
-    tickets,
+    tickets: ticketsWithEvents,
   };
 }
 
@@ -9647,6 +9664,17 @@ async function handleAdminSupportUpdate(req: Request) {
   if (!status) return json(req, { error: "Status de ticket invalido" }, 400);
 
   try {
+    const existingRows = await supabaseFetch(
+      `${SUPPORT_TICKETS_TABLE}?select=id,status&id=eq.${encodeURIComponent(ticketId)}&limit=1`,
+    );
+    const existingTicket = Array.isArray(existingRows) ? existingRows[0] as Record<string, unknown> | undefined : null;
+    if (!existingTicket) return json(req, { error: "Ticket nao encontrado" }, 404);
+    const previousStatus = normalizeSupportTicketStatus(existingTicket.status);
+    if (!previousStatus) return json(req, { error: "Status atual do ticket invalido" }, 409);
+    if (previousStatus === status) {
+      return json(req, { ok: true, role: access.role, ticket: { ...existingTicket, status }, audit_recorded: false });
+    }
+
     const updatedRows = await supabaseRestRequest(
       `${SUPPORT_TICKETS_TABLE}?id=eq.${encodeURIComponent(ticketId)}`,
       {
@@ -9661,7 +9689,27 @@ async function handleAdminSupportUpdate(req: Request) {
     );
     const ticket = Array.isArray(updatedRows) ? updatedRows[0] as Record<string, unknown> | undefined : null;
     if (!ticket) return json(req, { error: "Ticket nao encontrado" }, 404);
-    return json(req, { ok: true, role: access.role, ticket });
+
+    let auditRecorded = false;
+    try {
+      await supabaseRestRequest(SUPPORT_TICKET_STATUS_EVENTS_TABLE, {
+        method: "POST",
+        headers: { "content-type": "application/json", prefer: "return=minimal" },
+        body: stringifyJson({
+          ticket_id: ticketId,
+          previous_status: previousStatus,
+          new_status: status,
+          changed_by_telegram_id: access.userId,
+          changed_by_role: access.role,
+          metadata: { source: "admin-support-update" },
+        }),
+      });
+      auditRecorded = true;
+    } catch (auditError) {
+      console.warn("[SUPPORT] Falha ao registrar transicao:", auditError instanceof Error ? auditError.message : String(auditError));
+    }
+
+    return json(req, { ok: true, role: access.role, ticket, audit_recorded: auditRecorded });
   } catch (error) {
     console.warn("[SUPPORT] Falha ao atualizar ticket:", error instanceof Error ? error.message : String(error));
     return json(req, { error: "Não foi possível atualizar o ticket agora" }, 502);

@@ -5561,6 +5561,13 @@ body.light-mode .cart-item {
 .admin-support-ticket-meta a:hover { color: var(--primary); }
 .admin-support-empty-state { padding: 28px 16px; }
 .admin-support-empty-state > i { margin-bottom: 10px; color: var(--primary); font-size: 1.6rem; }
+.admin-support-history { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .08); color: #aeb8ca; font-size: .78rem; }
+.admin-support-history summary { cursor: pointer; color: #dbe4f4; font-weight: 800; }
+.admin-support-history ul { display: grid; gap: 7px; margin: 10px 0 0; padding-left: 18px; }
+.admin-support-history li { padding-left: 3px; }
+.admin-support-history li span,
+.admin-support-history li small { display: block; }
+.admin-support-history li small { margin-top: 2px; color: #7f8da4; }
 
 .admin-support-dashboard-head { margin-bottom: 18px; }
 .admin-support-dashboard-head h3 { margin: 6px 0; color: #fff; }
