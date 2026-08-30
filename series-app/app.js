@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260718-03';
+const BUILD_VERSION = '20260830-03';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -1048,7 +1048,7 @@ function renderAccountAuth(mode = 'login', message = '') {
 
     DOM.contentPage.innerHTML = `
         <section class="account-auth-shell">
-            <div class="account-auth-brand"><i class="fas fa-play-circle"></i><span>Séries Express</span></div>
+            <div class="account-auth-brand"><i class="fas fa-play-circle"></i><span>Séries Curtas Express</span></div>
             <article class="account-auth-card">
                 <span class="content-page-kicker">Área da cliente</span>
                 <h1>${escapeHtml(title)}</h1>
@@ -1728,7 +1728,7 @@ async function shareSeriesPage(serie) {
     try {
         if (navigator.share) {
             await navigator.share({
-                title: sourceSerie.title || 'Séries Express',
+                title: sourceSerie.title || 'Séries Curtas Express',
                 text: shareText,
                 url: shareUrl
             });
@@ -5443,9 +5443,9 @@ function renderOwnerDashboard(data) {
                     <p>Cadastre séries, acompanhe a fila de entrega e ajuste rapidamente o que precisa de atenção, sem sobreposição de blocos.</p>
                 </div>
                 <div class="owner-brand owner-brand-compact">
-                    <img class="owner-brand-logo" src="${OWNER_LOGO_IMAGE}" alt="Séries Express">
+                    <img class="owner-brand-logo" src="${OWNER_LOGO_IMAGE}" alt="Séries Curtas Express">
                     <div>
-                        <strong>Séries Express</strong>
+                        <strong>Séries Curtas Express</strong>
                         <span>Operação do proprietário</span>
                     </div>
                 </div>
@@ -6514,18 +6514,9 @@ function renderGrid(series) {
 
     const freeSeries = series.filter((serie) => isFree(serie));
     const paidSeries = series.filter((serie) => !isFree(serie));
-    const lgbtqiaSeries = currentCategory === 'all' && !currentSearchTerm && !(aiSearchResultIds instanceof Set)
-        ? series.filter((serie) => isLgbtqiaSeries(serie))
-        : [];
     const fragment = document.createDocumentFragment();
 
     [
-        {
-            key: 'lgbtqia',
-            title: '🏳️‍🌈 Séries LGBTQIA+',
-            subtitle: 'Histórias de romance, drama, comédia e representatividade.',
-            items: lgbtqiaSeries,
-        },
         {
             key: 'free',
             title: 'Séries Gratuitas',
