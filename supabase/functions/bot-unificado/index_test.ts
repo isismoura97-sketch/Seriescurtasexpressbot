@@ -403,6 +403,11 @@ Deno.test("funil calcula conversao, abandono ativo e resultado por serie", () =>
   assertEquals(snapshot.cart_abandonment_rate, 50, "taxa de abandono");
   assertEquals(snapshot.funnel.checkout_abandoned, 1, "checkout abandonado");
   assertEquals(snapshot.funnel.checkout_recovered, 1, "checkout retomado");
+  assertEquals(snapshot.usage.app_opens, 2, "aberturas do mini app");
+  assertEquals(snapshot.usage.unique_app_users, 2, "usuarios unicos do mini app");
+  assertEquals(snapshot.usage.series_clicks, 2, "cliques em series");
+  assertEquals(snapshot.usage.unique_sessions, 0, "sessoes ausentes no fixture");
+  assertEquals(snapshot.usage.deliveries_completed, 1, "entregas concluidas");
   assertEquals(
     snapshot.conversion_rates.checkout_recovery,
     100,
@@ -423,6 +428,8 @@ Deno.test("funil calcula conversao, abandono ativo e resultado por serie", () =>
     2,
     "visualizacoes atribuidas a serie",
   );
+  assertEquals(snapshot.top_series[0]?.unique_viewers, 2, "usuarios que viram a serie");
+  assertEquals(snapshot.top_series[0]?.deliveries_completed, 1, "entrega atribuida a serie");
 });
 
 Deno.test("compra posterior remove usuario do abandono ativo", () => {

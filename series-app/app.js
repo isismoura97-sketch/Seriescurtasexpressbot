@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260830-03';
+const BUILD_VERSION = '20260830-04';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -202,6 +202,9 @@ let ownerSeriesSearchTerm = '';
 let ownerSeriesFilterMode = 'all';
 let ownerCouponEditCode = '';
 let ownerSessionAuthorized = false;
+let adminSessionRole = '';
+let supportTicketsSnapshot = null;
+let supportTicketFilter = 'all';
 let ownerAISuggestionState = null;
 let ownerAIPreviousValues = null;
 let supportRequestPending = false;
@@ -3008,6 +3011,23 @@ async function requestOwnerDashboard(password) {
     }, 20000);
 }
 
+async function requestAdminSupportSummary(password, limit = 100) {
+    return await requestJson(`${API_URL}?action=admin-support-summary`, {
+        init_data: tg?.initData || '',
+        password,
+        limit,
+    }, 20000);
+}
+
+async function requestAdminSupportUpdate(ticketId, status) {
+    return await requestJson(`${API_URL}?action=admin-support-update`, {
+        init_data: tg?.initData || '',
+        password: String(DOM.ownerPasswordInput?.value || ''),
+        ticket_id: String(ticketId || ''),
+        status: String(status || ''),
+    }, 20000);
+}
+
 async function requestOwnerOrderRetry(orderId) {
     return await requestJson(`${API_URL}?action=owner-order-retry`, {
         init_data: tg?.initData || '',
@@ -3590,6 +3610,7 @@ function restoreOwnerSeriesEditorState() {
 }
 
 function wireOwnerDashboardControls() {
+    wireAdminSupportControls();
     document.querySelectorAll('.owner-series-thumb').forEach((image) => {
         if (!(image instanceof HTMLImageElement)) return;
         image.onerror = () => {
@@ -5040,6 +5061,284 @@ function restoreOwnerAIValues() {
     showToast('Conteúdo anterior restaurado no formulário.', 'success');
 }
 
+const ADMIN_SUPPORT_STATUSES = [
+    { key: 'new', label: 'Novo', icon: 'fa-inbox' },
+    { key: 'in_progress', label: 'Em andamento', icon: 'fa-spinner' },
+    { key: 'resolved', label: 'Resolvido', icon: 'fa-check' },
+    { key: 'closed', label: 'Fechado', icon: 'fa-lock' },
+];
+
+function getAdminSupportStatusMeta(status) {
+    const normalized = String(status || 'new').trim().toLowerCase();
+    return ADMIN_SUPPORT_STATUSES.find((item) => item.key === normalized) || ADMIN_SUPPORT_STATUSES[0];
+}
+
+function setSupportTicketFilter(filter = 'all') {
+    supportTicketFilter = filter || 'all';
+    if (adminSessionRole === 'support' && supportTicketsSnapshot) {
+        renderAdminSupportDashboard(supportTicketsSnapshot);
+    } else if (ownerDashboardSnapshot) {
+        renderOwnerDashboard(ownerDashboardSnapshot);
+    }
+}
+
+function renderAdminSupportSection(summary = {}) {
+    supportTicketsSnapshot = summary || {};
+    const tickets = Array.isArray(summary?.tickets) ? summary.tickets : [];
+    const statusCounts = summary?.status_counts && typeof summary.status_counts === 'object'
+        ? summary.status_counts
+        : {};
+    const visibleTickets = supportTicketFilter === 'all'
+        ? tickets
+        : tickets.filter((ticket) => String(ticket?.status || 'new').toLowerCase() === supportTicketFilter);
+    const filterItems = [
+        { key: 'all', label: `Todos (${tickets.length})` },
+        ...ADMIN_SUPPORT_STATUSES.map((status) => ({
+            key: status.key,
+            label: `${status.label} (${Number(statusCounts[status.key] || 0)})`,
+        })),
+    ];
+    const filterButtons = filterItems.map((item) => `
+        <button type="button" class="owner-filter-chip ${supportTicketFilter === item.key ? 'active' : ''}" data-support-filter="${escapeAttr(item.key)}">
+            ${escapeHtml(item.label)}
+        </button>
+    `).join('');
+    const ticketRows = visibleTickets.map((ticket) => {
+        const meta = getAdminSupportStatusMeta(ticket?.status);
+        const ticketId = String(ticket?.id || '');
+        const email = String(ticket?.requester_email || '').trim();
+        const requester = String(ticket?.requester_telegram_id || '').trim();
+        const context = String(ticket?.context || '').trim();
+        const description = String(ticket?.description || '').trim();
+        const statusEvents = Array.isArray(ticket?.status_events) ? ticket.status_events : [];
+        const statusHistory = statusEvents.slice(0, 5).map((event) => {
+            const from = getAdminSupportStatusMeta(event?.previous_status);
+            const to = getAdminSupportStatusMeta(event?.new_status);
+            return `<li><span>${escapeHtml(from.label)} → ${escapeHtml(to.label)}</span><small>${escapeHtml(formatOwnerDate(event?.created_at))} · ${escapeHtml(String(event?.changed_by_role || 'admin'))}</small></li>`;
+        }).join('');
+        return `
+            <article class="admin-support-ticket">
+                <div class="admin-support-ticket-head">
+                    <div>
+                        <span class="owner-eyebrow"><i class="fas ${escapeAttr(meta.icon)}"></i> Ticket ${escapeHtml(ticketId.slice(0, 8) || 'sem ID')}</span>
+                        <h4>${escapeHtml(ticket?.subject || 'Sem assunto')}</h4>
+                    </div>
+                    <label class="admin-support-status-control">
+                        <span>Status</span>
+                        <select data-support-status-update="${escapeAttr(ticketId)}" aria-label="Atualizar status do ticket">
+                            ${ADMIN_SUPPORT_STATUSES.map((status) => `<option value="${escapeAttr(status.key)}" ${status.key === String(ticket?.status || 'new') ? 'selected' : ''}>${escapeHtml(status.label)}</option>`).join('')}
+                        </select>
+                    </label>
+                </div>
+                <p class="admin-support-ticket-description">${escapeHtml(description || 'Sem descrição.')}</p>
+                <div class="admin-support-ticket-meta">
+                    ${email ? `<a href="mailto:${escapeAttr(email)}"><i class="fas fa-envelope"></i> ${escapeHtml(email)}</a>` : '<span><i class="fas fa-envelope"></i> E-mail não informado</span>'}
+                    ${requester ? `<span><i class="fab fa-telegram"></i> Telegram ${escapeHtml(requester)}</span>` : ''}
+                    ${context ? `<span><i class="fas fa-tag"></i> ${escapeHtml(context)}</span>` : ''}
+                    <span><i class="fas fa-clock"></i> ${escapeHtml(formatOwnerDate(ticket?.created_at))}</span>
+                </div>
+                ${statusHistory ? `<details class="admin-support-history"><summary><i class="fas fa-clock-rotate-left"></i> Histórico (${statusEvents.length})</summary><ul>${statusHistory}</ul></details>` : ''}
+            </article>
+        `;
+    }).join('') || `
+        <div class="owner-empty-state admin-support-empty-state">
+            <i class="fas fa-headset"></i>
+            <strong>${supportTicketFilter === 'all' ? 'Nenhum ticket recebido ainda.' : 'Nenhum ticket neste status.'}</strong>
+            <span>Novas solicitações enviadas pelo Mini App aparecerão aqui.</span>
+        </div>
+    `;
+
+    return `
+        <section class="owner-section owner-support-section">
+            <div class="owner-section-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-headset"></i> Atendimento</span>
+                    <h3>Tickets de suporte</h3>
+                    <p>Atualize o andamento de cada solicitação. O conteúdo é carregado pelo backend privado e não fica exposto ao catálogo público.</p>
+                </div>
+                <div class="owner-support-head-actions">
+                    <div class="owner-series-count">${escapeHtml(String(tickets.length))} tickets</div>
+                    <button type="button" class="btn btn-secondary" data-support-refresh><i class="fas fa-rotate"></i> Atualizar</button>
+                </div>
+            </div>
+            <div class="owner-series-filters admin-support-filters" role="tablist" aria-label="Filtros de tickets">
+                ${filterButtons}
+            </div>
+            <div class="admin-support-ticket-list">${ticketRows}</div>
+        </section>
+    `;
+}
+
+function wireAdminSupportControls() {
+    document.querySelectorAll('[data-support-filter]').forEach((button) => {
+        if (button instanceof HTMLButtonElement) {
+            button.onclick = () => setSupportTicketFilter(button.dataset.supportFilter || 'all');
+        }
+    });
+    document.querySelectorAll('[data-support-refresh]').forEach((button) => {
+        if (button instanceof HTMLButtonElement) button.onclick = () => refreshAdminSupportTickets(button);
+    });
+    document.querySelectorAll('[data-support-status-update]').forEach((select) => {
+        if (!(select instanceof HTMLSelectElement)) return;
+        select.onchange = () => updateAdminSupportTicket(select.dataset.supportStatusUpdate || '', select.value, select);
+    });
+}
+
+async function refreshAdminSupportTickets(button = null) {
+    const previousLabel = button?.innerHTML || '';
+    try {
+        if (button instanceof HTMLButtonElement) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Atualizando...';
+        }
+        const summary = await requestAdminSupportSummary(String(DOM.ownerPasswordInput?.value || ''));
+        if (adminSessionRole === 'support') {
+            renderAdminSupportDashboard(summary);
+        } else if (ownerDashboardSnapshot) {
+            ownerDashboardSnapshot = { ...ownerDashboardSnapshot, support: summary };
+            renderOwnerDashboard(ownerDashboardSnapshot);
+        }
+    } catch (error) {
+        showToast(error?.message || 'Não foi possível atualizar os tickets.', 'error');
+    } finally {
+        if (button instanceof HTMLButtonElement) {
+            button.disabled = false;
+            button.innerHTML = previousLabel || '<i class="fas fa-rotate"></i> Atualizar';
+        }
+    }
+}
+
+async function updateAdminSupportTicket(ticketId, status, select) {
+    if (!ticketId || !status) return;
+    if (select instanceof HTMLSelectElement) select.disabled = true;
+    try {
+        await requestAdminSupportUpdate(ticketId, status);
+        showToast('Status do ticket atualizado.', 'success');
+        await refreshAdminSupportTickets();
+    } catch (error) {
+        showToast(error?.message || 'Não foi possível atualizar o ticket.', 'error');
+        await refreshAdminSupportTickets();
+    } finally {
+        if (select instanceof HTMLSelectElement) select.disabled = false;
+    }
+}
+
+function renderAdminSupportDashboard(summary = {}) {
+    if (!DOM.ownerDashboard) return;
+    ownerDashboardSnapshot = { support: summary };
+    DOM.ownerDashboard.innerHTML = `
+        <div class="admin-support-dashboard-head">
+            <span class="owner-eyebrow"><i class="fas fa-user-headset"></i> Acesso de suporte</span>
+            <h3>Painel de atendimento</h3>
+            <p>Leia as solicitações e atualize o status sem acessar dados de catálogo, pagamentos ou mídia.</p>
+        </div>
+        ${renderAdminSupportSection(summary)}
+    `;
+    DOM.ownerDashboard.hidden = false;
+    wireAdminSupportControls();
+}
+
+function renderOwnerAnalyticsSection(analytics = {}, catalogSeries = []) {
+    const usage = analytics?.usage || {};
+    const funnel = analytics?.funnel || {};
+    const conversionRates = analytics?.conversion_rates || {};
+    const analyticsChannels = analytics?.channels && typeof analytics.channels === 'object' ? analytics.channels : {};
+    const seriesMetrics = Array.isArray(analytics?.series_breakdown)
+        ? analytics.series_breakdown
+        : (Array.isArray(analytics?.top_series) ? analytics.top_series : []);
+    const metricValue = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString('pt-BR') : '0';
+    const statCards = [
+        { icon: 'fa-rocket', label: 'Uso do Mini App', value: usage.app_opens, note: `${metricValue(usage.unique_app_users)} usuários • ${metricValue(usage.unique_sessions)} sessões` },
+        { icon: 'fa-arrow-pointer', label: 'Cliques em séries', value: usage.series_clicks, note: `${metricValue(usage.unique_series_viewers)} pessoas clicaram` },
+        { icon: 'fa-layer-group', label: 'Séries exploradas', value: usage.series_explored, note: 'títulos com pelo menos um clique' },
+        { icon: 'fa-box-open', label: 'Entregas concluídas', value: usage.deliveries_completed, note: `${metricValue(usage.deliveries_requested)} solicitações registradas` },
+        { icon: 'fa-bag-shopping', label: 'Compras concluídas', value: usage.purchases_completed, note: `${metricValue(funnel.payment_approved)} pagamentos aprovados` },
+        { icon: 'fa-cart-shopping', label: 'Itens no carrinho', value: usage.cart_additions, note: `${metricValue(usage.checkouts_started)} checkouts iniciados` },
+    ];
+    const statCardsMarkup = statCards.map((card) => `
+        <div class="owner-analytics-stat">
+            <span class="owner-analytics-stat-icon"><i class="fas ${escapeAttr(card.icon)}"></i></span>
+            <div>
+                <span>${escapeHtml(card.label)}</span>
+                <strong>${escapeHtml(metricValue(card.value))}</strong>
+                <small>${escapeHtml(card.note)}</small>
+            </div>
+        </div>
+    `).join('');
+    const channelRows = Object.entries(analyticsChannels).map(([channel, metrics]) => {
+        const label = channel === 'web' ? 'Web' : 'Telegram';
+        return `
+            <div class="owner-analytics-list-row">
+                <span>${escapeHtml(label)}</span>
+                <strong>${escapeHtml(metricValue(metrics?.events))} eventos</strong>
+                <small>${escapeHtml(metricValue(metrics?.unique_users))} usuários • ${escapeHtml(metricValue(metrics?.purchase_completed))} compras</small>
+            </div>
+        `;
+    }).join('') || '<div class="owner-empty-state"><span>Ainda não há dados suficientes por canal.</span></div>';
+    const seriesRows = seriesMetrics.map((metric) => {
+        const serie = catalogSeries.find((item) => sameId(item.id, metric?.series_id));
+        return `
+            <div class="owner-analytics-series-row">
+                <div class="owner-analytics-series-name">
+                    <strong>${escapeHtml(serie?.title || 'Série do catálogo')}</strong>
+                    <small>${escapeHtml(metricValue(metric?.unique_viewers))} usuários únicos</small>
+                </div>
+                <div><span>Cliques</span><strong>${escapeHtml(metricValue(metric?.views))}</strong></div>
+                <div><span>Carrinho</span><strong>${escapeHtml(metricValue(metric?.cart_additions))}</strong></div>
+                <div><span>Compras</span><strong>${escapeHtml(metricValue(metric?.purchases))}</strong></div>
+                <div><span>Entregas</span><strong>${escapeHtml(metricValue(metric?.deliveries_completed))}</strong></div>
+            </div>
+        `;
+    }).join('') || '<div class="owner-empty-state"><span>Os cliques por série aparecerão aqui.</span></div>';
+
+    return `
+        <section class="owner-section owner-analytics-section">
+            <div class="owner-section-head owner-analytics-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-chart-line"></i> Visão da plataforma</span>
+                    <h3>Estatísticas do Mini App</h3>
+                    <p>Últimos ${escapeHtml(String(analytics.period_days ?? 30))} dias. Veja uso, cliques por série, conversão e entregas concluídas.</p>
+                </div>
+                <div class="owner-analytics-period"><i class="fas fa-calendar-days"></i> ${escapeHtml(String(analytics.period_days ?? 30))} dias</div>
+            </div>
+            <div class="owner-analytics-stat-grid">${statCardsMarkup}</div>
+            <div class="owner-analytics-subgrid">
+                <article class="owner-analytics-panel owner-analytics-series-panel">
+                    <div class="owner-analytics-panel-head">
+                        <div><h4>Cliques por série</h4><p>Ordenado pelos títulos mais acessados.</p></div>
+                        <strong>${escapeHtml(metricValue(usage.series_clicks))} no total</strong>
+                    </div>
+                    <div class="owner-analytics-series-table">
+                        <div class="owner-analytics-series-row owner-analytics-series-header"><span>Série</span><span>Cliques</span><span>Carrinho</span><span>Compras</span><span>Entregas</span></div>
+                        ${seriesRows}
+                    </div>
+                </article>
+                <article class="owner-analytics-panel">
+                    <div class="owner-analytics-panel-head">
+                        <div><h4>Resumo do comportamento</h4><p>Indicadores para acompanhar o caminho até a entrega.</p></div>
+                    </div>
+                    <div class="owner-analytics-rate-grid" aria-label="Taxas de conversão do funil">
+                        <div><span>App → série</span><strong>${escapeHtml(String(conversionRates.app_to_series ?? 0))}%</strong></div>
+                        <div><span>Série → carrinho</span><strong>${escapeHtml(String(conversionRates.series_to_cart ?? 0))}%</strong></div>
+                        <div><span>Checkout → compra</span><strong>${escapeHtml(String(conversionRates.checkout_to_purchase ?? 0))}%</strong></div>
+                        <div><span>Compra → entrega</span><strong>${escapeHtml(String(conversionRates.purchase_to_delivery ?? 0))}%</strong></div>
+                    </div>
+                    <div class="owner-analytics-mini-list">
+                        <div><span>Buscas por séries</span><strong>${escapeHtml(metricValue(usage.searches))}</strong></div>
+                        <div><span>Favoritos adicionados</span><strong>${escapeHtml(metricValue(usage.favorites_added))}</strong></div>
+                        <div><span>Carrinhos abandonados</span><strong>${escapeHtml(metricValue(funnel.cart_abandoned))}</strong></div>
+                        <div><span>Checkouts retomados</span><strong>${escapeHtml(metricValue(funnel.checkout_recovered))}</strong></div>
+                    </div>
+                </article>
+            </div>
+            <div class="owner-analytics-breakdown">
+                <article><h4>Atividade por canal</h4>${channelRows}</article>
+                <article><h4>Eventos registrados</h4><div class="owner-analytics-event-total"><strong>${escapeHtml(metricValue(analytics.events_total))}</strong><span>eventos no período</span></div></article>
+            </div>
+        </section>
+    `;
+}
+
 function renderOwnerDashboard(data) {
     if (!DOM.ownerDashboard) return;
 
@@ -5049,11 +5348,8 @@ function renderOwnerDashboard(data) {
     const analytics = data?.analytics || {};
     const coupons = data?.coupons || {};
     const ai = data?.ai || {};
+    const support = data?.support || {};
     const aiSettings = ai?.settings || {};
-    const funnel = analytics.funnel || {};
-    const conversionRates = analytics.conversion_rates || {};
-    const analyticsChannels = analytics.channels && typeof analytics.channels === 'object' ? analytics.channels : {};
-    const topSeriesMetrics = Array.isArray(analytics.top_series) ? analytics.top_series : [];
     const seriesItems = Array.isArray(data?.series_items) ? data.series_items : [];
     const recentSeries = Array.isArray(data?.recent_series) ? data.recent_series : [];
     const catalogSeries = seriesItems.length ? seriesItems : recentSeries;
@@ -5102,28 +5398,6 @@ function renderOwnerDashboard(data) {
     const recentRows = recentOrders
         .map((order) => renderOwnerOrderCard(order, false))
         .join('') || '<div class="owner-empty-state"><strong>Nenhum pedido recente</strong><span>Os novos pedidos aparecerão aqui automaticamente.</span></div>';
-
-    const channelRows = Object.entries(analyticsChannels).map(([channel, metrics]) => {
-        const label = channel === 'web' ? 'Web' : 'Telegram';
-        return `
-            <div class="owner-analytics-list-row">
-                <span>${escapeHtml(label)}</span>
-                <strong>${escapeHtml(String(metrics?.purchase_completed ?? 0))} compras</strong>
-                <small>${escapeHtml(String(metrics?.checkout_conversion_rate ?? 0))}% do checkout</small>
-            </div>
-        `;
-    }).join('') || '<div class="owner-empty-state"><span>Ainda não há dados suficientes por canal.</span></div>';
-
-    const topSeriesRows = topSeriesMetrics.slice(0, 5).map((metric) => {
-        const serie = catalogSeries.find((item) => sameId(item.id, metric?.series_id));
-        return `
-            <div class="owner-analytics-list-row">
-                <span>${escapeHtml(serie?.title || 'Série do catálogo')}</span>
-                <strong>${escapeHtml(String(metric?.purchases ?? 0))} compras</strong>
-                <small>${escapeHtml(String(metric?.views ?? 0))} visualizações</small>
-            </div>
-        `;
-    }).join('') || '<div class="owner-empty-state"><span>As séries mais acessadas aparecerão aqui.</span></div>';
 
     const prioritySeriesRows = prioritySeries.slice(0, 4)
         .map((serie) => {
@@ -5316,7 +5590,9 @@ function renderOwnerDashboard(data) {
                 </button>
             </div>
         </section>
+        ${renderOwnerAnalyticsSection(analytics, catalogSeries)}
         ${renderOwnerAIManagement(ai)}
+        ${renderAdminSupportSection(support)}
         <section class="owner-section owner-orders-section owner-orders-priority-section">
             <div class="owner-section-head">
                 <div>
@@ -5663,45 +5939,6 @@ function renderOwnerDashboard(data) {
             </div>
             <div class="owner-orders-grid">${recentRows}</div>
         </section>
-        <section class="owner-section owner-analytics-section">
-            <div class="owner-section-head">
-                <div>
-                    <h3>Conversão e abandono</h3>
-                    <p>Resumo dos últimos ${escapeHtml(String(analytics.period_days ?? 30))} dias, contado por usuário.</p>
-                </div>
-                <div class="owner-series-count">${escapeHtml(String(analytics.events_total ?? 0))} eventos</div>
-            </div>
-            <div class="owner-analytics-grid">
-                <div class="owner-analytics-step"><span>Abriu o app</span><strong>${escapeHtml(String(funnel.app_opened ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Viu uma série</span><strong>${escapeHtml(String(funnel.series_viewed ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Adicionou ao carrinho</span><strong>${escapeHtml(String(funnel.add_to_cart ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Iniciou checkout</span><strong>${escapeHtml(String(funnel.checkout_started ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Pagamento aprovado</span><strong>${escapeHtml(String(funnel.payment_approved ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Compra concluída</span><strong>${escapeHtml(String(funnel.purchase_completed ?? funnel.payment_approved ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Entrega concluída</span><strong>${escapeHtml(String(funnel.delivery_completed ?? 0))}</strong></div>
-                <div class="owner-analytics-step owner-analytics-step-warning"><span>Carrinho abandonado</span><strong>${escapeHtml(String(funnel.cart_abandoned ?? 0))}</strong></div>
-                <div class="owner-analytics-step owner-analytics-step-warning"><span>Checkout abandonado</span><strong>${escapeHtml(String(funnel.checkout_abandoned ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Checkout retomado</span><strong>${escapeHtml(String(funnel.checkout_recovered ?? 0))}</strong></div>
-            </div>
-            <div class="owner-analytics-rate-grid" aria-label="Taxas de conversão do funil">
-                <div><span>App → série</span><strong>${escapeHtml(String(conversionRates.app_to_series ?? 0))}%</strong></div>
-                <div><span>Série → carrinho</span><strong>${escapeHtml(String(conversionRates.series_to_cart ?? 0))}%</strong></div>
-                <div><span>Carrinho → checkout</span><strong>${escapeHtml(String(conversionRates.cart_to_checkout ?? 0))}%</strong></div>
-                <div><span>Checkout → compra</span><strong>${escapeHtml(String(conversionRates.checkout_to_purchase ?? 0))}%</strong></div>
-                <div><span>Compra → entrega</span><strong>${escapeHtml(String(conversionRates.purchase_to_delivery ?? 0))}%</strong></div>
-                <div><span>Recuperação de checkout</span><strong>${escapeHtml(String(conversionRates.checkout_recovery ?? 0))}%</strong></div>
-            </div>
-            <div class="owner-analytics-breakdown">
-                <article>
-                    <h4>Conversão por canal</h4>
-                    ${channelRows}
-                </article>
-                <article>
-                    <h4>Séries com maior resultado</h4>
-                    ${topSeriesRows}
-                </article>
-            </div>
-        </section>
     `;
     DOM.ownerDashboard.hidden = false;
     wireOwnerUploadForm();
@@ -5727,13 +5964,31 @@ async function submitOwnerLogin(event) {
     try {
         ownerSessionAuthorized = false;
         const data = await requestOwnerDashboard(password);
+        adminSessionRole = 'owner';
         ownerSessionAuthorized = true;
+        const supportSummary = await requestAdminSupportSummary(password).catch((error) => {
+            debugLog('[SUPPORT] Resumo administrativo indisponível:', error?.message || error);
+            return null;
+        });
+        if (supportSummary) data.support = supportSummary;
         renderOwnerDashboard(data);
         refreshCatalog();
         setOwnerStatus('Acesso validado.', 'success');
     } catch (error) {
         ownerSessionAuthorized = false;
+        adminSessionRole = '';
         DOM.ownerDashboard.hidden = true;
+        try {
+            const supportSummary = await requestAdminSupportSummary(password);
+            if (supportSummary?.role === 'support') {
+                adminSessionRole = 'support';
+                renderAdminSupportDashboard(supportSummary);
+                setOwnerStatus('Acesso de suporte validado.', 'success');
+                return;
+            }
+        } catch (_) {
+            // Mantém a mensagem do acesso de proprietário quando as duas validações falharem.
+        }
         const message = String(error?.message || '');
         const normalizedMessage = message.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         let friendlyMessage = message || 'Não foi possível abrir a área do proprietário.';
