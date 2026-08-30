@@ -5975,6 +5975,147 @@ body.light-mode .cart-item {
     }
 }
 
+/* ====================== OWNER NAVIGATION / CLEAR HIERARCHY ====================== */
+#ownerDashboard > .owner-dashboard-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 28px;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(5, 12, 28, 0.36);
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+#ownerDashboard .owner-dashboard-nav-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 0 auto;
+    padding: 7px 4px 7px 0;
+    color: rgba(226, 244, 255, 0.58);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+#ownerDashboard .owner-dashboard-nav a {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 0 auto;
+    padding: 8px 12px;
+    border: 1px solid rgba(98, 230, 255, 0.12);
+    border-radius: 999px;
+    color: rgba(236, 248, 255, 0.82);
+    background: rgba(255, 255, 255, 0.035);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+#ownerDashboard .owner-dashboard-nav a:hover,
+#ownerDashboard .owner-dashboard-nav a:focus-visible {
+    border-color: rgba(98, 230, 255, 0.62);
+    color: #fff;
+    background: rgba(98, 230, 255, 0.12);
+    transform: translateY(-1px);
+}
+
+#ownerDashboard .owner-dashboard-nav a:nth-of-type(4):hover,
+#ownerDashboard .owner-dashboard-nav a:nth-of-type(4):focus-visible {
+    border-color: rgba(176, 116, 255, 0.64);
+    background: rgba(176, 116, 255, 0.14);
+}
+
+#ownerDashboard .owner-health-strip {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+}
+
+#ownerDashboard .owner-health-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.028);
+}
+
+#ownerDashboard .owner-health-item span {
+    min-width: 0;
+    overflow: hidden;
+    color: rgba(226, 244, 255, 0.62);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#ownerDashboard .owner-health-item i {
+    margin-right: 4px;
+    color: rgba(98, 230, 255, 0.82);
+}
+
+#ownerDashboard .owner-health-item strong {
+    flex: 0 0 auto;
+    color: #f5fbff;
+    font-size: 0.92rem;
+}
+
+#ownerDashboard .owner-health-item.is-warning {
+    border-color: rgba(255, 194, 92, 0.28);
+    background: rgba(255, 194, 92, 0.07);
+}
+
+#ownerDashboard .owner-health-item.is-warning i {
+    color: #ffc25c;
+}
+
+#ownerDashboard .owner-health-item.is-danger {
+    border-color: rgba(255, 104, 139, 0.28);
+    background: rgba(255, 104, 139, 0.07);
+}
+
+#ownerDashboard .owner-health-item.is-danger i {
+    color: #ff688b;
+}
+
+#ownerDashboard [id^="owner"] {
+    scroll-margin-top: 18px;
+}
+
+@media (max-width: 1100px) {
+    #ownerDashboard .owner-health-strip {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    #ownerDashboard > .owner-dashboard-nav {
+        padding: 10px 16px;
+    }
+
+    #ownerDashboard .owner-dashboard-nav-label {
+        display: none;
+    }
+
+    #ownerDashboard .owner-health-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #ownerDashboard .owner-health-item {
+        padding: 9px 10px;
+    }
+}
+
 /* ====================== NEON OBSERVATORY / VISUAL REFRESH ======================
    Skin only: the existing catalog data, banners, access rules and interactions
    stay untouched. The layout uses solid surfaces, cyan/violet signal colors and

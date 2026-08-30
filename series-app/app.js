@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260830-04';
+const BUILD_VERSION = '20260830-05';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -4515,7 +4515,7 @@ function renderOwnerCouponSection(couponData, paidSeries) {
     `;
 
     return `
-        <section class="owner-section owner-coupon-section">
+        <section class="owner-section owner-coupon-section" id="ownerSalesSection">
             <div class="owner-section-head">
                 <div>
                     <span class="owner-eyebrow"><i class="fas fa-ticket"></i> Cupons e campanhas</span>
@@ -4692,7 +4692,7 @@ function renderOwnerAIManagement(ai = {}) {
     };
     const providerConfigured = Boolean(settings.provider_configured);
     return `
-        <section class="owner-section owner-ai-management">
+        <section class="owner-section owner-ai-management" id="ownerToolsSection">
             <div class="owner-section-head">
                 <div>
                     <span class="owner-eyebrow"><i class="fas fa-wand-magic-sparkles"></i> Express IA</span>
@@ -5149,7 +5149,7 @@ function renderAdminSupportSection(summary = {}) {
     `;
 
     return `
-        <section class="owner-section owner-support-section">
+        <section class="owner-section owner-support-section" id="ownerSupportSection">
             <div class="owner-section-head">
                 <div>
                     <span class="owner-eyebrow"><i class="fas fa-headset"></i> Atendimento</span>
@@ -5292,7 +5292,7 @@ function renderOwnerAnalyticsSection(analytics = {}, catalogSeries = []) {
     }).join('') || '<div class="owner-empty-state"><span>Os cliques por série aparecerão aqui.</span></div>';
 
     return `
-        <section class="owner-section owner-analytics-section">
+        <section class="owner-section owner-analytics-section" id="ownerAnalyticsSection">
             <div class="owner-section-head owner-analytics-head">
                 <div>
                     <span class="owner-eyebrow"><i class="fas fa-chart-line"></i> Visão da plataforma</span>
@@ -5525,7 +5525,7 @@ function renderOwnerDashboard(data) {
                     </div>
                 </div>
             </div>
-            <div class="owner-kpi-grid owner-kpi-grid-extended">
+            <div class="owner-kpi-grid owner-kpi-grid-primary">
                 <div class="owner-card">
                     <span>Séries no catálogo</span>
                     <strong>${escapeHtml(String(catalog.series_total ?? 0))}</strong>
@@ -5539,18 +5539,6 @@ function renderOwnerDashboard(data) {
                     <strong>${escapeHtml(String(paidSeriesCount))}</strong>
                 </div>
                 <div class="owner-card">
-                    <span>Prontas</span>
-                    <strong>${escapeHtml(String(internalSeriesCount))}</strong>
-                </div>
-                <div class="owner-card">
-                    <span>Entrega assistida</span>
-                    <strong>${escapeHtml(String(telegramFallbackCount))}</strong>
-                </div>
-                <div class="owner-card">
-                    <span>Sem vídeo</span>
-                    <strong>${escapeHtml(String(missingPlaybackCount))}</strong>
-                </div>
-                <div class="owner-card">
                     <span>Pedidos</span>
                     <strong>${escapeHtml(String(payments.orders_total ?? 0))}</strong>
                 </div>
@@ -5558,20 +5546,34 @@ function renderOwnerDashboard(data) {
                     <span>Total aprovado</span>
                     <strong>${escapeHtml(formatOwnerCurrency(payments.approved_amount))}</strong>
                 </div>
-                <div class="owner-card ${Number(payments.delivery_queue_total || 0) ? 'owner-card-warning' : 'owner-card-accent'}">
-                    <span>Fila de entregas</span>
-                    <strong>${escapeHtml(String(payments.delivery_queue_total ?? 0))}</strong>
-                </div>
-                <div class="owner-card ${Number(payments.delivery_failed_total || 0) ? 'owner-card-danger' : 'owner-card-accent'}">
-                    <span>Falhas de entrega</span>
-                    <strong>${escapeHtml(String(payments.delivery_failed_total ?? 0))}</strong>
-                </div>
                 <div class="owner-card owner-card-accent">
                     <span>Usuários ativos (30 dias)</span>
                     <strong>${escapeHtml(String(analytics.unique_users ?? 0))}</strong>
                 </div>
-                <div class="owner-card owner-card-accent">
-                    <span>Abandono do carrinho</span>
+            </div>
+            <div class="owner-health-strip" aria-label="Saúde da operação">
+                <div class="owner-health-item">
+                    <span><i class="fas fa-circle-check"></i> Prontas</span>
+                    <strong>${escapeHtml(String(internalSeriesCount))}</strong>
+                </div>
+                <div class="owner-health-item">
+                    <span><i class="fas fa-link"></i> Entrega assistida</span>
+                    <strong>${escapeHtml(String(telegramFallbackCount))}</strong>
+                </div>
+                <div class="owner-health-item">
+                    <span><i class="fas fa-video-slash"></i> Sem vídeo</span>
+                    <strong>${escapeHtml(String(missingPlaybackCount))}</strong>
+                </div>
+                <div class="owner-health-item ${Number(payments.delivery_queue_total || 0) ? 'is-warning' : ''}">
+                    <span><i class="fas fa-truck-fast"></i> Fila de entregas</span>
+                    <strong>${escapeHtml(String(payments.delivery_queue_total ?? 0))}</strong>
+                </div>
+                <div class="owner-health-item ${Number(payments.delivery_failed_total || 0) ? 'is-danger' : ''}">
+                    <span><i class="fas fa-triangle-exclamation"></i> Falhas de entrega</span>
+                    <strong>${escapeHtml(String(payments.delivery_failed_total ?? 0))}</strong>
+                </div>
+                <div class="owner-health-item">
+                    <span><i class="fas fa-cart-shopping"></i> Abandono do carrinho</span>
                     <strong>${escapeHtml(String(analytics.cart_abandonment_rate ?? analytics.abandonment_rate ?? 0))}%</strong>
                 </div>
             </div>
@@ -5590,10 +5592,16 @@ function renderOwnerDashboard(data) {
                 </button>
             </div>
         </section>
+        <nav class="owner-dashboard-nav" aria-label="Navegação da área do proprietário">
+            <span class="owner-dashboard-nav-label"><i class="fas fa-compass"></i> Atalhos</span>
+            <a href="#ownerAnalyticsSection"><i class="fas fa-chart-line"></i> Visão geral</a>
+            <a href="#ownerDeliverySection"><i class="fas fa-truck-fast"></i> Entregas</a>
+            <a href="#ownerCatalogSection"><i class="fas fa-books"></i> Catálogo</a>
+            <a href="#ownerSalesSection"><i class="fas fa-ticket"></i> Vendas</a>
+            <a href="#ownerToolsSection"><i class="fas fa-wand-magic-sparkles"></i> Ferramentas</a>
+        </nav>
         ${renderOwnerAnalyticsSection(analytics, catalogSeries)}
-        ${renderOwnerAIManagement(ai)}
-        ${renderAdminSupportSection(support)}
-        <section class="owner-section owner-orders-section owner-orders-priority-section">
+        <section class="owner-section owner-orders-section owner-orders-priority-section" id="ownerDeliverySection">
             <div class="owner-section-head">
                 <div>
                     <span class="owner-eyebrow"><i class="fas fa-truck-fast"></i> Operação de entregas</span>
@@ -5605,7 +5613,7 @@ function renderOwnerDashboard(data) {
             <div class="owner-orders-grid">${deliveryQueueRows}</div>
         </section>
         ${renderOwnerCouponSection(coupons, ownerSeriesCatalog.filter((serie) => !isFree(serie)))}
-        <div class="owner-workspace-grid">
+        <div class="owner-workspace-grid" id="ownerCatalogSection">
             <section class="owner-section owner-section-featured owner-editor-section">
                 <div class="owner-form-head">
                     <div>
@@ -5897,7 +5905,7 @@ function renderOwnerDashboard(data) {
                 </section>
             </aside>
         </div>
-        <section class="owner-section owner-section-priority owner-series-section">
+        <section class="owner-section owner-section-priority owner-series-section" id="ownerPrioritySection">
             <div class="owner-section-head">
                 <div>
                     <h3>Itens que pedem ajuste</h3>
@@ -5907,7 +5915,7 @@ function renderOwnerDashboard(data) {
             </div>
             <div class="owner-series-list">${prioritySeriesRows}</div>
         </section>
-        <section class="owner-section owner-series-section">
+        <section class="owner-section owner-series-section" id="ownerCatalogListSection">
             <div class="owner-section-head">
                 <div>
                     <h3>Catálogo</h3>
@@ -5929,7 +5937,7 @@ function renderOwnerDashboard(data) {
             <input type="file" id="ownerQuickTrailerInput" accept="video/*" hidden>
             <div class="owner-series-list">${recentSeriesRows}</div>
         </section>
-        <section class="owner-section owner-orders-section">
+        <section class="owner-section owner-orders-section" id="ownerOrdersSection">
             <div class="owner-section-head">
                 <div>
                     <h3>Histórico operacional</h3>
@@ -5939,6 +5947,8 @@ function renderOwnerDashboard(data) {
             </div>
             <div class="owner-orders-grid">${recentRows}</div>
         </section>
+        ${renderOwnerAIManagement(ai)}
+        ${renderAdminSupportSection(support)}
     `;
     DOM.ownerDashboard.hidden = false;
     wireOwnerUploadForm();
