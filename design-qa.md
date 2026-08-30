@@ -15,5 +15,8 @@ scope: refresh visual da plataforma inteira, sem alteração de banners, séries
 - A página mantém os banners e os dados reais carregados pelo backend: 6 séries gratuitas e 19 séries pagas na verificação inicial.
 - A tela principal foi verificada em desktop e em viewport móvel de 390px sem overflow horizontal.
 - Não foram observados erros ou warnings no console durante a navegação e o teste do filtro.
+- A área do proprietário ganhou o bloco `Estatísticas do Mini App`, com uso total, usuários e sessões, cliques totais, séries exploradas, carrinhos, compras e entregas.
+- O detalhamento por série usa os eventos reais e itens de pedidos protegidos pelo backend; a função `bot-unificado` foi publicada sem abrir o `app_events` ao cliente.
+- A versão de produção foi verificada com os assets `20260830-04`, marca correta e os dois grupos do catálogo preservados.
 
 final result: passed
