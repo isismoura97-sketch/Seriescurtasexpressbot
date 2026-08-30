@@ -11,7 +11,7 @@ window.si = window.si || function () {
 
 // ==================== CONFIGURAÇÃO ====================
 const DEBUG = false;
-const BUILD_VERSION = '20260830-03';
+const BUILD_VERSION = '20260830-04';
 const TELEGRAM_BOT_USERNAME = 'ShortNovelsBot';
 const OWNER_INTERNAL_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const OWNER_LOGO_IMAGE = `/assets/logo-welcome.png?v=${BUILD_VERSION}`;
@@ -5238,6 +5238,107 @@ function renderAdminSupportDashboard(summary = {}) {
     wireAdminSupportControls();
 }
 
+function renderOwnerAnalyticsSection(analytics = {}, catalogSeries = []) {
+    const usage = analytics?.usage || {};
+    const funnel = analytics?.funnel || {};
+    const conversionRates = analytics?.conversion_rates || {};
+    const analyticsChannels = analytics?.channels && typeof analytics.channels === 'object' ? analytics.channels : {};
+    const seriesMetrics = Array.isArray(analytics?.series_breakdown)
+        ? analytics.series_breakdown
+        : (Array.isArray(analytics?.top_series) ? analytics.top_series : []);
+    const metricValue = (value) => Number.isFinite(Number(value)) ? Number(value).toLocaleString('pt-BR') : '0';
+    const statCards = [
+        { icon: 'fa-rocket', label: 'Uso do Mini App', value: usage.app_opens, note: `${metricValue(usage.unique_app_users)} usuários • ${metricValue(usage.unique_sessions)} sessões` },
+        { icon: 'fa-arrow-pointer', label: 'Cliques em séries', value: usage.series_clicks, note: `${metricValue(usage.unique_series_viewers)} pessoas clicaram` },
+        { icon: 'fa-layer-group', label: 'Séries exploradas', value: usage.series_explored, note: 'títulos com pelo menos um clique' },
+        { icon: 'fa-box-open', label: 'Entregas concluídas', value: usage.deliveries_completed, note: `${metricValue(usage.deliveries_requested)} solicitações registradas` },
+        { icon: 'fa-bag-shopping', label: 'Compras concluídas', value: usage.purchases_completed, note: `${metricValue(funnel.payment_approved)} pagamentos aprovados` },
+        { icon: 'fa-cart-shopping', label: 'Itens no carrinho', value: usage.cart_additions, note: `${metricValue(usage.checkouts_started)} checkouts iniciados` },
+    ];
+    const statCardsMarkup = statCards.map((card) => `
+        <div class="owner-analytics-stat">
+            <span class="owner-analytics-stat-icon"><i class="fas ${escapeAttr(card.icon)}"></i></span>
+            <div>
+                <span>${escapeHtml(card.label)}</span>
+                <strong>${escapeHtml(metricValue(card.value))}</strong>
+                <small>${escapeHtml(card.note)}</small>
+            </div>
+        </div>
+    `).join('');
+    const channelRows = Object.entries(analyticsChannels).map(([channel, metrics]) => {
+        const label = channel === 'web' ? 'Web' : 'Telegram';
+        return `
+            <div class="owner-analytics-list-row">
+                <span>${escapeHtml(label)}</span>
+                <strong>${escapeHtml(metricValue(metrics?.events))} eventos</strong>
+                <small>${escapeHtml(metricValue(metrics?.unique_users))} usuários • ${escapeHtml(metricValue(metrics?.purchase_completed))} compras</small>
+            </div>
+        `;
+    }).join('') || '<div class="owner-empty-state"><span>Ainda não há dados suficientes por canal.</span></div>';
+    const seriesRows = seriesMetrics.map((metric) => {
+        const serie = catalogSeries.find((item) => sameId(item.id, metric?.series_id));
+        return `
+            <div class="owner-analytics-series-row">
+                <div class="owner-analytics-series-name">
+                    <strong>${escapeHtml(serie?.title || 'Série do catálogo')}</strong>
+                    <small>${escapeHtml(metricValue(metric?.unique_viewers))} usuários únicos</small>
+                </div>
+                <div><span>Cliques</span><strong>${escapeHtml(metricValue(metric?.views))}</strong></div>
+                <div><span>Carrinho</span><strong>${escapeHtml(metricValue(metric?.cart_additions))}</strong></div>
+                <div><span>Compras</span><strong>${escapeHtml(metricValue(metric?.purchases))}</strong></div>
+                <div><span>Entregas</span><strong>${escapeHtml(metricValue(metric?.deliveries_completed))}</strong></div>
+            </div>
+        `;
+    }).join('') || '<div class="owner-empty-state"><span>Os cliques por série aparecerão aqui.</span></div>';
+
+    return `
+        <section class="owner-section owner-analytics-section">
+            <div class="owner-section-head owner-analytics-head">
+                <div>
+                    <span class="owner-eyebrow"><i class="fas fa-chart-line"></i> Visão da plataforma</span>
+                    <h3>Estatísticas do Mini App</h3>
+                    <p>Últimos ${escapeHtml(String(analytics.period_days ?? 30))} dias. Veja uso, cliques por série, conversão e entregas concluídas.</p>
+                </div>
+                <div class="owner-analytics-period"><i class="fas fa-calendar-days"></i> ${escapeHtml(String(analytics.period_days ?? 30))} dias</div>
+            </div>
+            <div class="owner-analytics-stat-grid">${statCardsMarkup}</div>
+            <div class="owner-analytics-subgrid">
+                <article class="owner-analytics-panel owner-analytics-series-panel">
+                    <div class="owner-analytics-panel-head">
+                        <div><h4>Cliques por série</h4><p>Ordenado pelos títulos mais acessados.</p></div>
+                        <strong>${escapeHtml(metricValue(usage.series_clicks))} no total</strong>
+                    </div>
+                    <div class="owner-analytics-series-table">
+                        <div class="owner-analytics-series-row owner-analytics-series-header"><span>Série</span><span>Cliques</span><span>Carrinho</span><span>Compras</span><span>Entregas</span></div>
+                        ${seriesRows}
+                    </div>
+                </article>
+                <article class="owner-analytics-panel">
+                    <div class="owner-analytics-panel-head">
+                        <div><h4>Resumo do comportamento</h4><p>Indicadores para acompanhar o caminho até a entrega.</p></div>
+                    </div>
+                    <div class="owner-analytics-rate-grid" aria-label="Taxas de conversão do funil">
+                        <div><span>App → série</span><strong>${escapeHtml(String(conversionRates.app_to_series ?? 0))}%</strong></div>
+                        <div><span>Série → carrinho</span><strong>${escapeHtml(String(conversionRates.series_to_cart ?? 0))}%</strong></div>
+                        <div><span>Checkout → compra</span><strong>${escapeHtml(String(conversionRates.checkout_to_purchase ?? 0))}%</strong></div>
+                        <div><span>Compra → entrega</span><strong>${escapeHtml(String(conversionRates.purchase_to_delivery ?? 0))}%</strong></div>
+                    </div>
+                    <div class="owner-analytics-mini-list">
+                        <div><span>Buscas por séries</span><strong>${escapeHtml(metricValue(usage.searches))}</strong></div>
+                        <div><span>Favoritos adicionados</span><strong>${escapeHtml(metricValue(usage.favorites_added))}</strong></div>
+                        <div><span>Carrinhos abandonados</span><strong>${escapeHtml(metricValue(funnel.cart_abandoned))}</strong></div>
+                        <div><span>Checkouts retomados</span><strong>${escapeHtml(metricValue(funnel.checkout_recovered))}</strong></div>
+                    </div>
+                </article>
+            </div>
+            <div class="owner-analytics-breakdown">
+                <article><h4>Atividade por canal</h4>${channelRows}</article>
+                <article><h4>Eventos registrados</h4><div class="owner-analytics-event-total"><strong>${escapeHtml(metricValue(analytics.events_total))}</strong><span>eventos no período</span></div></article>
+            </div>
+        </section>
+    `;
+}
+
 function renderOwnerDashboard(data) {
     if (!DOM.ownerDashboard) return;
 
@@ -5249,10 +5350,6 @@ function renderOwnerDashboard(data) {
     const ai = data?.ai || {};
     const support = data?.support || {};
     const aiSettings = ai?.settings || {};
-    const funnel = analytics.funnel || {};
-    const conversionRates = analytics.conversion_rates || {};
-    const analyticsChannels = analytics.channels && typeof analytics.channels === 'object' ? analytics.channels : {};
-    const topSeriesMetrics = Array.isArray(analytics.top_series) ? analytics.top_series : [];
     const seriesItems = Array.isArray(data?.series_items) ? data.series_items : [];
     const recentSeries = Array.isArray(data?.recent_series) ? data.recent_series : [];
     const catalogSeries = seriesItems.length ? seriesItems : recentSeries;
@@ -5301,28 +5398,6 @@ function renderOwnerDashboard(data) {
     const recentRows = recentOrders
         .map((order) => renderOwnerOrderCard(order, false))
         .join('') || '<div class="owner-empty-state"><strong>Nenhum pedido recente</strong><span>Os novos pedidos aparecerão aqui automaticamente.</span></div>';
-
-    const channelRows = Object.entries(analyticsChannels).map(([channel, metrics]) => {
-        const label = channel === 'web' ? 'Web' : 'Telegram';
-        return `
-            <div class="owner-analytics-list-row">
-                <span>${escapeHtml(label)}</span>
-                <strong>${escapeHtml(String(metrics?.purchase_completed ?? 0))} compras</strong>
-                <small>${escapeHtml(String(metrics?.checkout_conversion_rate ?? 0))}% do checkout</small>
-            </div>
-        `;
-    }).join('') || '<div class="owner-empty-state"><span>Ainda não há dados suficientes por canal.</span></div>';
-
-    const topSeriesRows = topSeriesMetrics.slice(0, 5).map((metric) => {
-        const serie = catalogSeries.find((item) => sameId(item.id, metric?.series_id));
-        return `
-            <div class="owner-analytics-list-row">
-                <span>${escapeHtml(serie?.title || 'Série do catálogo')}</span>
-                <strong>${escapeHtml(String(metric?.purchases ?? 0))} compras</strong>
-                <small>${escapeHtml(String(metric?.views ?? 0))} visualizações</small>
-            </div>
-        `;
-    }).join('') || '<div class="owner-empty-state"><span>As séries mais acessadas aparecerão aqui.</span></div>';
 
     const prioritySeriesRows = prioritySeries.slice(0, 4)
         .map((serie) => {
@@ -5515,6 +5590,7 @@ function renderOwnerDashboard(data) {
                 </button>
             </div>
         </section>
+        ${renderOwnerAnalyticsSection(analytics, catalogSeries)}
         ${renderOwnerAIManagement(ai)}
         ${renderAdminSupportSection(support)}
         <section class="owner-section owner-orders-section owner-orders-priority-section">
@@ -5862,45 +5938,6 @@ function renderOwnerDashboard(data) {
                 <div class="owner-series-count">${escapeHtml(String(recentOrders.length))} pedidos</div>
             </div>
             <div class="owner-orders-grid">${recentRows}</div>
-        </section>
-        <section class="owner-section owner-analytics-section">
-            <div class="owner-section-head">
-                <div>
-                    <h3>Conversão e abandono</h3>
-                    <p>Resumo dos últimos ${escapeHtml(String(analytics.period_days ?? 30))} dias, contado por usuário.</p>
-                </div>
-                <div class="owner-series-count">${escapeHtml(String(analytics.events_total ?? 0))} eventos</div>
-            </div>
-            <div class="owner-analytics-grid">
-                <div class="owner-analytics-step"><span>Abriu o app</span><strong>${escapeHtml(String(funnel.app_opened ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Viu uma série</span><strong>${escapeHtml(String(funnel.series_viewed ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Adicionou ao carrinho</span><strong>${escapeHtml(String(funnel.add_to_cart ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Iniciou checkout</span><strong>${escapeHtml(String(funnel.checkout_started ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Pagamento aprovado</span><strong>${escapeHtml(String(funnel.payment_approved ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Compra concluída</span><strong>${escapeHtml(String(funnel.purchase_completed ?? funnel.payment_approved ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Entrega concluída</span><strong>${escapeHtml(String(funnel.delivery_completed ?? 0))}</strong></div>
-                <div class="owner-analytics-step owner-analytics-step-warning"><span>Carrinho abandonado</span><strong>${escapeHtml(String(funnel.cart_abandoned ?? 0))}</strong></div>
-                <div class="owner-analytics-step owner-analytics-step-warning"><span>Checkout abandonado</span><strong>${escapeHtml(String(funnel.checkout_abandoned ?? 0))}</strong></div>
-                <div class="owner-analytics-step"><span>Checkout retomado</span><strong>${escapeHtml(String(funnel.checkout_recovered ?? 0))}</strong></div>
-            </div>
-            <div class="owner-analytics-rate-grid" aria-label="Taxas de conversão do funil">
-                <div><span>App → série</span><strong>${escapeHtml(String(conversionRates.app_to_series ?? 0))}%</strong></div>
-                <div><span>Série → carrinho</span><strong>${escapeHtml(String(conversionRates.series_to_cart ?? 0))}%</strong></div>
-                <div><span>Carrinho → checkout</span><strong>${escapeHtml(String(conversionRates.cart_to_checkout ?? 0))}%</strong></div>
-                <div><span>Checkout → compra</span><strong>${escapeHtml(String(conversionRates.checkout_to_purchase ?? 0))}%</strong></div>
-                <div><span>Compra → entrega</span><strong>${escapeHtml(String(conversionRates.purchase_to_delivery ?? 0))}%</strong></div>
-                <div><span>Recuperação de checkout</span><strong>${escapeHtml(String(conversionRates.checkout_recovery ?? 0))}%</strong></div>
-            </div>
-            <div class="owner-analytics-breakdown">
-                <article>
-                    <h4>Conversão por canal</h4>
-                    ${channelRows}
-                </article>
-                <article>
-                    <h4>Séries com maior resultado</h4>
-                    ${topSeriesRows}
-                </article>
-            </div>
         </section>
     `;
     DOM.ownerDashboard.hidden = false;

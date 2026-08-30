@@ -7563,10 +7563,14 @@ function buildOwnerAnalyticsSnapshot(
 ) {
   const eventCounts: Record<string, number> = {};
   const usersByEvent: Record<string, Set<string>> = {};
+  const sessions = new Set<string>();
   const uniqueUsers = new Set<string>();
   const channelData: Record<string, { events: number; users: Set<string>; checkout: Set<string>; purchases: Set<string> }> = {};
-  const seriesMetrics = new Map<string, { series_id: string; views: number; cart_additions: number; purchases: number }>();
+  const seriesMetrics = new Map<string, { series_id: string; views: number; unique_viewers: number; cart_additions: number; purchases: number; deliveries_requested: number; deliveries_completed: number }>();
+  const seriesViewers = new Map<string, Set<string>>();
   const completedOrderIds = new Set<string>();
+  const deliveryRequestedOrderIds = new Set<string>();
+  const deliveryCompletedOrderIds = new Set<string>();
 
   for (const row of rows) {
     const eventName = String(row.event_name ?? "").trim().toLowerCase();
@@ -7588,12 +7592,33 @@ function buildOwnerAnalyticsSnapshot(
       if (eventName === "checkout_started" || eventName === "checkout_created") channelData[channel].checkout.add(eventUser);
       if (eventName === "purchase_completed") channelData[channel].purchases.add(eventUser);
     }
+    const sessionId = String(row.session_id ?? "").trim();
+    if (sessionId) sessions.add(sessionId);
     if (eventName === "purchase_completed" && orderId) completedOrderIds.add(orderId);
+    if (eventName === "delivery_requested" && orderId) deliveryRequestedOrderIds.add(orderId);
+    if (eventName === "delivery_completed" && orderId) deliveryCompletedOrderIds.add(orderId);
 
     if (seriesId && (eventName === "series_viewed" || eventName === "add_to_cart")) {
-      const metric = seriesMetrics.get(seriesId) ?? { series_id: seriesId, views: 0, cart_additions: 0, purchases: 0 };
+      const metric = seriesMetrics.get(seriesId) ?? {
+        series_id: seriesId,
+        views: 0,
+        unique_viewers: 0,
+        cart_additions: 0,
+        purchases: 0,
+        deliveries_requested: 0,
+        deliveries_completed: 0,
+      };
       if (eventName === "series_viewed") metric.views += 1;
       if (eventName === "add_to_cart") metric.cart_additions += 1;
+      if (eventName === "series_viewed" && eventUser) {
+        let viewers = seriesViewers.get(seriesId);
+        if (!viewers) {
+          viewers = new Set<string>();
+          seriesViewers.set(seriesId, viewers);
+        }
+        viewers.add(eventUser);
+        metric.unique_viewers = viewers.size;
+      }
       seriesMetrics.set(seriesId, metric);
     }
   }
@@ -7601,9 +7626,19 @@ function buildOwnerAnalyticsSnapshot(
   for (const item of orderItems) {
     const orderId = String(item.order_id ?? "").trim();
     const seriesId = String(item.series_id ?? "").trim();
-    if (!seriesId || !completedOrderIds.has(orderId)) continue;
-    const metric = seriesMetrics.get(seriesId) ?? { series_id: seriesId, views: 0, cart_additions: 0, purchases: 0 };
-    metric.purchases += 1;
+    if (!seriesId) continue;
+    const metric = seriesMetrics.get(seriesId) ?? {
+      series_id: seriesId,
+      views: 0,
+      unique_viewers: 0,
+      cart_additions: 0,
+      purchases: 0,
+      deliveries_requested: 0,
+      deliveries_completed: 0,
+    };
+    if (completedOrderIds.has(orderId)) metric.purchases += 1;
+    if (deliveryRequestedOrderIds.has(orderId)) metric.deliveries_requested += 1;
+    if (deliveryCompletedOrderIds.has(orderId)) metric.deliveries_completed += 1;
     seriesMetrics.set(seriesId, metric);
   }
 
@@ -7617,6 +7652,10 @@ function buildOwnerAnalyticsSnapshot(
   for (const purchaser of usersByEvent.purchase_completed ?? []) abandonedUsers.delete(purchaser);
   const checkoutAbandoned = uniqueCount("checkout_abandoned");
   const checkoutRecovered = uniqueCount("checkout_recovered");
+  const appOpens = eventCounts.app_opened ?? 0;
+  const seriesClicks = eventCounts.series_viewed ?? 0;
+  const deliveriesRequested = eventCounts.delivery_requested ?? 0;
+  const deliveriesCompleted = eventCounts.delivery_completed ?? 0;
 
   const channels = Object.fromEntries(Object.entries(channelData).map(([channel, data]) => [channel, {
     events: data.events,
@@ -7630,6 +7669,23 @@ function buildOwnerAnalyticsSnapshot(
     period_days: periodDays,
     events_total: rows.length,
     unique_users: uniqueUsers.size,
+    usage: {
+      app_opens: appOpens,
+      unique_users: uniqueUsers.size,
+      unique_app_users: appOpened,
+      unique_sessions: sessions.size,
+      catalog_loads: eventCounts.catalog_loaded ?? 0,
+      series_clicks: seriesClicks,
+      unique_series_viewers: uniqueCount("series_viewed"),
+      series_explored: seriesMetrics.size,
+      searches: eventCounts.series_search ?? 0,
+      favorites_added: eventCounts.favorite_added ?? 0,
+      cart_additions: eventCounts.add_to_cart ?? 0,
+      checkouts_started: eventCounts.checkout_started ?? 0,
+      purchases_completed: eventCounts.purchase_completed ?? 0,
+      deliveries_requested: deliveriesRequested,
+      deliveries_completed: deliveriesCompleted,
+    },
     event_counts: eventCounts,
     funnel: {
       app_opened: appOpened,
@@ -7659,8 +7715,11 @@ function buildOwnerAnalyticsSnapshot(
     abandonment_rate: analyticsPercentage(abandonedUsers.size, addedToCart),
     channels,
     top_series: Array.from(seriesMetrics.values())
-      .sort((left, right) => right.purchases - left.purchases || right.views - left.views || right.cart_additions - left.cart_additions)
+      .sort((left, right) => right.views - left.views || right.cart_additions - left.cart_additions || right.purchases - left.purchases)
       .slice(0, 10),
+    series_breakdown: Array.from(seriesMetrics.values())
+      .sort((left, right) => right.views - left.views || right.cart_additions - left.cart_additions || right.purchases - left.purchases)
+      .slice(0, 50),
   };
 }
 
@@ -7670,7 +7729,7 @@ async function getOwnerAnalytics() {
   try {
     const [eventsData, itemsData] = await Promise.all([
       supabaseFetch(
-        `${APP_EVENTS_TABLE}?select=event_name,user_id,series_id,order_id,event_source,sales_channel,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=10000`,
+        `${APP_EVENTS_TABLE}?select=event_name,user_id,series_id,order_id,session_id,event_source,sales_channel,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=10000`,
       ),
       supabaseFetch(
         `${PAYMENT_ORDER_ITEMS_TABLE}?select=order_id,series_id,created_at&created_at=gte.${encodeURIComponent(since)}&order=created_at.desc&limit=5000`,
@@ -7692,6 +7751,24 @@ async function getOwnerAnalytics() {
       abandonment_rate: 0,
       channels: {},
       top_series: [],
+      series_breakdown: [],
+      usage: {
+        app_opens: 0,
+        unique_users: 0,
+        unique_app_users: 0,
+        unique_sessions: 0,
+        catalog_loads: 0,
+        series_clicks: 0,
+        unique_series_viewers: 0,
+        series_explored: 0,
+        searches: 0,
+        favorites_added: 0,
+        cart_additions: 0,
+        checkouts_started: 0,
+        purchases_completed: 0,
+        deliveries_requested: 0,
+        deliveries_completed: 0,
+      },
     };
   }
 }
